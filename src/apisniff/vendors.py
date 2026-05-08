@@ -6,7 +6,7 @@ from pathlib import Path
 
 from apisniff.models import ProbeResult, VendorMatch
 
-_SIGNATURES_PATH = Path(__file__).parent.parent.parent / "signatures" / "vendors.json"
+_SIGNATURES_PATH = Path(__file__).parent / "signatures" / "vendors.json"
 
 _SPECIFIC_VENDORS = frozenset({"datadome", "perimeterx", "imperva", "akamai", "cloudflare"})
 

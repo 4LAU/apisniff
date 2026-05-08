@@ -70,16 +70,8 @@ def test_content_type_missing_header_returns_empty_string():
 
 
 def test_content_type_header_key_case_insensitive_lookup():
-    # Invariant: dict lookup uses the literal key stored; if the proxy stores the
-    # header as "Content-Type" (title-case) the property silently returns "" and
-    # all downstream MIME checks fail.
     flow = _flow({"Content-Type": "text/html; charset=utf-8"})
-    # The model contract stores response_headers as-is; property looks up "content-type".
-    # This test documents the behaviour: title-case key is NOT found by the property,
-    # so callers must normalise headers before constructing CapturedFlow.
-    # If the property is ever updated to do case-insensitive lookup, this test must
-    # be updated to assert "text/html" instead.
-    assert flow.content_type == ""
+    assert flow.content_type == "text/html"
 
 
 # ---------------------------------------------------------------------------

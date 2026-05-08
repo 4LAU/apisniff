@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import json
+import os
 import signal
 import subprocess
 import sys
@@ -83,13 +84,13 @@ def run_recon(
 
     addon_path = Path(__file__).parent / "proxy.py"
 
+    env = {**os.environ, "APISNIFF_TARGET": domain, "APISNIFF_OUTPUT": str(output_path)}
+
     cmd = [
         sys.executable, "-m", "mitmproxy",
         "--listen-port", str(port),
         "--set", "console_eventlog_verbosity=error",
         "-s", str(addon_path),
-        "--set", f"apisniff_target={domain}",
-        "--set", f"apisniff_output={output_path}",
     ]
     if proxy:
         cmd.extend(["--mode", f"upstream:{proxy}"])
@@ -109,23 +110,36 @@ def run_recon(
     console.print(f"  Output: {output_path}")
     console.print("  Press Ctrl+C to stop capture.\n")
 
-    proxy_proc = subprocess.Popen(cmd)
+    proxy_proc = subprocess.Popen(cmd, env=env)
     time.sleep(1)
 
-    chrome_proc = subprocess.Popen(
-        chrome_cmd,
-        stdout=subprocess.DEVNULL,
-        stderr=subprocess.DEVNULL,
-    )
+    if proxy_proc.poll() is not None:
+        console.print(
+            f"[red]mitmproxy exited with code {proxy_proc.returncode}[/red]"
+        )
+        return
+
+    try:
+        chrome_proc = subprocess.Popen(
+            chrome_cmd,
+            stdout=subprocess.DEVNULL,
+            stderr=subprocess.DEVNULL,
+        )
+    except FileNotFoundError:
+        console.print("[yellow]Chrome not found — open a browser manually[/yellow]")
+        console.print(f"  Set proxy to http://127.0.0.1:{port}")
+        chrome_proc = None
 
     try:
         proxy_proc.wait()
     except KeyboardInterrupt:
         console.print("\n[yellow]Stopping capture...[/yellow]")
         proxy_proc.send_signal(signal.SIGINT)
-        chrome_proc.terminate()
+        if chrome_proc:
+            chrome_proc.terminate()
         proxy_proc.wait(timeout=5)
-        chrome_proc.wait(timeout=5)
+        if chrome_proc:
+            chrome_proc.wait(timeout=5)
 
     flows = read_capture_jsonl(str(output_path)) if output_path.exists() else []
     console.print(

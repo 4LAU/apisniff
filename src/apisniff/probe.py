@@ -33,8 +33,8 @@ async def _probe_httpx(
     req_headers = {"user-agent": ua}
     if headers:
         req_headers.update(headers)
+    start = time.monotonic()
     try:
-        start = time.monotonic()
         async with httpx.AsyncClient(
             follow_redirects=True,
             timeout=_TIMEOUT,
@@ -75,8 +75,8 @@ async def _probe_curl_cffi(
     req_headers = {"user-agent": ua}
     if headers:
         req_headers.update(headers)
+    start = time.monotonic()
     try:
-        start = time.monotonic()
         async with AsyncSession() as session:
             resp = await session.get(
                 url,

@@ -1,7 +1,7 @@
-# src/apisniff/proxy.py
 from __future__ import annotations
 
 import json
+import os
 from pathlib import Path
 
 from mitmproxy import http
@@ -22,11 +22,10 @@ class ApisniffAddon:
         captured = flow_to_captured(flow)
         classified = self.classifier.classify(captured)
 
+        self.flow_count += 1
         if classified is None:
-            self.flow_count += 1
             return
 
-        self.flow_count += 1
         self.kept_count += 1
 
         record = {
@@ -35,10 +34,14 @@ class ApisniffAddon:
             "path": classified.path,
             "url": classified.url,
             "request_headers": classified.request_headers,
-            "request_body": classified.request_body.decode("utf-8", errors="replace"),
+            "request_body": classified.request_body.decode(
+                "utf-8", errors="replace"
+            ),
             "response_status": classified.response_status,
             "response_headers": classified.response_headers,
-            "response_body": classified.response_body.decode("utf-8", errors="replace"),
+            "response_body": classified.response_body.decode(
+                "utf-8", errors="replace"
+            ),
             "tags": classified.tags,
             "timestamp": classified.timestamp,
         }
@@ -48,3 +51,11 @@ class ApisniffAddon:
     def done(self) -> None:
         if self.output_file:
             self.output_file.close()
+
+
+addons = [
+    ApisniffAddon(
+        target_domain=os.environ.get("APISNIFF_TARGET", ""),
+        output_path=os.environ.get("APISNIFF_OUTPUT", "/tmp/apisniff.jsonl"),
+    )
+]

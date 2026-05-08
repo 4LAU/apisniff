@@ -6,7 +6,7 @@ import yaml
 
 from apisniff.models import CapturedFlow
 
-_SIGNATURES_DIR = Path(__file__).parent.parent.parent / "signatures"
+_SIGNATURES_DIR = Path(__file__).parent / "signatures"
 
 _SECOND_LEVEL_TLDS = frozenset({
     "co", "com", "org", "net", "ac", "gov", "edu", "mil", "or", "ne", "me",

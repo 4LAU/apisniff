@@ -38,7 +38,11 @@ class CapturedFlow:
 
     @property
     def content_type(self) -> str:
-        ct = self.response_headers.get("content-type", "")
+        ct = ""
+        for k, v in self.response_headers.items():
+            if k.lower() == "content-type":
+                ct = v
+                break
         return ct.split(";")[0].strip().lower()
 
 
