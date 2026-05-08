@@ -17,7 +17,7 @@ from apisniff.models import CapturedFlow
 
 _CAPTURES_DIR = Path.home() / "apisniff-captures"
 
-console = Console()
+stderr = Console(stderr=True)
 
 
 def write_flow_jsonl(f: IO, flow: CapturedFlow) -> None:
@@ -79,16 +79,16 @@ def run_recon(
         f"https://{domain}",
     ]
 
-    console.print(f"\n[bold]apisniff recon[/bold] — {domain}")
-    console.print(f"  Proxy: 127.0.0.1:{port}")
-    console.print(f"  Output: {output_path}")
-    console.print("  Press Ctrl+C to stop capture.\n")
+    stderr.print(f"\n[bold]apisniff recon[/bold] — {domain}")
+    stderr.print(f"  Proxy: 127.0.0.1:{port}")
+    stderr.print(f"  Output: {output_path}")
+    stderr.print("  Press Ctrl+C to stop capture.\n")
 
     proxy_proc = subprocess.Popen(cmd, env=env)
     time.sleep(1)
 
     if proxy_proc.poll() is not None:
-        console.print(
+        stderr.print(
             f"[red]mitmproxy exited with code {proxy_proc.returncode}[/red]"
         )
         return
@@ -100,14 +100,14 @@ def run_recon(
             stderr=subprocess.DEVNULL,
         )
     except FileNotFoundError:
-        console.print("[yellow]Chrome not found — open a browser manually[/yellow]")
-        console.print(f"  Set proxy to http://127.0.0.1:{port}")
+        stderr.print("[yellow]Chrome not found — open a browser manually[/yellow]")
+        stderr.print(f"  Set proxy to http://127.0.0.1:{port}")
         chrome_proc = None
 
     try:
         proxy_proc.wait()
     except KeyboardInterrupt:
-        console.print("\n[yellow]Stopping capture...[/yellow]")
+        stderr.print("\n[yellow]Stopping capture...[/yellow]")
         proxy_proc.send_signal(signal.SIGINT)
         if chrome_proc:
             chrome_proc.terminate()
@@ -116,6 +116,6 @@ def run_recon(
             chrome_proc.wait(timeout=5)
 
     flows = read_capture_jsonl(str(output_path)) if output_path.exists() else []
-    console.print(
+    stderr.print(
         f"\n  Captured [bold]{len(flows)}[/bold] classified flows → {output_path}\n"
     )

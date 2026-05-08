@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import asyncio
+import sys
 
 import typer
 from rich.console import Console
@@ -12,7 +13,11 @@ app = typer.Typer(
     no_args_is_help=True,
 )
 
-console = Console()
+stderr = Console(stderr=True)
+
+_EXIT_OK = 0
+_EXIT_ERROR = 1
+_EXIT_BLOCKED = 2
 
 
 @app.command()
@@ -31,6 +36,7 @@ def probe(
     ),
 ) -> None:
     """Defense preflight -- what kind of surface am I dealing with?"""
+    from apisniff.models import ProbeVerdict
     from apisniff.output import probe_to_json, render_probe
     from apisniff.probe import run_probes
 
@@ -52,9 +58,12 @@ def probe(
     )
 
     if json_output:
-        console.print_json(probe_to_json(assessment))
+        sys.stdout.write(probe_to_json(assessment) + "\n")
     else:
-        render_probe(assessment, console)
+        render_probe(assessment, stderr)
+
+    if assessment.verdict == ProbeVerdict.FULL_BLOCK:
+        raise SystemExit(_EXIT_BLOCKED)
 
 
 @app.command()

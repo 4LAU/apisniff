@@ -3,6 +3,7 @@ from __future__ import annotations
 
 import json
 import re
+import sys
 from collections import defaultdict
 from pathlib import Path
 
@@ -13,7 +14,7 @@ from apisniff.adapters.har import har_to_flows
 from apisniff.models import CapturedFlow
 from apisniff.recon import detect_input_format, read_capture_jsonl
 
-console = Console()
+stderr = Console(stderr=True)
 
 _UUID_RE = re.compile(
     r"^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$",
@@ -135,7 +136,7 @@ def run_spec(
         elif fmt == "jsonl":
             flows = read_capture_jsonl(str(path))
         else:
-            console.print(f"[red]Unknown input format for {input_file}[/red]")
+            stderr.print(f"[red]Unknown input format for {input_file}[/red]")
             return
     else:
         from apisniff.recon import _CAPTURES_DIR
@@ -143,13 +144,13 @@ def run_spec(
         pattern = f"{domain.replace('.', '-')}*.jsonl"
         captures = sorted(_CAPTURES_DIR.glob(pattern), reverse=True)
         if not captures:
-            console.print(
+            stderr.print(
                 f"[red]No captures found for {domain}. "
                 f"Run `apisniff recon {domain}` first.[/red]"
             )
             return
         latest = captures[0]
-        console.print(f"  Using latest capture: {latest}")
+        stderr.print(f"  Using latest capture: {latest}")
         flows = read_capture_jsonl(str(latest))
 
     api_flows = [
@@ -166,12 +167,12 @@ def run_spec(
 
     if output_file:
         Path(output_file).write_text(output)
-        console.print(f"  Spec written to {output_file}")
+        stderr.print(f"  Spec written to {output_file}")
     else:
-        console.print(output)
+        sys.stdout.write(output)
 
     endpoint_count = sum(len(methods) for methods in spec["paths"].values())
-    console.print(
+    stderr.print(
         f"\n  [bold]{len(spec['paths'])}[/bold] paths, "
         f"[bold]{endpoint_count}[/bold] operations"
     )

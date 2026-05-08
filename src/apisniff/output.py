@@ -51,7 +51,7 @@ def probe_to_json(assessment: ProbeAssessment) -> str:
 
 
 def render_probe(assessment: ProbeAssessment, console: Console | None = None) -> None:
-    console = console or Console()
+    console = console or Console(stderr=True)
 
     style, label = _VERDICT_STYLES[assessment.verdict]
 
