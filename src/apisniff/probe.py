@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import asyncio
+import json
 import time
 
 import httpx
@@ -203,6 +204,81 @@ async def detect_graphql(
     return found, introspection
 
 
+_GRAPHQL_INTROSPECTION_FULL = json.dumps({
+    "query": """
+    query IntrospectionQuery {
+      __schema {
+        queryType { name }
+        mutationType { name }
+        subscriptionType { name }
+        types {
+          ...FullType
+        }
+        directives {
+          name
+          description
+          locations
+          args { ...InputValue }
+        }
+      }
+    }
+
+    fragment FullType on __Type {
+      kind name description
+      fields(includeDeprecated: true) {
+        name description
+        args { ...InputValue }
+        type { ...TypeRef }
+        isDeprecated deprecationReason
+      }
+      inputFields { ...InputValue }
+      interfaces { ...TypeRef }
+      enumValues(includeDeprecated: true) { name description isDeprecated deprecationReason }
+      possibleTypes { ...TypeRef }
+    }
+
+    fragment InputValue on __InputValue {
+      name description type { ...TypeRef } defaultValue
+    }
+
+    fragment TypeRef on __Type {
+      kind name
+      ofType { kind name ofType { kind name ofType { kind name
+        ofType { kind name ofType { kind name ofType { kind name ofType { kind name } } } }
+      } } }
+    }
+    """
+})
+
+
+async def fetch_graphql_schema(
+    url: str,
+    headers: dict[str, str] | None = None,
+    proxy: str | None = None,
+) -> dict | None:
+    try:
+        async with httpx.AsyncClient(
+            timeout=_TIMEOUT, verify=False, proxy=proxy,
+        ) as client:
+            resp = await client.post(
+                url,
+                content=_GRAPHQL_INTROSPECTION_FULL,
+                headers={
+                    "content-type": "application/json",
+                    "user-agent": _CHROME_UA,
+                    **(headers or {}),
+                },
+            )
+            if resp.status_code == 200:
+                _raw = resp.json()
+                data = await _raw if asyncio.iscoroutine(_raw) else _raw
+                if "data" in data and "__schema" in data.get("data", {}):
+                    return data
+    except Exception:
+        pass
+    return None
+
+
 async def run_probes(
     url: str,
     headers: dict[str, str] | None = None,
@@ -236,8 +312,23 @@ async def run_probes(
 
     graphql_endpoints: list[str] = []
     graphql_introspection = False
+    graphql_schema_path: str | None = None
     if not skip_graphql:
         graphql_endpoints, graphql_introspection = gathered[3]
+        if graphql_introspection and graphql_endpoints:
+            schema_url = url.rstrip("/") + graphql_endpoints[0]
+            schema = await fetch_graphql_schema(schema_url, headers, proxy)
+            if schema:
+                from datetime import datetime
+                from pathlib import Path
+                from urllib.parse import urlparse
+                domain = urlparse(url).hostname or "unknown"
+                ts = datetime.now().strftime("%Y-%m-%d_%H-%M")
+                captures_dir = Path.home() / "apisniff-captures"
+                schema_path = captures_dir / f"{domain}-schema-{ts}.graphql.json"
+                schema_path.parent.mkdir(parents=True, exist_ok=True)
+                schema_path.write_text(json.dumps(schema, indent=2))
+                graphql_schema_path = str(schema_path)
 
     return ProbeAssessment(
         url=url,
@@ -247,4 +338,5 @@ async def run_probes(
         vendors=vendors,
         graphql_endpoints=graphql_endpoints,
         graphql_introspection=graphql_introspection,
+        graphql_schema_path=graphql_schema_path,
     )

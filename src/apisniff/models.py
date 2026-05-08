@@ -3,6 +3,7 @@ from __future__ import annotations
 import enum
 import json
 from dataclasses import dataclass, field
+from typing import Literal
 
 _CHALLENGE_MARKERS = (
     "challenges.cloudflare.com",
@@ -124,3 +125,48 @@ class ProbeAssessment:
     vendors: list[VendorMatch] = field(default_factory=list)
     graphql_endpoints: list[str] = field(default_factory=list)
     graphql_introspection: bool = False
+    graphql_schema_path: str | None = None
+
+
+_DropCategory = Literal[
+    "options", "noise_domain", "path_telemetry",
+    "third_party", "static_asset", "same_site_noise",
+]
+
+
+@dataclass(frozen=True, slots=True)
+class ClassifyResult:
+    action: Literal["keep", "drop"]
+    category: _DropCategory | str
+    flow: CapturedFlow | None
+
+
+@dataclass(frozen=True, slots=True)
+class SessionStats:
+    domain: str
+    started_at: str
+    duration_seconds: float
+    total_flows: int
+    kept_flows: int
+    dropped: dict[str, int]
+
+    def to_dict(self) -> dict:
+        return {
+            "domain": self.domain,
+            "started_at": self.started_at,
+            "duration_seconds": self.duration_seconds,
+            "total_flows": self.total_flows,
+            "kept_flows": self.kept_flows,
+            "dropped": dict(self.dropped),
+        }
+
+    @classmethod
+    def from_dict(cls, d: dict) -> SessionStats:
+        return cls(
+            domain=d["domain"],
+            started_at=d["started_at"],
+            duration_seconds=d["duration_seconds"],
+            total_flows=d["total_flows"],
+            kept_flows=d["kept_flows"],
+            dropped=d.get("dropped", {}),
+        )

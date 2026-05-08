@@ -25,87 +25,95 @@ def _flow(
 
 
 def test_api_flow_kept():
-    """Without this test, a change could ship that drops valid API flows and nobody would know."""
     c = Classifier(target_domain="example.com")
-    flow = _flow()
-    result = c.classify(flow)
-    assert result is not None
-    assert "api_signal" in result.tags or len(result.tags) == 0
+    result = c.classify(_flow())
+    assert result.action == "keep"
+    assert result.flow is not None
 
 
 def test_noise_domain_dropped():
-    """Noise domain traffic silently pollutes results without this test."""
     c = Classifier(target_domain="example.com")
-    flow = _flow(host="google-analytics.com", path="/collect")
-    result = c.classify(flow)
-    assert result is None
+    result = c.classify(_flow(host="google-analytics.com", path="/collect"))
+    assert result.action == "drop"
+    assert result.category == "noise_domain"
 
 
 def test_allowlist_domain_kept():
-    """Without this test, a change could ship that drops antibot challenge flows silently."""
     c = Classifier(target_domain="example.com")
-    flow = _flow(host="challenges.cloudflare.com", path="/cdn-cgi/challenge-platform/h/g/123")
-    result = c.classify(flow)
-    assert result is not None
-    assert "allowlisted" in result.tags
+    result = c.classify(_flow(
+        host="challenges.cloudflare.com",
+        path="/cdn-cgi/challenge-platform/h/g/123",
+    ))
+    assert result.action == "keep"
+    assert "allowlisted" in result.flow.tags
 
 
 def test_third_party_dropped():
-    """Without this test, a change could ship that keeps unrelated third-party traffic silently."""
     c = Classifier(target_domain="example.com")
-    flow = _flow(host="unrelated-cdn.net", path="/widget.js")
-    result = c.classify(flow)
-    assert result is None
+    result = c.classify(_flow(host="unrelated-cdn.net", path="/widget.js"))
+    assert result.action == "drop"
+    assert result.category == "third_party"
 
 
 def test_related_domain_via_referer():
-    """CDN flows tied to target via Referer silently dropped without this."""
     c = Classifier(target_domain="example.com")
-    flow = _flow(
+    result = c.classify(_flow(
         host="api.example-cdn.net",
         request_headers={"referer": "https://example.com/page"},
-    )
-    result = c.classify(flow)
-    assert result is not None
+    ))
+    assert result.action == "keep"
 
 
 def test_static_asset_dropped():
-    """Without this test, a change could ship that keeps plain JS assets and bloat recon output."""
     c = Classifier(target_domain="example.com")
-    flow = _flow(
+    result = c.classify(_flow(
         path="/static/app.js",
         response_headers={"content-type": "application/javascript"},
         response_body=b"console.log('hello')",
-    )
-    result = c.classify(flow)
-    assert result is None
+    ))
+    assert result.action == "drop"
+    assert result.category == "static_asset"
 
 
 def test_antibot_js_kept():
-    """Without this test, a change could ship that drops antibot JS files containing 2+ markers."""
     c = Classifier(target_domain="example.com")
     body = b"var x = navigator.webdriver; bmak.init(); sensor_data = {};"
-    flow = _flow(
+    result = c.classify(_flow(
         path="/static/security.js",
         response_headers={"content-type": "application/javascript"},
         response_body=body,
-    )
-    result = c.classify(flow)
-    assert result is not None
-    assert "antibot_js" in result.tags
+    ))
+    assert result.action == "keep"
+    assert "antibot_js" in result.flow.tags
 
 
 def test_telemetry_path_dropped():
-    """Telemetry paths silently skew analysis without this test."""
     c = Classifier(target_domain="example.com")
-    flow = _flow(path="/rum.gif")
-    result = c.classify(flow)
-    assert result is None
+    result = c.classify(_flow(path="/rum.gif"))
+    assert result.action == "drop"
+    assert result.category == "path_telemetry"
 
 
 def test_options_dropped():
-    """Without this test, a change could ship that keeps OPTIONS preflight requests silently."""
     c = Classifier(target_domain="example.com")
-    flow = _flow(method="OPTIONS")
-    result = c.classify(flow)
-    assert result is None
+    result = c.classify(_flow(method="OPTIONS"))
+    assert result.action == "drop"
+    assert result.category == "options"
+
+
+def test_co_uk_domain_extraction():
+    c = Classifier(target_domain="shop.example.co.uk")
+    result = c.classify(_flow(host="api.example.co.uk"))
+    assert result.action == "keep"
+
+
+def test_herokuapp_is_third_party():
+    c = Classifier(target_domain="example.com")
+    result = c.classify(_flow(host="myapp.herokuapp.com"))
+    assert result.action == "drop"
+
+
+def test_ip_address_not_crash():
+    c = Classifier(target_domain="example.com")
+    result = c.classify(_flow(host="192.168.1.1"))
+    assert result.action == "drop"

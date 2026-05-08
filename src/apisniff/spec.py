@@ -11,6 +11,7 @@ import yaml
 from rich.console import Console
 
 from apisniff.adapters.har import har_to_flows
+from apisniff.auth import AuthPattern, detect_auth
 from apisniff.models import CapturedFlow
 from apisniff.recon import detect_input_format, read_capture_jsonl
 
@@ -70,7 +71,12 @@ def _parse_response_body(body: bytes) -> dict | None:
         return None
 
 
-def generate_openapi(flows: list[CapturedFlow], domain: str) -> dict:
+def generate_openapi(
+    flows: list[CapturedFlow],
+    domain: str,
+    auth_patterns: list[AuthPattern] | None = None,
+    infer_schemes: bool = False,
+) -> dict:
     paths: dict[str, dict] = defaultdict(dict)
 
     for flow in flows:
@@ -108,7 +114,7 @@ def generate_openapi(flows: list[CapturedFlow], domain: str) -> dict:
 
         paths[norm_path][method] = operation
 
-    return {
+    spec = {
         "openapi": "3.0.3",
         "info": {
             "title": f"{domain} API",
@@ -119,12 +125,47 @@ def generate_openapi(flows: list[CapturedFlow], domain: str) -> dict:
         "paths": dict(paths),
     }
 
+    if auth_patterns:
+        x_observed: list[dict] = []
+        x_token_endpoints: list[str] = []
+
+        _SCHEME_MAP = {
+            "bearer": {"type": "http", "scheme": "bearer"},
+            "api_key_header": lambda p: {"type": "apiKey", "in": "header", "name": p.detail},
+            "api_key_query": lambda p: {"type": "apiKey", "in": "query", "name": p.detail},
+            "session_cookie": lambda p: {"type": "apiKey", "in": "cookie", "name": p.detail},
+        }
+
+        schemes: dict[str, dict] = {}
+        for p in auth_patterns:
+            x_observed.append({"type": p.auth_type, "detail": p.detail, "flow_count": p.flow_count})
+            if p.auth_type == "token_endpoint":
+                x_token_endpoints.append(p.detail)
+                continue
+            if infer_schemes:
+                mapping = _SCHEME_MAP.get(p.auth_type)
+                if mapping is None:
+                    continue
+                if callable(mapping):
+                    schemes[p.auth_type] = mapping(p)
+                else:
+                    schemes[p.auth_type] = dict(mapping)
+
+        if schemes:
+            spec["components"] = {"securitySchemes": schemes}
+        spec["x-observed-auth"] = x_observed
+        if x_token_endpoints:
+            spec["x-observed-token-endpoints"] = x_token_endpoints
+
+    return spec
+
 
 def run_spec(
     domain: str,
     input_file: str | None = None,
     output_format: str = "yaml",
     output_file: str | None = None,
+    infer_schemes: bool = False,
 ) -> None:
     if input_file:
         path = Path(input_file)
@@ -141,16 +182,17 @@ def run_spec(
     else:
         from apisniff.recon import _CAPTURES_DIR
 
-        pattern = f"{domain.replace('.', '-')}*.jsonl"
+        pattern = f"{domain.replace('.', '-')}*"
         captures = sorted(_CAPTURES_DIR.glob(pattern), reverse=True)
+        captures = [d for d in captures if d.is_dir()]
         if not captures:
             stderr.print(
                 f"[red]No captures found for {domain}. "
                 f"Run `apisniff recon {domain}` first.[/red]"
             )
             return
-        latest = captures[0]
-        stderr.print(f"  Using latest capture: {latest}")
+        latest = captures[0] / "flows.jsonl"
+        stderr.print(f"  Using latest capture: {captures[0]}")
         flows = read_capture_jsonl(str(latest))
 
     api_flows = [
@@ -158,7 +200,11 @@ def run_spec(
         if f.content_type == "application/json" and 200 <= f.response_status < 300
     ]
 
-    spec = generate_openapi(api_flows, domain)
+    auth_patterns = detect_auth(flows)
+    spec = generate_openapi(
+        api_flows, domain,
+        auth_patterns=auth_patterns, infer_schemes=infer_schemes,
+    )
 
     if output_format == "json":
         output = json.dumps(spec, indent=2)

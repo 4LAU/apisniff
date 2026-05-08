@@ -33,8 +33,12 @@ def _extract_cookies(headers: dict[str, str]) -> set[str]:
                 names.add(name)
     sc_val = headers.get("set-cookie", "")
     if sc_val:
-        for part in sc_val.split(";"):
-            name = part.strip().split("=", 1)[0].strip().lower()
+        for line in sc_val.split("\n"):
+            line = line.strip()
+            if not line:
+                continue
+            first_segment = line.split(";", 1)[0]
+            name = first_segment.strip().split("=", 1)[0].strip().lower()
             if name:
                 names.add(name)
     return names

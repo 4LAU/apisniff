@@ -6,7 +6,7 @@ output without any crash or visible error.
 """
 
 
-from apisniff.models import CapturedFlow, ProbeResult
+from apisniff.models import CapturedFlow, ClassifyResult, ProbeResult, SessionStats
 
 # ---------------------------------------------------------------------------
 # Helpers
@@ -181,3 +181,58 @@ def test_is_challenge_only_inspects_first_50000_bytes():
 
     assert _result(body=marker_before_cap).is_challenge is True
     assert _result(body=marker_after_cap).is_challenge is False
+
+
+# ---------------------------------------------------------------------------
+# ClassifyResult
+# ---------------------------------------------------------------------------
+
+def test_classify_result_keep():
+    flow = CapturedFlow(
+        method="GET", host="example.com", path="/api/users",
+        url="https://example.com/api/users", request_headers={},
+        request_body=b"", response_status=200,
+        response_headers={"content-type": "application/json"},
+        response_body=b'{"ok": true}',
+    )
+    result = ClassifyResult(action="keep", category="", flow=flow)
+    assert result.action == "keep"
+    assert result.flow is not None
+    assert result.flow.host == "example.com"
+
+
+def test_classify_result_drop():
+    result = ClassifyResult(action="drop", category="static_asset", flow=None)
+    assert result.action == "drop"
+    assert result.category == "static_asset"
+    assert result.flow is None
+
+
+# ---------------------------------------------------------------------------
+# SessionStats
+# ---------------------------------------------------------------------------
+
+def test_session_stats_roundtrip():
+    stats = SessionStats(
+        domain="example.com",
+        started_at="2026-05-08T13:00:00",
+        duration_seconds=120.5,
+        total_flows=450,
+        kept_flows=85,
+        dropped={"static_asset": 200, "third_party": 100, "noise_domain": 40,
+                 "same_site_noise": 15, "path_telemetry": 10},
+    )
+    d = stats.to_dict()
+    assert d["domain"] == "example.com"
+    assert d["kept_flows"] == 85
+    assert d["dropped"]["static_asset"] == 200
+
+    restored = SessionStats.from_dict(d)
+    assert restored == stats
+
+
+def test_session_stats_from_dict_missing_fields():
+    d = {"domain": "example.com", "started_at": "2026-05-08T13:00:00",
+         "duration_seconds": 10.0, "total_flows": 5, "kept_flows": 3, "dropped": {}}
+    stats = SessionStats.from_dict(d)
+    assert stats.dropped == {}

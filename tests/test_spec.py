@@ -1,6 +1,7 @@
 # tests/test_spec.py
 import yaml
 
+from apisniff.auth import AuthPattern
 from apisniff.models import CapturedFlow
 from apisniff.spec import _infer_schema, _normalize_path, generate_openapi
 
@@ -79,3 +80,56 @@ def test_generate_openapi_yaml_output():
     spec = generate_openapi(flows, "example.com")
     yaml_str = yaml.dump(spec, sort_keys=False)
     assert "openapi:" in yaml_str
+
+
+def test_x_observed_auth_default():
+    """Default behavior: extensions only, no securitySchemes."""
+    flows = [_flow()]
+    patterns = [
+        AuthPattern(auth_type="bearer", detail="authorization: bearer", flow_count=5),
+        AuthPattern(auth_type="token_endpoint", detail="/oauth/token", flow_count=1),
+    ]
+    spec = generate_openapi(flows, "example.com", auth_patterns=patterns)
+    assert "x-observed-auth" in spec
+    assert any(a["type"] == "bearer" for a in spec["x-observed-auth"])
+    assert "x-observed-token-endpoints" in spec
+    assert "/oauth/token" in spec["x-observed-token-endpoints"]
+    # securitySchemes NOT added by default
+    assert "components" not in spec
+
+
+def test_security_schemes_opt_in_bearer():
+    """securitySchemes only when infer_schemes=True."""
+    flows = [_flow()]
+    patterns = [AuthPattern(auth_type="bearer", detail="authorization: bearer", flow_count=5)]
+    spec = generate_openapi(flows, "example.com", auth_patterns=patterns, infer_schemes=True)
+    schemes = spec["components"]["securitySchemes"]
+    assert "bearer" in schemes
+    assert schemes["bearer"]["type"] == "http"
+    assert schemes["bearer"]["scheme"] == "bearer"
+    # Extensions still present
+    assert "x-observed-auth" in spec
+
+
+def test_security_schemes_opt_in_api_key():
+    flows = [_flow()]
+    patterns = [AuthPattern(auth_type="api_key_header", detail="x-api-key", flow_count=3)]
+    spec = generate_openapi(flows, "example.com", auth_patterns=patterns, infer_schemes=True)
+    schemes = spec["components"]["securitySchemes"]
+    assert "api_key_header" in schemes
+    assert schemes["api_key_header"]["in"] == "header"
+    assert schemes["api_key_header"]["name"] == "x-api-key"
+
+
+def test_no_top_level_security_even_with_flag():
+    flows = [_flow()]
+    patterns = [AuthPattern(auth_type="bearer", detail="authorization: bearer", flow_count=5)]
+    spec = generate_openapi(flows, "example.com", auth_patterns=patterns, infer_schemes=True)
+    assert "security" not in spec
+
+
+def test_no_auth_patterns_no_extensions():
+    flows = [_flow()]
+    spec = generate_openapi(flows, "example.com")
+    assert "components" not in spec
+    assert "x-observed-auth" not in spec
