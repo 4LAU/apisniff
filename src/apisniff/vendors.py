@@ -30,55 +30,52 @@ def _extract_cookies(headers: dict[str, str]) -> set[str]:
     return names
 
 
-def _signal_matches(signal: dict, result: ProbeResult) -> bool:
+class _PreparedResult:
+    __slots__ = ("headers_lower", "cookies", "body_text", "status")
+
+    def __init__(self, result: ProbeResult) -> None:
+        self.headers_lower = {k.lower(): v for k, v in result.headers.items()}
+        self.cookies = _extract_cookies(result.headers)
+        self.body_text = (
+            result.body[:100_000].decode("utf-8", errors="replace").lower()
+            if result.body else ""
+        )
+        self.status = result.status
+
+
+def _signal_matches(signal: dict, prep: _PreparedResult) -> bool:
     sig_type = signal["type"]
-    headers = result.headers
 
     if sig_type == "header_present":
-        return signal["key"].lower() in {k.lower() for k in headers}
+        return signal["key"].lower() in prep.headers_lower
 
     if sig_type == "header_value":
-        key = signal["key"].lower()
-        expected = signal["value"].lower()
-        for k, v in headers.items():
-            if k.lower() == key and v.lower() == expected:
-                return True
-        return False
+        val = prep.headers_lower.get(signal["key"].lower(), "")
+        return val.lower() == signal["value"].lower()
 
     if sig_type == "header_starts_with":
-        key = signal["key"].lower()
-        prefix = signal["value"].lower()
-        for k, v in headers.items():
-            if k.lower() == key and v.lower().startswith(prefix):
-                return True
-        return False
+        val = prep.headers_lower.get(signal["key"].lower(), "")
+        return val.lower().startswith(signal["value"].lower())
 
     if sig_type == "header_name_regex":
         pattern = re.compile(signal["pattern"])
-        return any(pattern.match(k.lower()) for k in headers)
+        return any(pattern.match(k) for k in prep.headers_lower)
 
     if sig_type == "cookie_name":
-        cookies = _extract_cookies(headers)
-        return signal["key"] in cookies
+        return signal["key"] in prep.cookies
 
     if sig_type == "cookie_name_regex":
         pattern = re.compile(signal["pattern"])
-        cookies = _extract_cookies(headers)
-        return any(pattern.match(c) for c in cookies)
+        return any(pattern.match(c) for c in prep.cookies)
 
     if sig_type == "cookie_name_startswith":
-        prefix = signal["prefix"]
-        cookies = _extract_cookies(headers)
-        return any(c.startswith(prefix) for c in cookies)
+        return any(c.startswith(signal["prefix"]) for c in prep.cookies)
 
     if sig_type == "body_contains":
-        if not result.body:
-            return False
-        text = result.body[:100_000].decode("utf-8", errors="replace").lower()
-        return signal["value"].lower() in text
+        return signal["value"].lower() in prep.body_text
 
     if sig_type == "status_code":
-        return result.status == signal["value"]
+        return prep.status == signal["value"]
 
     return False
 
@@ -101,6 +98,7 @@ def match_vendors(
 ) -> list[VendorMatch]:
     matched_specific: set[str] = set()
     matches: list[VendorMatch] = []
+    preps = [_PreparedResult(r) for r in results]
 
     for vendor_name in sorted(signatures, key=lambda v: (v not in _SPECIFIC_VENDORS, v)):
         vendor_sigs = signatures[vendor_name]
@@ -109,10 +107,10 @@ def match_vendors(
         low_count = 0
         matched_signals: list[str] = []
 
-        for result in results:
+        for prep in preps:
             for level in ("high", "medium", "low"):
                 for signal in vendor_sigs.get(level, []):
-                    if _signal_matches(signal, result):
+                    if _signal_matches(signal, prep):
                         detail = signal.get("key", signal.get("value", signal.get("pattern", "")))
                         sig_desc = f"{signal['type']}:{detail}"
                         if sig_desc not in matched_signals:

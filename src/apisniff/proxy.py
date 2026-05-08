@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-import json
 import os
 from pathlib import Path
 
@@ -28,24 +27,7 @@ class ApisniffAddon:
 
         self.kept_count += 1
 
-        record = {
-            "method": classified.method,
-            "host": classified.host,
-            "path": classified.path,
-            "url": classified.url,
-            "request_headers": classified.request_headers,
-            "request_body": classified.request_body.decode(
-                "utf-8", errors="replace"
-            ),
-            "response_status": classified.response_status,
-            "response_headers": classified.response_headers,
-            "response_body": classified.response_body.decode(
-                "utf-8", errors="replace"
-            ),
-            "tags": classified.tags,
-            "timestamp": classified.timestamp,
-        }
-        self.output_file.write(json.dumps(record) + "\n")
+        self.output_file.write(classified.to_jsonl() + "\n")
         self.output_file.flush()
 
     def done(self) -> None:

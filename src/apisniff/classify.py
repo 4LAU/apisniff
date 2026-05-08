@@ -1,6 +1,8 @@
 from __future__ import annotations
 
+from dataclasses import replace
 from pathlib import Path
+from urllib.parse import urlparse
 
 import yaml
 
@@ -14,8 +16,7 @@ _SECOND_LEVEL_TLDS = frozenset({
 
 _JS_CONTENT_TYPES = ("application/javascript", "text/javascript", "application/x-javascript")
 
-_DROPPABLE_CONTENT_TYPES = (
-    "application/javascript", "text/javascript", "application/x-javascript",
+_DROPPABLE_CONTENT_TYPES = _JS_CONTENT_TYPES + (
     "text/css", "image/", "video/", "audio/", "font/",
     "application/font", "application/pdf", "application/wasm",
 )
@@ -36,11 +37,7 @@ def _extract_registered_domain(hostname: str) -> str:
 
 
 def _host_from_url(url: str) -> str:
-    try:
-        after_scheme = url.split("//", 1)[1] if "//" in url else url
-        return after_scheme.split("/", 1)[0].split(":", 1)[0].lower()
-    except (IndexError, ValueError):
-        return ""
+    return (urlparse(url).hostname or "").lower()
 
 
 def _matches_domain_list(domain: str, domain_list: list[str]) -> bool:
@@ -113,19 +110,7 @@ class Classifier:
             if any(p in path for p in self._same_site_drop_paths):
                 return None
 
-        return CapturedFlow(
-            method=flow.method,
-            host=flow.host,
-            path=flow.path,
-            url=flow.url,
-            request_headers=flow.request_headers,
-            request_body=flow.request_body,
-            response_status=flow.response_status,
-            response_headers=flow.response_headers,
-            response_body=flow.response_body,
-            tags=tags,
-            timestamp=flow.timestamp,
-        )
+        return replace(flow, tags=tags)
 
     def _check_allowlist(self, flow: CapturedFlow) -> str:
         if _matches_domain_list(flow.host, self._allowlist_domains):

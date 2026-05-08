@@ -29,9 +29,6 @@ def probe(
     skip_graphql: bool = typer.Option(
         False, "--skip-graphql", help="Skip GraphQL endpoint detection"
     ),
-    probe_rate: bool = typer.Option(
-        False, "--probe-rate", help="Run rate limit probe (20 requests)"
-    ),
 ) -> None:
     """Defense preflight -- what kind of surface am I dealing with?"""
     from apisniff.output import probe_to_json, render_probe

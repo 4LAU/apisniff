@@ -21,20 +21,7 @@ console = Console()
 
 
 def write_flow_jsonl(f: IO, flow: CapturedFlow) -> None:
-    record = {
-        "method": flow.method,
-        "host": flow.host,
-        "path": flow.path,
-        "url": flow.url,
-        "request_headers": flow.request_headers,
-        "request_body": flow.request_body.decode("utf-8", errors="replace"),
-        "response_status": flow.response_status,
-        "response_headers": flow.response_headers,
-        "response_body": flow.response_body.decode("utf-8", errors="replace"),
-        "tags": flow.tags,
-        "timestamp": flow.timestamp,
-    }
-    f.write(json.dumps(record) + "\n")
+    f.write(flow.to_jsonl() + "\n")
     f.flush()
 
 
@@ -45,20 +32,7 @@ def read_capture_jsonl(path: str) -> list[CapturedFlow]:
             line = line.strip()
             if not line:
                 continue
-            d = json.loads(line)
-            flows.append(CapturedFlow(
-                method=d["method"],
-                host=d["host"],
-                path=d["path"],
-                url=d["url"],
-                request_headers=d.get("request_headers", {}),
-                request_body=d.get("request_body", "").encode("utf-8"),
-                response_status=d.get("response_status", 0),
-                response_headers=d.get("response_headers", {}),
-                response_body=d.get("response_body", "").encode("utf-8"),
-                tags=d.get("tags", []),
-                timestamp=d.get("timestamp", 0.0),
-            ))
+            flows.append(CapturedFlow.from_dict(json.loads(line)))
     return flows
 
 

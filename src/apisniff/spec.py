@@ -130,10 +130,11 @@ def run_spec(
 ) -> None:
     if input_file:
         path = Path(input_file)
-        content = path.read_text()
-        fmt = detect_input_format(content)
+        with open(path) as f:
+            first_line = f.readline()
+        fmt = detect_input_format(first_line)
         if fmt == "har":
-            flows = har_to_flows(content)
+            flows = har_to_flows(path.read_text())
         elif fmt == "jsonl":
             flows = read_capture_jsonl(str(path))
         else:

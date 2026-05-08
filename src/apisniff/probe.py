@@ -212,12 +212,17 @@ async def run_probes(
     if not url.startswith(("http://", "https://")):
         url = f"https://{url}"
 
-    naked, impersonated, tls_only = await asyncio.gather(
+    tasks = [
         _probe_httpx(url, "naked", _BOT_UA, headers, proxy),
         _probe_curl_cffi(url, "impersonated", _CHROME_UA, headers, proxy),
         _probe_curl_cffi(url, "tls_only", _BOT_UA, headers, proxy),
-    )
+    ]
+    if not skip_graphql:
+        tasks.append(detect_graphql(url, headers, proxy))
 
+    gathered = await asyncio.gather(*tasks)
+
+    naked, impersonated, tls_only = gathered[0], gathered[1], gathered[2]
     results = {
         "naked": naked,
         "impersonated": impersonated,
@@ -232,9 +237,7 @@ async def run_probes(
     graphql_endpoints: list[str] = []
     graphql_introspection = False
     if not skip_graphql:
-        graphql_endpoints, graphql_introspection = await detect_graphql(
-            url, headers, proxy
-        )
+        graphql_endpoints, graphql_introspection = gathered[3]
 
     return ProbeAssessment(
         url=url,

@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import enum
+import json
 from dataclasses import dataclass, field
 
 _CHALLENGE_MARKERS = (
@@ -35,6 +36,40 @@ class CapturedFlow:
     response_body: bytes
     tags: list[str] = field(default_factory=list)
     timestamp: float = 0.0
+
+    def to_dict(self) -> dict:
+        return {
+            "method": self.method,
+            "host": self.host,
+            "path": self.path,
+            "url": self.url,
+            "request_headers": self.request_headers,
+            "request_body": self.request_body.decode("utf-8", errors="replace"),
+            "response_status": self.response_status,
+            "response_headers": self.response_headers,
+            "response_body": self.response_body.decode("utf-8", errors="replace"),
+            "tags": self.tags,
+            "timestamp": self.timestamp,
+        }
+
+    def to_jsonl(self) -> str:
+        return json.dumps(self.to_dict())
+
+    @classmethod
+    def from_dict(cls, d: dict) -> CapturedFlow:
+        return cls(
+            method=d["method"],
+            host=d["host"],
+            path=d["path"],
+            url=d["url"],
+            request_headers=d.get("request_headers", {}),
+            request_body=d.get("request_body", "").encode("utf-8"),
+            response_status=d.get("response_status", 0),
+            response_headers=d.get("response_headers", {}),
+            response_body=d.get("response_body", "").encode("utf-8"),
+            tags=d.get("tags", []),
+            timestamp=d.get("timestamp", 0.0),
+        )
 
     @property
     def content_type(self) -> str:
