@@ -7,7 +7,7 @@ from urllib.parse import urlparse
 import tldextract
 import yaml
 
-from apisniff.models import CapturedFlow
+from apisniff.models import CapturedFlow, ClassifyResult
 
 _SIGNATURES_DIR = Path(__file__).parent / "signatures"
 
@@ -64,9 +64,9 @@ class Classifier:
 
         self._noise_domains: list[str] = _load_yaml("noise_domains.yaml")
 
-    def classify(self, flow: CapturedFlow) -> CapturedFlow | None:
+    def classify(self, flow: CapturedFlow) -> ClassifyResult:
         if flow.method == "OPTIONS":
-            return None
+            return ClassifyResult(action="drop", category="options", flow=None)
 
         tags: list[str] = []
         host = flow.host
@@ -79,7 +79,7 @@ class Classifier:
 
         # 2. Noise domains
         if not allowlist_type and _matches_domain_list(host, self._noise_domains):
-            return None
+            return ClassifyResult(action="drop", category="noise_domain", flow=None)
 
         # Learn from CSP
         self._learn_csp(flow)
@@ -87,12 +87,12 @@ class Classifier:
         # 3. Path telemetry
         if allowlist_type not in ("domain", "path"):
             if any(s in path for s in self._drop_path_substrings):
-                return None
+                return ClassifyResult(action="drop", category="path_telemetry", flow=None)
 
         # 4. Third-party
         if not allowlist_type:
             if self._is_third_party(flow):
-                return None
+                return ClassifyResult(action="drop", category="third_party", flow=None)
 
         # 5. Static assets
         if allowlist_type not in ("domain", "path"):
@@ -103,16 +103,17 @@ class Classifier:
                     if len(markers) >= 2:
                         tags.append("antibot_js")
                     else:
-                        return None
+                        return ClassifyResult(action="drop", category="static_asset", flow=None)
                 else:
-                    return None
+                    return ClassifyResult(action="drop", category="static_asset", flow=None)
 
         # 6. Same-site noise
         if allowlist_type not in ("domain", "path"):
             if any(p in path for p in self._same_site_drop_paths):
-                return None
+                return ClassifyResult(action="drop", category="same_site_noise", flow=None)
 
-        return replace(flow, tags=tags)
+        kept = replace(flow, tags=tags)
+        return ClassifyResult(action="keep", category="", flow=kept)
 
     def _check_allowlist(self, flow: CapturedFlow) -> str:
         if _matches_domain_list(flow.host, self._allowlist_domains):
