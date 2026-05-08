@@ -312,8 +312,22 @@ async def run_probes(
 
     graphql_endpoints: list[str] = []
     graphql_introspection = False
+    graphql_schema_path: str | None = None
     if not skip_graphql:
         graphql_endpoints, graphql_introspection = gathered[3]
+        if graphql_introspection and graphql_endpoints:
+            schema_url = url.rstrip("/") + graphql_endpoints[0]
+            schema = await fetch_graphql_schema(schema_url, headers, proxy)
+            if schema:
+                from datetime import datetime
+                from pathlib import Path
+                from urllib.parse import urlparse
+                domain = urlparse(url).hostname or "unknown"
+                ts = datetime.now().strftime("%Y-%m-%d_%H-%M")
+                schema_path = Path.home() / "apisniff-captures" / f"{domain}-schema-{ts}.graphql.json"
+                schema_path.parent.mkdir(parents=True, exist_ok=True)
+                schema_path.write_text(json.dumps(schema, indent=2))
+                graphql_schema_path = str(schema_path)
 
     return ProbeAssessment(
         url=url,
@@ -323,4 +337,5 @@ async def run_probes(
         vendors=vendors,
         graphql_endpoints=graphql_endpoints,
         graphql_introspection=graphql_introspection,
+        graphql_schema_path=graphql_schema_path,
     )

@@ -118,17 +118,19 @@ def render_probe(assessment: ProbeAssessment, console: Console | None = None) ->
         for ep in assessment.graphql_endpoints:
             console.print(f"  GraphQL endpoint: [cyan]{ep}[/cyan] — {gql_status}")
         if assessment.graphql_schema_path:
-            import json
-            from pathlib import Path
-            schema_data = json.loads(Path(assessment.graphql_schema_path).read_text())
-            types = schema_data.get("data", {}).get("__schema", {}).get("types", [])
-            total_fields = sum(
-                len(t.get("fields", []) or []) for t in types
-            )
-            console.print(
-                f"  GraphQL schema: [bold]{len(types)}[/bold] types, "
-                f"[bold]{total_fields}[/bold] fields → {assessment.graphql_schema_path}"
-            )
+            try:
+                from pathlib import Path
+                schema_data = json.loads(Path(assessment.graphql_schema_path).read_text())
+                types = schema_data.get("data", {}).get("__schema", {}).get("types", [])
+                total_fields = sum(
+                    len(t.get("fields", []) or []) for t in types
+                )
+                console.print(
+                    f"  GraphQL schema: [bold]{len(types)}[/bold] types, "
+                    f"[bold]{total_fields}[/bold] fields → {assessment.graphql_schema_path}"
+                )
+            except (FileNotFoundError, json.JSONDecodeError, KeyError):
+                console.print(f"  GraphQL schema: {assessment.graphql_schema_path}")
 
     console.print()
     console.print(f"  [bold]Recommendation:[/bold] {assessment.recommendation}")
