@@ -63,7 +63,7 @@ def test_classify_all_challenge():
         "tls_only": _result("tls_only", body=b"challenges.cloudflare.com"),
     }
     verdict, recommendation = classify_results(results)
-    assert verdict in (ProbeVerdict.JS_CHALLENGE, ProbeVerdict.FULL_BLOCK)
+    assert verdict == ProbeVerdict.JS_CHALLENGE
 
 
 def test_classify_naked_challenge_impersonated_pass():
