@@ -113,44 +113,48 @@ def run_recon(
         proxy_proc.send_signal(signal.SIGINT)
         if chrome_proc:
             chrome_proc.terminate()
-        proxy_proc.wait(timeout=5)
+        try:
+            proxy_proc.wait(timeout=5)
+        except subprocess.TimeoutExpired:
+            proxy_proc.kill()
         if chrome_proc:
-            chrome_proc.wait(timeout=5)
+            try:
+                chrome_proc.wait(timeout=5)
+            except subprocess.TimeoutExpired:
+                chrome_proc.kill()
 
     flows = read_capture_jsonl(str(output_path)) if output_path.exists() else []
 
-    # Read session sidecar (tolerant — may not exist)
     session_stats = None
     session_path = bundle_dir / "session.json"
-    if session_path.exists():
-        try:
-            session_stats = SessionStats.from_dict(json.loads(session_path.read_text()))
-        except (json.JSONDecodeError, KeyError):
-            stderr.print("[yellow]Warning: session.json corrupted, skipping drop stats[/yellow]")
+    try:
+        session_stats = SessionStats.from_dict(json.loads(session_path.read_text()))
+    except FileNotFoundError:
+        pass
+    except (json.JSONDecodeError, KeyError):
+        stderr.print("[yellow]Warning: session.json corrupted, skipping drop stats[/yellow]")
 
     if not flows:
         stderr.print(f"\n  No flows captured → {bundle_dir}\n")
         return
 
-    # Auth detection
     from apisniff.auth import cookies_to_cookiejar, detect_auth, extract_cookies
     auth_patterns = detect_auth(flows)
     cookies = extract_cookies(flows)
 
-    # Save cookies.txt (response-derived only — request cookies lack authoritative scope)
+    # Response-derived only — request cookies lack authoritative scope
     cookies_txt = cookies_to_cookiejar(cookies)
     if cookies_txt:
         cookies_path = bundle_dir / "cookies.txt"
         cookies_path.write_text(cookies_txt)
         stderr.print(f"  Cookies: {cookies_path}")
 
-    # GraphQL schema — detect endpoints from captured flow paths, fetch if introspection open
     import asyncio
 
     from apisniff.probe import fetch_graphql_schema
     gql_flows = [f for f in flows if "graphql" in f.path.lower()]
     gql_paths = sorted({f.path for f in gql_flows})
-    # Reuse auth headers from a captured GraphQL flow (schema fetch may require auth)
+    # Schema fetch may require auth — forward headers from a captured GraphQL flow
     gql_headers: dict[str, str] = {}
     if gql_flows:
         sample = gql_flows[0].request_headers
@@ -166,7 +170,6 @@ def run_recon(
             stderr.print(f"  GraphQL schema: {schema_path}")
             break  # one schema per session is enough
 
-    # Vendor detection on captured flows
     from apisniff.models import ProbeResult
     from apisniff.vendors import load_signatures, match_vendors
     probe_results = [
@@ -180,14 +183,12 @@ def run_recon(
     sigs = load_signatures()
     vendors = match_vendors(probe_results, sigs)
 
-    # Generate report
     from apisniff.report import generate_report
     report = generate_report(
         domain=domain, flows=flows, session_stats=session_stats,
         vendors=vendors, auth_patterns=auth_patterns, cookies=cookies,
     )
 
-    # Save and display report
     report_path = bundle_dir / "report.md"
     report_path.write_text(report)
 

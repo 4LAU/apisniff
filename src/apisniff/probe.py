@@ -3,6 +3,8 @@ from __future__ import annotations
 import asyncio
 import json
 import time
+from datetime import datetime
+from urllib.parse import urlparse
 
 import httpx
 
@@ -60,7 +62,7 @@ async def _probe_httpx(
             headers={},
             body=b"",
             elapsed_ms=round(elapsed, 1),
-            error=str(e),
+            error=f"{type(e).__name__}: {e}",
         )
 
 
@@ -105,7 +107,7 @@ async def _probe_curl_cffi(
             headers={},
             body=b"",
             elapsed_ms=round(elapsed, 1),
-            error=str(e),
+            error=f"{type(e).__name__}: {e}",
         )
 
 
@@ -319,13 +321,10 @@ async def run_probes(
             schema_url = url.rstrip("/") + graphql_endpoints[0]
             schema = await fetch_graphql_schema(schema_url, headers, proxy)
             if schema:
-                from datetime import datetime
-                from pathlib import Path
-                from urllib.parse import urlparse
+                from apisniff.recon import _CAPTURES_DIR
                 domain = urlparse(url).hostname or "unknown"
                 ts = datetime.now().strftime("%Y-%m-%d_%H-%M")
-                captures_dir = Path.home() / "apisniff-captures"
-                schema_path = captures_dir / f"{domain}-schema-{ts}.graphql.json"
+                schema_path = _CAPTURES_DIR / f"{domain}-schema-{ts}.graphql.json"
                 schema_path.parent.mkdir(parents=True, exist_ok=True)
                 schema_path.write_text(json.dumps(schema, indent=2))
                 graphql_schema_path = str(schema_path)

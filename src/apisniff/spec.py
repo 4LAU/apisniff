@@ -25,7 +25,7 @@ _NUMERIC_RE = re.compile(r"^\d+$")
 _HEX_RE = re.compile(r"^[0-9a-f]{16,}$", re.I)
 
 
-def _normalize_path(path: str) -> str:
+def normalize_path(path: str) -> str:
     parts = path.split("?")[0].split("/")
     normalized = []
     for part in parts:
@@ -80,7 +80,7 @@ def generate_openapi(
     paths: dict[str, dict] = defaultdict(dict)
 
     for flow in flows:
-        norm_path = _normalize_path(flow.path)
+        norm_path = normalize_path(flow.path)
         method = flow.method.lower()
 
         if method in paths[norm_path]:
@@ -169,11 +169,10 @@ def run_spec(
 ) -> None:
     if input_file:
         path = Path(input_file)
-        with open(path) as f:
-            head = f.read(1024)
-        fmt = detect_input_format(head)
+        text = path.read_text()
+        fmt = detect_input_format(text[:1024])
         if fmt == "har":
-            flows = har_to_flows(path.read_text())
+            flows = har_to_flows(text)
         elif fmt == "jsonl":
             flows = read_capture_jsonl(str(path))
         else:

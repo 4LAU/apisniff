@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from collections import Counter
 from dataclasses import dataclass
+from typing import Literal
 from urllib.parse import parse_qs, urlparse
 
 from apisniff.models import CapturedFlow
@@ -30,10 +31,10 @@ def detect_auth(flows: list[CapturedFlow]) -> list[AuthPattern]:
         headers = flow.request_headers
         path = flow.path.split("?")[0].rstrip("/")
 
-        auth_header = headers.get("authorization", "")
-        if auth_header.lower().startswith("bearer "):
+        auth_header = headers.get("authorization", "").lower()
+        if auth_header.startswith("bearer "):
             counts[("bearer", "authorization: bearer")] += 1
-        elif auth_header.lower().startswith("basic "):
+        elif auth_header.startswith("basic "):
             counts[("basic", "authorization: basic")] += 1
 
         for hdr in _API_KEY_HEADERS:
@@ -71,7 +72,7 @@ class ExtractedCookie:
     host_only: bool
     path: str
     secure: bool
-    source: str
+    source: Literal["request", "response"]
 
 
 def _parse_set_cookie(raw: str, host: str) -> ExtractedCookie | None:

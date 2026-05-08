@@ -4,7 +4,7 @@ from collections import Counter
 
 from apisniff.auth import AuthPattern, ExtractedCookie
 from apisniff.models import CapturedFlow, SessionStats, VendorMatch
-from apisniff.spec import _normalize_path
+from apisniff.spec import normalize_path
 
 
 def generate_report(
@@ -79,7 +79,7 @@ def generate_report(
         lines.append("")
         endpoint_counts: Counter[str] = Counter()
         for f in flows:
-            key = f"{f.method} {_normalize_path(f.path)}"
+            key = f"{f.method} {normalize_path(f.path)}"
             endpoint_counts[key] += 1
         for ep, count in endpoint_counts.most_common(20):
             lines.append(f"- `{ep}` ({count})")

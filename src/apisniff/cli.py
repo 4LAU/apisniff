@@ -4,6 +4,7 @@ from __future__ import annotations
 import asyncio
 import sys
 
+import click
 import typer
 from rich.console import Console
 
@@ -85,7 +86,10 @@ def spec(
     input_file: str | None = typer.Option(
         None, "--input", "-i", help="Input file (JSONL, HAR, or mitmproxy flow)"
     ),
-    output_format: str = typer.Option("yaml", "--format", "-f", help="Output format: yaml or json"),
+    output_format: str = typer.Option(
+        "yaml", "--format", "-f", help="Output format: yaml or json",
+        click_type=click.Choice(["yaml", "json"]),
+    ),
     output_file: str | None = typer.Option(None, "--output", "-o", help="Output file path"),
     infer_schemes: bool = typer.Option(
         False, "--infer-security-schemes",

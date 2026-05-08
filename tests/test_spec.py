@@ -3,7 +3,7 @@ import yaml
 
 from apisniff.auth import AuthPattern
 from apisniff.models import CapturedFlow
-from apisniff.spec import _infer_schema, _normalize_path, generate_openapi
+from apisniff.spec import _infer_schema, generate_openapi, normalize_path
 
 
 def _flow(
@@ -26,16 +26,16 @@ def _flow(
 
 
 def test_normalize_path_uuid():
-    result = _normalize_path("/api/users/550e8400-e29b-41d4-a716-446655440000")
+    result = normalize_path("/api/users/550e8400-e29b-41d4-a716-446655440000")
     assert result == "/api/users/{id}"
 
 
 def test_normalize_path_numeric():
-    assert _normalize_path("/api/users/12345") == "/api/users/{id}"
+    assert normalize_path("/api/users/12345") == "/api/users/{id}"
 
 
 def test_normalize_path_no_params():
-    assert _normalize_path("/api/users") == "/api/users"
+    assert normalize_path("/api/users") == "/api/users"
 
 
 def test_infer_schema_object():

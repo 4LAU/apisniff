@@ -74,11 +74,13 @@ class CapturedFlow:
 
     @property
     def content_type(self) -> str:
-        ct = ""
-        for k, v in self.response_headers.items():
-            if k.lower() == "content-type":
-                ct = v
-                break
+        # Fast path: mitmproxy adapter lowercases keys; fall back for HAR/other sources
+        ct = self.response_headers.get("content-type", "")
+        if not ct:
+            for k, v in self.response_headers.items():
+                if k.lower() == "content-type":
+                    ct = v
+                    break
         return ct.split(";")[0].strip().lower()
 
 

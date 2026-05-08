@@ -4,7 +4,7 @@ import json
 import os
 import time
 from collections import Counter
-from datetime import UTC
+from datetime import UTC, datetime
 from pathlib import Path
 
 from mitmproxy import http
@@ -26,10 +26,10 @@ class ApisniffAddon:
         self.drop_counts: Counter[str] = Counter()
 
     def response(self, flow: http.HTTPFlow) -> None:
+        self.total_flows += 1
         captured = flow_to_captured(flow)
         result = self.classifier.classify(captured)
 
-        self.total_flows += 1
         if result.action == "drop":
             self.drop_counts[result.category] += 1
             return
@@ -43,7 +43,6 @@ class ApisniffAddon:
             self.output_file.close()
 
         duration = time.time() - self.started_at
-        from datetime import datetime
         stats = SessionStats(
             domain=self.domain,
             started_at=datetime.fromtimestamp(self.started_at, tz=UTC).isoformat(),
