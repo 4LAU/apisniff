@@ -42,6 +42,7 @@ def probe_to_dict(assessment: ProbeAssessment) -> dict:
         "graphql": {
             "endpoints": assessment.graphql_endpoints,
             "introspection": assessment.graphql_introspection,
+            "schema_path": assessment.graphql_schema_path,
         },
     }
 
@@ -116,6 +117,18 @@ def render_probe(assessment: ProbeAssessment, console: Console | None = None) ->
             gql_status = "[yellow]introspection disabled[/yellow]"
         for ep in assessment.graphql_endpoints:
             console.print(f"  GraphQL endpoint: [cyan]{ep}[/cyan] — {gql_status}")
+        if assessment.graphql_schema_path:
+            import json
+            from pathlib import Path
+            schema_data = json.loads(Path(assessment.graphql_schema_path).read_text())
+            types = schema_data.get("data", {}).get("__schema", {}).get("types", [])
+            total_fields = sum(
+                len(t.get("fields", []) or []) for t in types
+            )
+            console.print(
+                f"  GraphQL schema: [bold]{len(types)}[/bold] types, "
+                f"[bold]{total_fields}[/bold] fields → {assessment.graphql_schema_path}"
+            )
 
     console.print()
     console.print(f"  [bold]Recommendation:[/bold] {assessment.recommendation}")

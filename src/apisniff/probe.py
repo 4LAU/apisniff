@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import asyncio
+import json
 import time
 
 import httpx
@@ -201,6 +202,81 @@ async def detect_graphql(
 
     await asyncio.gather(*[_check(p) for p in _GRAPHQL_PATHS])
     return found, introspection
+
+
+_GRAPHQL_INTROSPECTION_FULL = json.dumps({
+    "query": """
+    query IntrospectionQuery {
+      __schema {
+        queryType { name }
+        mutationType { name }
+        subscriptionType { name }
+        types {
+          ...FullType
+        }
+        directives {
+          name
+          description
+          locations
+          args { ...InputValue }
+        }
+      }
+    }
+
+    fragment FullType on __Type {
+      kind name description
+      fields(includeDeprecated: true) {
+        name description
+        args { ...InputValue }
+        type { ...TypeRef }
+        isDeprecated deprecationReason
+      }
+      inputFields { ...InputValue }
+      interfaces { ...TypeRef }
+      enumValues(includeDeprecated: true) { name description isDeprecated deprecationReason }
+      possibleTypes { ...TypeRef }
+    }
+
+    fragment InputValue on __InputValue {
+      name description type { ...TypeRef } defaultValue
+    }
+
+    fragment TypeRef on __Type {
+      kind name
+      ofType { kind name ofType { kind name ofType { kind name
+        ofType { kind name ofType { kind name ofType { kind name ofType { kind name } } } }
+      } } }
+    }
+    """
+})
+
+
+async def fetch_graphql_schema(
+    url: str,
+    headers: dict[str, str] | None = None,
+    proxy: str | None = None,
+) -> dict | None:
+    try:
+        async with httpx.AsyncClient(
+            timeout=_TIMEOUT, verify=False, proxy=proxy,
+        ) as client:
+            resp = await client.post(
+                url,
+                content=_GRAPHQL_INTROSPECTION_FULL,
+                headers={
+                    "content-type": "application/json",
+                    "user-agent": _CHROME_UA,
+                    **(headers or {}),
+                },
+            )
+            if resp.status_code == 200:
+                _raw = resp.json()
+                data = await _raw if asyncio.iscoroutine(_raw) else _raw
+                if "data" in data and "__schema" in data.get("data", {}):
+                    return data
+    except Exception:
+        pass
+    return None
 
 
 async def run_probes(
