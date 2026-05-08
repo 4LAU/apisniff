@@ -87,8 +87,12 @@ def spec(
     ),
     output_format: str = typer.Option("yaml", "--format", "-f", help="Output format: yaml or json"),
     output_file: str | None = typer.Option(None, "--output", "-o", help="Output file path"),
+    infer_schemes: bool = typer.Option(
+        False, "--infer-security-schemes",
+        help="Promote observed auth patterns to components.securitySchemes (default: extensions only)",
+    ),
 ) -> None:
     """Extract API structure -- generate OpenAPI from captured traffic."""
     from apisniff.spec import run_spec
 
-    run_spec(domain, input_file=input_file, output_format=output_format, output_file=output_file)
+    run_spec(domain, input_file=input_file, output_format=output_format, output_file=output_file, infer_schemes=infer_schemes)
