@@ -1,0 +1,127 @@
+# Noise domains — ads, analytics, telemetry, error tracking.
+# Matched with dot boundary: "google.com" matches "www.google.com" but not "notgoogle.com".
+
+# Google telemetry
+- google.com
+- googleapis.com
+- gstatic.com
+- googleusercontent.com
+- google-analytics.com
+- googletagmanager.com
+- googlesyndication.com
+- googleadservices.com
+- googletagservices.com
+- doubleclick.net
+- gvt1.com
+- fastly-edge.com
+- adtrafficquality.google
+
+# Facebook
+- connect.facebook.net
+- facebook.com
+- fbcdn.net
+
+# Apple
+- apple.com
+- icloud.com
+
+# Brave browser
+- brave.com
+
+# Ad networks
+- criteo.com
+- criteo.net
+- adnxs.com
+- rlcdn.com
+- adform.net
+- adroll.com
+- amazon-adsystem.com
+- taboola.com
+- outbrain.com
+- scorecardresearch.com
+- quantserve.com
+- mathtag.com
+- xlgmedia.com
+- openx.net
+- openxcdn.net
+- creativecdn.com
+
+# Social / ad pixels
+- analytics.tiktok.com
+- business-api.tiktok.com
+- ct.pinterest.com
+- analytics.pinterest.com
+- px.ads.linkedin.com
+- snap.licdn.com
+- tr.snapchat.com
+- sc-static.net
+- static.ads-twitter.com
+- analytics.twitter.com
+- t.co
+- bat.bing.com
+
+# Adobe Analytics
+- 2o7.net
+- omtrdc.net
+- demdex.net
+- everesttech.net
+
+# Product analytics / session replay
+- hotjar.com
+- mixpanel.com
+- amplitude.com
+- segment.io
+- segment.com
+- fullstory.com
+- logrocket.com
+- mouseflow.com
+- clarity.ms
+
+# Error / APM
+- sentry.io
+- bugsnag.com
+- datadoghq.com
+- datadoghq-browser-agent.com
+- newrelic.com
+
+# Cloudflare analytics (NOT challenge/WAF)
+- cloudflareinsights.com
+
+# Identity / data sync
+- liadm.com
+- id5-sync.com
+- crwdcntrl.net
+
+# Marketing / surveys
+- justuno.com
+- justone.ai
+- qualtrics.com
+- bazaarvoice.com
+- visitor-speed.com
+
+# Cookie consent
+- cookielaw.org
+- onetrust.com
+
+# Live chat
+- intercom.io
+- intercomcdn.com
+- zendesk.com
+- zdassets.com
+- drift.com
+- livechatinc.com
+- tawk.to
+
+# CDN libraries
+- jsdelivr.net
+- cdnjs.cloudflare.com
+- unpkg.com
+
+# WordPress
+- s.w.org
+
+# Salesforce
+- igodigital.com
+
+# mitmproxy internal
+- mitmproxy.org
