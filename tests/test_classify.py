@@ -109,3 +109,28 @@ def test_options_dropped():
     flow = _flow(method="OPTIONS")
     result = c.classify(flow)
     assert result is None
+
+
+def test_co_uk_domain_extraction():
+    """tldextract handles .co.uk correctly — hand-rolled version broke this."""
+    c = Classifier(target_domain="shop.example.co.uk")
+    flow = _flow(host="api.example.co.uk")
+    result = c.classify(flow)
+    assert result is not None
+
+
+def test_herokuapp_is_third_party():
+    """Private suffixes like herokuapp.com are separate registrable domains."""
+    c = Classifier(target_domain="example.com")
+    flow = _flow(host="myapp.herokuapp.com")
+    result = c.classify(flow)
+    assert result is None
+
+
+def test_ip_address_not_third_party():
+    """IP addresses should not crash domain extraction."""
+    c = Classifier(target_domain="example.com")
+    flow = _flow(host="192.168.1.1")
+    result = c.classify(flow)
+    # IP is third party (different from example.com), so dropped
+    assert result is None

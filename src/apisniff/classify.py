@@ -4,15 +4,17 @@ from dataclasses import replace
 from pathlib import Path
 from urllib.parse import urlparse
 
+import tldextract
 import yaml
 
 from apisniff.models import CapturedFlow
 
 _SIGNATURES_DIR = Path(__file__).parent / "signatures"
 
-_SECOND_LEVEL_TLDS = frozenset({
-    "co", "com", "org", "net", "ac", "gov", "edu", "mil", "or", "ne", "me",
-})
+# Offline-only (suffix_list_urls=() disables HTTP fetch per docs).
+# include_psl_private_domains=True so herokuapp.com, github.io, etc.
+# are treated as public suffixes — each app is a distinct registrable domain.
+_tld_extract = tldextract.TLDExtract(suffix_list_urls=(), include_psl_private_domains=True)
 
 _JS_CONTENT_TYPES = ("application/javascript", "text/javascript", "application/x-javascript")
 
@@ -31,14 +33,9 @@ def _extract_registered_domain(hostname: str) -> str:
     h = hostname.lower().rstrip(".")
     if not h:
         return h
-    if h.replace(".", "").isdigit() or ":" in h:
+    if ":" in h or h.replace(".", "").isdigit():
         return h
-    parts = h.split(".")
-    if len(parts) <= 2:
-        return ".".join(parts)
-    if parts[-2] in _SECOND_LEVEL_TLDS:
-        return ".".join(parts[-3:]) if len(parts) >= 3 else ".".join(parts)
-    return ".".join(parts[-2:])
+    return _tld_extract(h).top_domain_under_public_suffix or h
 
 
 def _host_from_url(url: str) -> str:
