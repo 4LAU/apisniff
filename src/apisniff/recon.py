@@ -36,9 +36,9 @@ def read_capture_jsonl(path: str) -> list[CapturedFlow]:
     return flows
 
 
-def detect_input_format(first_bytes: str) -> str:
-    stripped = first_bytes.strip()
-    if stripped.startswith('{"log"'):
+def detect_input_format(head: str) -> str:
+    stripped = head.strip()
+    if '"log"' in stripped and stripped.startswith("{"):
         return "har"
     if stripped.startswith("{") and '"method"' in stripped:
         return "jsonl"

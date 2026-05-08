@@ -73,9 +73,6 @@ def generate_openapi(flows: list[CapturedFlow], domain: str) -> dict:
     paths: dict[str, dict] = defaultdict(dict)
 
     for flow in flows:
-        if flow.response_status == 0:
-            continue
-
         norm_path = _normalize_path(flow.path)
         method = flow.method.lower()
 
@@ -131,8 +128,8 @@ def run_spec(
     if input_file:
         path = Path(input_file)
         with open(path) as f:
-            first_line = f.readline()
-        fmt = detect_input_format(first_line)
+            head = f.read(1024)
+        fmt = detect_input_format(head)
         if fmt == "har":
             flows = har_to_flows(path.read_text())
         elif fmt == "jsonl":
@@ -155,7 +152,10 @@ def run_spec(
         console.print(f"  Using latest capture: {latest}")
         flows = read_capture_jsonl(str(latest))
 
-    api_flows = [f for f in flows if f.content_type in ("application/json", "")]
+    api_flows = [
+        f for f in flows
+        if f.content_type == "application/json" and 200 <= f.response_status < 300
+    ]
 
     spec = generate_openapi(api_flows, domain)
 

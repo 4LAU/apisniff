@@ -14,17 +14,27 @@ _SPECIFIC_VENDORS = frozenset({"datadome", "perimeterx", "imperva", "akamai", "c
 def load_signatures(path: Path | None = None) -> dict:
     p = path or _SIGNATURES_PATH
     with open(p) as f:
-        return json.load(f)
+        sigs = json.load(f)
+    for vendor_sigs in sigs.values():
+        for level in ("high", "medium", "low"):
+            for signal in vendor_sigs.get(level, []):
+                if "pattern" in signal:
+                    signal["_compiled"] = re.compile(signal["pattern"])
+    return sigs
 
 
 def _extract_cookies(headers: dict[str, str]) -> set[str]:
     names: set[str] = set()
-    for key in ("cookie", "set-cookie"):
-        value = headers.get(key, "")
-        if not value:
-            continue
-        for part in value.replace(",", ";").split(";"):
-            name = part.strip().split("=", 1)[0].strip()
+    cookie_val = headers.get("cookie", "")
+    if cookie_val:
+        for part in cookie_val.split(";"):
+            name = part.strip().split("=", 1)[0].strip().lower()
+            if name:
+                names.add(name)
+    sc_val = headers.get("set-cookie", "")
+    if sc_val:
+        for part in sc_val.split(";"):
+            name = part.strip().split("=", 1)[0].strip().lower()
             if name:
                 names.add(name)
     return names
@@ -58,15 +68,15 @@ def _signal_matches(signal: dict, prep: _PreparedResult) -> bool:
         return val.lower().startswith(signal["value"].lower())
 
     if sig_type == "header_name_regex":
-        pattern = re.compile(signal["pattern"])
-        return any(pattern.match(k) for k in prep.headers_lower)
+        compiled = signal["_compiled"]
+        return any(compiled.match(k) for k in prep.headers_lower)
 
     if sig_type == "cookie_name":
         return signal["key"] in prep.cookies
 
     if sig_type == "cookie_name_regex":
-        pattern = re.compile(signal["pattern"])
-        return any(pattern.match(c) for c in prep.cookies)
+        compiled = signal["_compiled"]
+        return any(compiled.match(c) for c in prep.cookies)
 
     if sig_type == "cookie_name_startswith":
         return any(c.startswith(signal["prefix"]) for c in prep.cookies)

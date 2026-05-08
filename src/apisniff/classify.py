@@ -28,7 +28,12 @@ def _load_yaml(name: str) -> dict | list:
 
 
 def _extract_registered_domain(hostname: str) -> str:
-    parts = hostname.lower().rstrip(".").split(".")
+    h = hostname.lower().rstrip(".")
+    if not h:
+        return h
+    if h.replace(".", "").isdigit() or ":" in h:
+        return h
+    parts = h.split(".")
     if len(parts) <= 2:
         return ".".join(parts)
     if parts[-2] in _SECOND_LEVEL_TLDS:
