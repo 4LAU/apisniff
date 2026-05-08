@@ -34,7 +34,7 @@ def test_api_flow_kept():
 
 
 def test_noise_domain_dropped():
-    """Without this test, a change could ship that keeps noise domain traffic and pollute results."""
+    """Noise domain traffic silently pollutes results without this test."""
     c = Classifier(target_domain="example.com")
     flow = _flow(host="google-analytics.com", path="/collect")
     result = c.classify(flow)
@@ -59,7 +59,7 @@ def test_third_party_dropped():
 
 
 def test_related_domain_via_referer():
-    """Without this test, a change could ship that drops CDN flows tied to the target via Referer."""
+    """CDN flows tied to target via Referer silently dropped without this."""
     c = Classifier(target_domain="example.com")
     flow = _flow(
         host="api.example-cdn.net",
@@ -96,7 +96,7 @@ def test_antibot_js_kept():
 
 
 def test_telemetry_path_dropped():
-    """Without this test, a change could ship that keeps telemetry/beacon paths and skew analysis."""
+    """Telemetry paths silently skew analysis without this test."""
     c = Classifier(target_domain="example.com")
     flow = _flow(path="/rum.gif")
     result = c.classify(flow)

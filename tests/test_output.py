@@ -1,12 +1,12 @@
 import json
 
-from apisniff.output import probe_to_dict, probe_to_json
 from apisniff.models import (
     ProbeAssessment,
     ProbeResult,
     ProbeVerdict,
     VendorMatch,
 )
+from apisniff.output import probe_to_dict, probe_to_json
 
 
 def _assessment() -> ProbeAssessment:

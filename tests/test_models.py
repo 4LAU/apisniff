@@ -5,10 +5,8 @@ Each test defends a silent failure mode — a bug that would produce wrong class
 output without any crash or visible error.
 """
 
-import pytest
 
 from apisniff.models import CapturedFlow, ProbeResult
-
 
 # ---------------------------------------------------------------------------
 # Helpers

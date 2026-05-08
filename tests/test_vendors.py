@@ -1,6 +1,7 @@
 import pytest
+
+from apisniff.models import ProbeResult
 from apisniff.vendors import load_signatures, match_vendors
-from apisniff.models import ProbeResult, VendorMatch
 
 
 @pytest.fixture

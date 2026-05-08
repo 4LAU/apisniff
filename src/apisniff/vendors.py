@@ -113,7 +113,8 @@ def match_vendors(
             for level in ("high", "medium", "low"):
                 for signal in vendor_sigs.get(level, []):
                     if _signal_matches(signal, result):
-                        sig_desc = f"{signal['type']}:{signal.get('key', signal.get('value', signal.get('pattern', '')))}"
+                        detail = signal.get("key", signal.get("value", signal.get("pattern", "")))
+                        sig_desc = f"{signal['type']}:{detail}"
                         if sig_desc not in matched_signals:
                             matched_signals.append(sig_desc)
                             if level == "high":
@@ -130,7 +131,8 @@ def match_vendors(
         if vendor_name in _SPECIFIC_VENDORS:
             matched_specific.add(vendor_name)
 
-        if vendor_name == "shape_security" and matched_specific & {"datadome", "akamai", "perimeterx"}:
+        overlaps = matched_specific & {"datadome", "akamai", "perimeterx"}
+        if vendor_name == "shape_security" and overlaps:
             continue
 
         matches.append(VendorMatch(

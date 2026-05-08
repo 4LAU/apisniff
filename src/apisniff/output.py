@@ -110,7 +110,10 @@ def render_probe(assessment: ProbeAssessment, console: Console | None = None) ->
         console.print(Panel(vendor_table, title="Detected Vendors", expand=True))
 
     if assessment.graphql_endpoints:
-        gql_status = "[green]introspection enabled[/green]" if assessment.graphql_introspection else "[yellow]introspection disabled[/yellow]"
+        if assessment.graphql_introspection:
+            gql_status = "[green]introspection enabled[/green]"
+        else:
+            gql_status = "[yellow]introspection disabled[/yellow]"
         for ep in assessment.graphql_endpoints:
             console.print(f"  GraphQL endpoint: [cyan]{ep}[/cyan] — {gql_status}")
 

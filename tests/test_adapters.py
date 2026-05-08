@@ -16,8 +16,6 @@ from __future__ import annotations
 
 import json
 
-import pytest
-
 from apisniff.adapters.har import har_to_flows
 
 
