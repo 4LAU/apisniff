@@ -101,3 +101,26 @@ def test_confidence_two_medium_is_high(signatures):
     matches = match_vendors([result], signatures)
     px = next(m for m in matches if m.vendor == "perimeterx")
     assert px.confidence == "high"
+
+
+def test_set_cookie_attributes_not_in_names():
+    """Set-Cookie attributes (Path, HttpOnly, Secure) must not appear as cookie names."""
+    result = _result(headers={
+        "set-cookie": "datadome=abc123; Path=/; HttpOnly; Secure",
+    })
+    from apisniff.vendors import _extract_cookies
+    names = _extract_cookies(result.headers)
+    assert "datadome" in names
+    assert "path" not in names
+    assert "httponly" not in names
+    assert "secure" not in names
+
+
+def test_multi_value_set_cookie():
+    """Multiple Set-Cookie headers joined by newline should all be parsed."""
+    result = _result(headers={
+        "set-cookie": "a=1; Path=/\nb=2; HttpOnly\nc=3; Secure",
+    })
+    from apisniff.vendors import _extract_cookies
+    names = _extract_cookies(result.headers)
+    assert names == {"a", "b", "c"}
