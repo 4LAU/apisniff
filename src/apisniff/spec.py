@@ -201,7 +201,10 @@ def run_spec(
     ]
 
     auth_patterns = detect_auth(flows)
-    spec = generate_openapi(api_flows, domain, auth_patterns=auth_patterns, infer_schemes=infer_schemes)
+    spec = generate_openapi(
+        api_flows, domain,
+        auth_patterns=auth_patterns, infer_schemes=infer_schemes,
+    )
 
     if output_format == "json":
         output = json.dumps(spec, indent=2)

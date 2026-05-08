@@ -6,7 +6,7 @@ output without any crash or visible error.
 """
 
 
-from apisniff.models import CapturedFlow, ProbeResult, ClassifyResult, SessionStats
+from apisniff.models import CapturedFlow, ClassifyResult, ProbeResult, SessionStats
 
 # ---------------------------------------------------------------------------
 # Helpers

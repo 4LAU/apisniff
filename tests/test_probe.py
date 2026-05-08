@@ -1,5 +1,4 @@
 # tests/test_probe.py
-import json
 from unittest.mock import AsyncMock, patch
 
 import pytest

@@ -45,7 +45,9 @@ def generate_report(
         lines.append("## Detected Vendors")
         lines.append("")
         for v in vendors:
-            lines.append(f"- **{v.vendor.replace('_', ' ').title()}** ({v.confidence}) — {', '.join(v.signals)}")
+            name = v.vendor.replace("_", " ").title()
+            signals = ", ".join(v.signals)
+            lines.append(f"- **{name}** ({v.confidence}) — {signals}")
         lines.append("")
 
     # Auth

@@ -324,7 +324,8 @@ async def run_probes(
                 from urllib.parse import urlparse
                 domain = urlparse(url).hostname or "unknown"
                 ts = datetime.now().strftime("%Y-%m-%d_%H-%M")
-                schema_path = Path.home() / "apisniff-captures" / f"{domain}-schema-{ts}.graphql.json"
+                captures_dir = Path.home() / "apisniff-captures"
+                schema_path = captures_dir / f"{domain}-schema-{ts}.graphql.json"
                 schema_path.parent.mkdir(parents=True, exist_ok=True)
                 schema_path.write_text(json.dumps(schema, indent=2))
                 graphql_schema_path = str(schema_path)

@@ -1,4 +1,4 @@
-from apisniff.auth import AuthPattern, detect_auth, extract_cookies, cookies_to_cookiejar, ExtractedCookie
+from apisniff.auth import ExtractedCookie, cookies_to_cookiejar, detect_auth, extract_cookies
 from apisniff.models import CapturedFlow
 
 

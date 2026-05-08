@@ -133,7 +133,7 @@ def run_recon(
         return
 
     # Auth detection
-    from apisniff.auth import detect_auth, extract_cookies, cookies_to_cookiejar
+    from apisniff.auth import cookies_to_cookiejar, detect_auth, extract_cookies
     auth_patterns = detect_auth(flows)
     cookies = extract_cookies(flows)
 
@@ -146,6 +146,7 @@ def run_recon(
 
     # GraphQL schema — detect endpoints from captured flow paths, fetch if introspection open
     import asyncio
+
     from apisniff.probe import fetch_graphql_schema
     gql_flows = [f for f in flows if "graphql" in f.path.lower()]
     gql_paths = sorted({f.path for f in gql_flows})

@@ -4,6 +4,7 @@ import json
 import os
 import time
 from collections import Counter
+from datetime import UTC
 from pathlib import Path
 
 from mitmproxy import http
@@ -42,10 +43,10 @@ class ApisniffAddon:
             self.output_file.close()
 
         duration = time.time() - self.started_at
-        from datetime import datetime, timezone
+        from datetime import datetime
         stats = SessionStats(
             domain=self.domain,
-            started_at=datetime.fromtimestamp(self.started_at, tz=timezone.utc).isoformat(),
+            started_at=datetime.fromtimestamp(self.started_at, tz=UTC).isoformat(),
             duration_seconds=round(duration, 1),
             total_flows=self.total_flows,
             kept_flows=self.kept_flows,

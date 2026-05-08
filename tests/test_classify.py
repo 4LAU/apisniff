@@ -1,5 +1,5 @@
 from apisniff.classify import Classifier
-from apisniff.models import CapturedFlow, ClassifyResult
+from apisniff.models import CapturedFlow
 
 
 def _flow(
