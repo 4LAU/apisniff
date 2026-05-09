@@ -52,10 +52,12 @@ def run_recon(
     json_output: bool = False,
 ) -> None:
     _CAPTURES_DIR.mkdir(parents=True, exist_ok=True)
+    _CAPTURES_DIR.chmod(0o700)
     ts = datetime.now().strftime("%Y-%m-%d_%H-%M")
     safe_domain = domain.replace(".", "-").replace("/", "-")
     bundle_dir = _CAPTURES_DIR / f"{safe_domain}_{ts}"
     bundle_dir.mkdir(parents=True, exist_ok=True)
+    bundle_dir.chmod(0o700)
     output_path = bundle_dir / "flows.jsonl"
 
     addon_path = Path(__file__).parent / "proxy.py"
