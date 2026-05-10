@@ -42,7 +42,27 @@ def detect_input_format(head: str) -> str:
         return "har"
     if stripped.startswith("{") and '"method"' in stripped:
         return "jsonl"
+    if "<?xml" in stripped and "<items" in stripped:
+        return "burp"
     return "unknown"
+
+
+def load_flows(path: str) -> tuple[list[CapturedFlow], str]:
+    """Load flows from HAR, Burp XML, or JSONL file. Returns (flows, format)."""
+    p = Path(path)
+    head = p.read_bytes()[:1024].decode("utf-8", errors="replace")
+    fmt = detect_input_format(head)
+    if fmt == "har":
+        from apisniff.adapters.har import har_to_flows
+        flows = har_to_flows(p.read_text())
+    elif fmt == "burp":
+        from apisniff.adapters.burp import burp_to_flows
+        flows = burp_to_flows(p.read_text())
+    elif fmt == "jsonl":
+        flows = read_capture_jsonl(path)
+    else:
+        flows = []
+    return flows, fmt
 
 
 def run_recon(

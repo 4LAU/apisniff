@@ -9,10 +9,9 @@ from pathlib import Path
 import yaml
 from rich.console import Console
 
-from apisniff.adapters.har import har_to_flows
 from apisniff.auth import AuthPattern, detect_auth
 from apisniff.models import CapturedFlow, normalize_path
-from apisniff.recon import detect_input_format, read_capture_jsonl
+from apisniff.recon import load_flows, read_capture_jsonl
 
 stderr = Console(stderr=True)
 
@@ -146,14 +145,8 @@ def run_spec(
     infer_schemes: bool = False,
 ) -> None:
     if input_file:
-        path = Path(input_file)
-        text = path.read_text()
-        fmt = detect_input_format(text[:1024])
-        if fmt == "har":
-            flows = har_to_flows(text)
-        elif fmt == "jsonl":
-            flows = read_capture_jsonl(str(path))
-        else:
+        flows, fmt = load_flows(input_file)
+        if fmt == "unknown":
             stderr.print(f"[red]Unknown input format for {input_file}[/red]")
             return
     else:
