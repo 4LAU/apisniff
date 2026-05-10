@@ -1,13 +1,14 @@
 from __future__ import annotations
 
 import json
+from datetime import UTC, datetime
 
 from rich.console import Console
 from rich.panel import Panel
 from rich.table import Table
 from rich.text import Text
 
-from apisniff.models import ProbeAssessment, ProbeVerdict
+from apisniff.models import CapturedFlow, ProbeAssessment, ProbeVerdict, ReplayResult
 
 _VERDICT_STYLES = {
     ProbeVerdict.NO_PROTECTION: ("green", "No Protection"),
@@ -135,3 +136,143 @@ def render_probe(assessment: ProbeAssessment, console: Console | None = None) ->
     console.print()
     console.print(f"  [bold]Recommendation:[/bold] {assessment.recommendation}")
     console.print()
+
+
+_REPLAY_SYMBOL = {
+    "match": "✓",
+    "drift": "~",
+    "auth_expired": "✗",
+    "blocked": "✗",
+    "error": "✗",
+}
+
+_REPLAY_STYLE = {
+    "match": "green",
+    "drift": "yellow",
+    "auth_expired": "red",
+    "blocked": "red",
+    "error": "red",
+}
+
+_CATEGORY_LABEL = {
+    "match": "shape:match",
+    "drift": "shape:drift",
+    "auth_expired": "AUTH EXPIRED",
+    "blocked": "BLOCKED",
+    "error": "ERROR",
+}
+
+
+def _auth_label(headers: dict[str, str]) -> str:
+    has_bearer = any(
+        k.lower() == "authorization" and v.startswith("Bearer")
+        for k, v in headers.items()
+    )
+    has_cookie = any(k.lower() == "cookie" for k in headers)
+    parts = []
+    if has_bearer:
+        parts.append("bearer")
+    if has_cookie:
+        parts.append("cookie")
+    return "+".join(parts) if parts else "none"
+
+
+def render_replay(results: list[ReplayResult], console: Console) -> None:
+    console.print()
+    counts: dict[str, int] = {"match": 0, "drift": 0, "auth_expired": 0, "blocked": 0, "error": 0}
+
+    for r in results:
+        cat = r.category
+        counts[cat] = counts.get(cat, 0) + 1
+        sym = _REPLAY_SYMBOL.get(cat, "?")
+        style = _REPLAY_STYLE.get(cat, "")
+        label = _CATEGORY_LABEL.get(cat, cat)
+
+        orig_status = r.original_flow.response_status
+        rep_status = r.replayed_status if r.replayed_status is not None else "err"
+        method = r.original_flow.method.upper()
+        path = r.original_flow.path
+
+        line = (
+            f"  {sym} {method:<4} {path:<30} "
+            f"{orig_status}→{rep_status}  {label}  {r.elapsed_ms:.0f}ms"
+        )
+        console.print(Text(line, style=style))
+
+        if cat == "drift" and r.body_shape_diff:
+            added = r.body_shape_diff.get("added", [])
+            removed = r.body_shape_diff.get("removed", [])
+            for key in added:
+                console.print(Text(f"    + {key}", style="green"))
+            for key in removed:
+                console.print(Text(f"    - {key}", style="red"))
+
+    summary_parts = []
+    for cat in ("match", "drift", "auth_expired", "blocked", "error"):
+        n = counts.get(cat, 0)
+        if n:
+            summary_parts.append(f"{n} {cat.replace('_', ' ')}")
+    console.print()
+    console.print(f"  Summary: {', '.join(summary_parts)}")
+
+
+def render_dry_run(
+    safe: list[CapturedFlow],
+    unsafe: list[CapturedFlow],
+    domain: str,
+    console: Console,
+) -> None:
+    console.print()
+    for flow in safe:
+        ts = (
+            datetime.fromtimestamp(flow.timestamp, tz=UTC).strftime("%Y-%m-%dT%H:%M")
+            if flow.timestamp else "unknown"
+        )
+        auth = _auth_label(flow.request_headers)
+        console.print(f"  {flow.method.upper():<6} {flow.path:<30} captured {ts}  auth:{auth}")
+
+    if unsafe:
+        console.print()
+        console.print("  Skipped (unsafe — use --include-unsafe):")
+        for flow in unsafe:
+            ts = (
+                datetime.fromtimestamp(flow.timestamp, tz=UTC).strftime("%Y-%m-%dT%H:%M")
+                if flow.timestamp else "unknown"
+            )
+            auth = _auth_label(flow.request_headers)
+            console.print(f"  {flow.method.upper():<6} {flow.path:<30} captured {ts}  auth:{auth}")
+
+    console.print()
+    console.print(
+        f"  {len(safe)} safe endpoint{'s' if len(safe) != 1 else ''} would be replayed."
+        f" {len(unsafe)} unsafe skipped."
+    )
+
+
+def replay_to_json(results: list[ReplayResult], domain: str) -> str:
+    replayed_at = datetime.now(UTC).strftime("%Y-%m-%dT%H:%M:%SZ")
+    counts: dict[str, int] = {"match": 0, "drift": 0, "auth_expired": 0, "blocked": 0, "error": 0}
+
+    endpoints = []
+    for r in results:
+        cat = r.category
+        counts[cat] = counts.get(cat, 0) + 1
+        endpoints.append({
+            "method": r.original_flow.method,
+            "path": r.original_flow.path,
+            "original_status": r.original_flow.response_status,
+            "replayed_status": r.replayed_status,
+            "category": cat,
+            "body_shape_diff": r.body_shape_diff,
+            "elapsed_ms": r.elapsed_ms,
+        })
+
+    return json.dumps(
+        {
+            "domain": domain,
+            "replayed_at": replayed_at,
+            "endpoints": endpoints,
+            "summary": counts,
+        },
+        indent=2,
+    )
