@@ -150,20 +150,21 @@ def run_spec(
             stderr.print(f"[red]Unknown input format for {input_file}[/red]")
             return
     else:
-        from apisniff.recon import _CAPTURES_DIR
+        from apisniff.recon import find_latest_bundle
 
-        pattern = f"{domain.replace('.', '-')}*"
-        captures = sorted(_CAPTURES_DIR.glob(pattern), reverse=True)
-        captures = [d for d in captures if d.is_dir()]
-        if not captures:
+        bundle = find_latest_bundle(domain)
+        if bundle is None:
             stderr.print(
                 f"[red]No captures found for {domain}. "
                 f"Run `apisniff recon {domain}` first.[/red]"
             )
             return
-        latest = captures[0] / "flows.jsonl"
-        stderr.print(f"  Using latest capture: {captures[0]}")
-        flows = read_capture_jsonl(str(latest))
+        stderr.print(f"  Using latest capture: {bundle}")
+        flows_path = bundle / "flows.jsonl"
+        if not flows_path.exists():
+            stderr.print(f"[red]flows.jsonl not found in {bundle}[/red]")
+            return
+        flows = read_capture_jsonl(str(flows_path))
 
     api_flows = [
         f for f in flows

@@ -236,7 +236,7 @@ class SessionStats:
         )
 
 
-_ReplayCategory = Literal["match", "drift", "auth_expired", "blocked", "error"]
+ReplayCategory = Literal["match", "drift", "auth_expired", "blocked", "error"]
 
 
 @dataclass(frozen=True, slots=True)
@@ -245,7 +245,7 @@ class ReplayResult:
     replayed_status: int | None
     elapsed_ms: float
     error: str | None
-    category: _ReplayCategory
+    category: ReplayCategory
     status_match: bool
     body_shape_match: bool
     body_shape_diff: dict | None

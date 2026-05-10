@@ -2,29 +2,20 @@ from __future__ import annotations
 
 import time
 
+from apisniff.adapters import join_header_values
 from apisniff.models import CapturedFlow
 
 
 def _build_headers(headers_obj) -> dict[str, str]:
-    """Collapse a mitmproxy Headers object into a plain dict.
-
-    Multi-value headers are joined with ", " except set-cookie, which uses "\n".
-    """
-    result: dict[str, str] = {}
+    grouped: dict[str, list[str]] = {}
     seen: set[str] = set()
     for k, _v in headers_obj.items():
         key = k.lower()
         if key in seen:
             continue
         seen.add(key)
-        values = headers_obj.get_all(key)
-        if len(values) == 1:
-            result[key] = values[0]
-        elif key == "set-cookie":
-            result[key] = "\n".join(values)
-        else:
-            result[key] = ", ".join(values)
-    return result
+        grouped[key] = headers_obj.get_all(key)
+    return join_header_values(grouped)
 
 
 def _build_response_headers(res) -> dict[str, str]:

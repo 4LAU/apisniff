@@ -10,11 +10,11 @@ from typing import Any
 
 from apisniff.models import (
     CapturedFlow,
+    ReplayCategory,
     ReplayResult,
-    _ReplayCategory,
     replay_dedup_key,
 )
-from apisniff.recon import _CAPTURES_DIR, read_capture_jsonl
+from apisniff.recon import find_latest_bundle, read_capture_jsonl
 
 _HOP_BY_HOP = frozenset(
     {"host", "content-length", "content-encoding", "transfer-encoding"}
@@ -25,10 +25,6 @@ _AUTH_HEADERS = frozenset(
 _SAFE_METHODS = frozenset({"GET", "HEAD", "OPTIONS"})
 _MAX_DEPTH = 3
 
-
-# ---------------------------------------------------------------------------
-# 7a. compare_shape()
-# ---------------------------------------------------------------------------
 
 def _shape(value: Any, depth: int) -> Any:
     """Return a structural shape descriptor for a JSON value."""
@@ -121,10 +117,6 @@ def compare_shape(
     return True, None
 
 
-# ---------------------------------------------------------------------------
-# 7b. Cookie file parsing
-# ---------------------------------------------------------------------------
-
 def parse_cookie_file(path: str) -> list[tuple[str, str, str]]:
     """Parse Netscape cookies.txt. Returns list of (domain, name, value)."""
     results: list[tuple[str, str, str]] = []
@@ -162,10 +154,6 @@ def cookies_for_host(
     return "; ".join(matching)
 
 
-# ---------------------------------------------------------------------------
-# 7c. replay_endpoint()
-# ---------------------------------------------------------------------------
-
 def _has_auth_headers(flow: CapturedFlow) -> bool:
     lower_keys = {k.lower() for k in flow.request_headers}
     return bool(lower_keys & _AUTH_HEADERS)
@@ -178,7 +166,7 @@ def _assign_category(
     size_original: int,
     size_replayed: int,
     error: str | None,
-) -> tuple[_ReplayCategory, bool]:
+) -> tuple[ReplayCategory, bool]:
     """Return (category, status_match)."""
     if error or replayed_status is None:
         return "error", False
@@ -295,21 +283,6 @@ async def replay_endpoint(
     )
 
 
-# ---------------------------------------------------------------------------
-# 7d. run_replay()
-# ---------------------------------------------------------------------------
-
-def _find_latest_bundle(domain: str) -> Path | None:
-    """Find the most recent bundle directory for a domain."""
-    safe = domain.replace(".", "-").replace("/", "-")
-    candidates = sorted(
-        _CAPTURES_DIR.glob(f"{safe}_*"),
-        key=lambda p: p.name,
-        reverse=True,
-    )
-    return candidates[0] if candidates else None
-
-
 def _filter_flows(
     flows: list[CapturedFlow],
     include_unsafe: bool,
@@ -317,8 +290,10 @@ def _filter_flows(
     """Return (safe_or_all, unsafe). If include_unsafe, unsafe is empty."""
     if include_unsafe:
         return flows, []
-    safe = [f for f in flows if f.method.upper() in _SAFE_METHODS]
-    unsafe = [f for f in flows if f.method.upper() not in _SAFE_METHODS]
+    safe: list[CapturedFlow] = []
+    unsafe: list[CapturedFlow] = []
+    for f in flows:
+        (safe if f.method.upper() in _SAFE_METHODS else unsafe).append(f)
     return safe, unsafe
 
 
@@ -348,11 +323,10 @@ async def run_replay(
     output_file: str | None = None,
 ) -> list[ReplayResult]:
     """Orchestrate full replay of a captured session bundle."""
-    # 1. Resolve bundle directory
     if bundle_dir:
         bundle = Path(bundle_dir)
     elif domain:
-        bundle = _find_latest_bundle(domain)
+        bundle = find_latest_bundle(domain)
         if bundle is None:
             raise FileNotFoundError(
                 f"No capture bundle found for domain: {domain}"
@@ -364,25 +338,25 @@ async def run_replay(
     if not flows_path.exists():
         raise FileNotFoundError(f"flows.jsonl not found in {bundle}")
 
-    # 2. Load flows
     all_flows = read_capture_jsonl(str(flows_path))
 
-    # 3. Filter by method safety
     safe_flows, unsafe_flows = _filter_flows(all_flows, include_unsafe)
 
-    # 4. Apply path filter
     if filter_:
         safe_flows = [
             f for f in safe_flows if fnmatch.fnmatch(f.path, filter_)
         ]
 
-    # 5. Deduplicate
     flows = _deduplicate(safe_flows)
 
-    # Derive domain from bundle name or flows
-    resolved_domain = domain or bundle.name.rsplit("_", 1)[0].replace("-", ".")
+    if not domain:
+        session_path = bundle / "session.json"
+        try:
+            domain = json.loads(session_path.read_text()).get("domain")
+        except (FileNotFoundError, json.JSONDecodeError, KeyError):
+            pass
+    resolved_domain = domain or "unknown"
 
-    # 6. Dry run — return endpoint list
     if dry_run:
         from rich.console import Console
 
@@ -391,22 +365,20 @@ async def run_replay(
         render_dry_run(flows, unsafe_flows, resolved_domain, console)
         return []
 
-    # 6. Parse cookie file
     cookies: list[tuple[str, str, str]] = []
     if cookie_file:
         cookies = parse_cookie_file(cookie_file)
 
-    # 7. Replay with semaphore, stagger, and 429 backoff
     semaphore = asyncio.Semaphore(concurrency)
     results: list[ReplayResult] = []
 
     async def _replay_with_retry(flow: CapturedFlow, index: int) -> ReplayResult:
         await asyncio.sleep(min(index * 0.1, 2.0))
         backoff_delays = [1.0, 2.0, 4.0]
-        async with semaphore:
-            for attempt, delay in enumerate([0.0] + backoff_delays):
-                if delay:
-                    await asyncio.sleep(delay)
+        for attempt, delay in enumerate([0.0] + backoff_delays):
+            if delay:
+                await asyncio.sleep(delay)
+            async with semaphore:
                 result = await replay_endpoint(
                     flow,
                     headers=extra_headers,
@@ -414,16 +386,14 @@ async def run_replay(
                     timeout=timeout,
                     insecure=insecure,
                 )
-                if result.replayed_status == 429 and attempt < len(backoff_delays):
-                    continue
-                return result
-        # Should never reach here, but satisfy type checker
+            if result.replayed_status == 429 and attempt < len(backoff_delays):
+                continue
+            return result
         return result  # type: ignore[return-value]
 
     tasks = [_replay_with_retry(flow, i) for i, flow in enumerate(flows)]
     results = list(await asyncio.gather(*tasks))
 
-    # 8. Output
     from rich.console import Console
 
     from apisniff.output import render_replay, replay_to_json

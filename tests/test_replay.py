@@ -145,32 +145,28 @@ api.example.com\tFALSE\t/\tFALSE\t0\tcsrf\txyz789
 
 
 class TestCookieParsing:
-    def _write_cookies(self, content: str) -> str:
-        with tempfile.NamedTemporaryFile(
-            mode="w", suffix=".txt", delete=False
-        ) as f:
-            f.write(content)
-            return f.name
+    def _write_cookies(self, tmp_path: Path, content: str) -> str:
+        p = tmp_path / "cookies.txt"
+        p.write_text(content)
+        return str(p)
 
-    def test_parse_returns_tuples(self):
-        path = self._write_cookies(NETSCAPE_COOKIES)
+    def test_parse_returns_tuples(self, tmp_path: Path):
+        path = self._write_cookies(tmp_path, NETSCAPE_COOKIES)
         result = parse_cookie_file(path)
-        # Comments and blank lines skipped
         assert len(result) == 3
         assert result[0] == (".example.com", "session", "abc123")
         assert result[1] == ("api.example.com", "csrf", "xyz789")
         assert result[2] == (".other.com", "secret", "999")
 
-    def test_suffix_match_applies_to_subdomain(self):
-        cookies = parse_cookie_file(self._write_cookies(NETSCAPE_COOKIES))
+    def test_suffix_match_applies_to_subdomain(self, tmp_path: Path):
+        cookies = parse_cookie_file(self._write_cookies(tmp_path, NETSCAPE_COOKIES))
         header = cookies_for_host(cookies, "api.example.com")
-        # .example.com (suffix match) + api.example.com (exact match)
         assert "session=abc123" in header
         assert "csrf=xyz789" in header
         assert "secret=999" not in header
 
-    def test_other_com_not_matched(self):
-        cookies = parse_cookie_file(self._write_cookies(NETSCAPE_COOKIES))
+    def test_other_com_not_matched(self, tmp_path: Path):
+        cookies = parse_cookie_file(self._write_cookies(tmp_path, NETSCAPE_COOKIES))
         header = cookies_for_host(cookies, "api.example.com")
         assert "999" not in header
 
@@ -185,13 +181,12 @@ class TestCookieParsing:
         assert header == ""
 
     def test_suffix_match_apex_too(self):
-        # .example.com should also match example.com itself
         cookies = [(".example.com", "session", "xyz")]
         header = cookies_for_host(cookies, "example.com")
         assert "session=xyz" in header
 
-    def test_no_match_returns_empty_string(self):
-        cookies = parse_cookie_file(self._write_cookies(NETSCAPE_COOKIES))
+    def test_no_match_returns_empty_string(self, tmp_path: Path):
+        cookies = parse_cookie_file(self._write_cookies(tmp_path, NETSCAPE_COOKIES))
         header = cookies_for_host(cookies, "unrelated.io")
         assert header == ""
 

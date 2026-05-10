@@ -4,6 +4,7 @@ import base64
 import xml.etree.ElementTree as ET
 from urllib.parse import urlparse
 
+from apisniff.adapters import join_header_values
 from apisniff.models import CapturedFlow
 
 
@@ -19,10 +20,6 @@ def _decode_raw(element: ET.Element) -> bytes:
 
 
 def _parse_raw_headers(header_block: str) -> dict[str, str]:
-    """Parse the header section of a raw HTTP message (excludes the first line).
-
-    Multi-value headers are joined with ", " except set-cookie which uses "\\n".
-    """
     grouped: dict[str, list[str]] = {}
     for line in header_block.replace("\r\n", "\n").split("\n"):
         if not line:
@@ -33,14 +30,7 @@ def _parse_raw_headers(header_block: str) -> dict[str, str]:
         key = line[:colon].strip().lower()
         value = line[colon + 1:].strip()
         grouped.setdefault(key, []).append(value)
-
-    result: dict[str, str] = {}
-    for key, values in grouped.items():
-        if key == "set-cookie":
-            result[key] = "\n".join(values)
-        else:
-            result[key] = ", ".join(values)
-    return result
+    return join_header_values(grouped)
 
 
 def _split_http_message(raw: bytes) -> tuple[dict[str, str], bytes]:

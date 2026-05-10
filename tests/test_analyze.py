@@ -129,7 +129,7 @@ def test_run_analyze_auto_detect_domain(tmp_path: Path) -> None:
 
 
 def test_run_analyze_auto_detect_warns_ambiguous(
-    tmp_path: Path, capsys: pytest.CaptureFixture
+    tmp_path: Path, capfd: pytest.CaptureFixture
 ) -> None:
     """Ambiguous domain triggers a warning (stderr) but does not abort."""
     # Two equally-common domains → should warn
@@ -143,6 +143,9 @@ def test_run_analyze_auto_detect_warns_ambiguous(
     bundle_dir = tmp_path / "bundle"
     # Should not raise even when ambiguous
     run_analyze(str(har_file), output_dir=str(bundle_dir))
+
+    captured = capfd.readouterr()
+    assert "ambiguous" in captured.err.lower()
 
     # bundle should still be created
     assert (bundle_dir / "session.json").exists()

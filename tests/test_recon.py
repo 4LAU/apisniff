@@ -25,12 +25,14 @@ def test_write_and_read_jsonl():
         path = f.name
         write_flow_jsonl(f, flow)
 
-    flows = read_capture_jsonl(path)
-    assert len(flows) == 1
-    assert flows[0].method == "GET"
-    assert flows[0].host == "example.com"
-    assert flows[0].tags == ["api_signal"]
-    Path(path).unlink()
+    try:
+        flows = read_capture_jsonl(path)
+        assert len(flows) == 1
+        assert flows[0].method == "GET"
+        assert flows[0].host == "example.com"
+        assert flows[0].tags == ["api_signal"]
+    finally:
+        Path(path).unlink()
 
 
 def test_detect_input_format_har():

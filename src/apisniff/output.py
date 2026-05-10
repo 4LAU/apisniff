@@ -163,9 +163,19 @@ _CATEGORY_LABEL = {
 }
 
 
+_CATEGORIES = ("match", "drift", "auth_expired", "blocked", "error")
+
+
+def _tally_results(results: list[ReplayResult]) -> dict[str, int]:
+    counts: dict[str, int] = {c: 0 for c in _CATEGORIES}
+    for r in results:
+        counts[r.category] = counts.get(r.category, 0) + 1
+    return counts
+
+
 def _auth_label(headers: dict[str, str]) -> str:
     has_bearer = any(
-        k.lower() == "authorization" and v.startswith("Bearer")
+        k.lower() == "authorization" and v.lower().startswith("bearer")
         for k, v in headers.items()
     )
     has_cookie = any(k.lower() == "cookie" for k in headers)
@@ -179,11 +189,10 @@ def _auth_label(headers: dict[str, str]) -> str:
 
 def render_replay(results: list[ReplayResult], console: Console) -> None:
     console.print()
-    counts: dict[str, int] = {"match": 0, "drift": 0, "auth_expired": 0, "blocked": 0, "error": 0}
+    counts = _tally_results(results)
 
     for r in results:
         cat = r.category
-        counts[cat] = counts.get(cat, 0) + 1
         sym = _REPLAY_SYMBOL.get(cat, "?")
         style = _REPLAY_STYLE.get(cat, "")
         label = _CATEGORY_LABEL.get(cat, cat)
@@ -212,7 +221,7 @@ def render_replay(results: list[ReplayResult], console: Console) -> None:
                         )
 
     summary_parts = []
-    for cat in ("match", "drift", "auth_expired", "blocked", "error"):
+    for cat in _CATEGORIES:
         n = counts.get(cat, 0)
         if n:
             summary_parts.append(f"{n} {cat.replace('_', ' ')}")
@@ -255,18 +264,16 @@ def render_dry_run(
 
 def replay_to_json(results: list[ReplayResult], domain: str) -> str:
     replayed_at = datetime.now(UTC).strftime("%Y-%m-%dT%H:%M:%SZ")
-    counts: dict[str, int] = {"match": 0, "drift": 0, "auth_expired": 0, "blocked": 0, "error": 0}
+    counts = _tally_results(results)
 
     endpoints = []
     for r in results:
-        cat = r.category
-        counts[cat] = counts.get(cat, 0) + 1
         endpoints.append({
             "method": r.original_flow.method,
             "path": r.original_flow.path,
             "original_status": r.original_flow.response_status,
             "replayed_status": r.replayed_status,
-            "category": cat,
+            "category": r.category,
             "body_shape_diff": r.body_shape_diff,
             "elapsed_ms": r.elapsed_ms,
         })

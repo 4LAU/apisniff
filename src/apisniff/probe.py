@@ -3,7 +3,7 @@ from __future__ import annotations
 import asyncio
 import json
 import time
-from datetime import datetime
+from datetime import UTC, datetime
 from urllib.parse import urlparse
 
 import httpx
@@ -321,10 +321,10 @@ async def run_probes(
             schema_url = url.rstrip("/") + graphql_endpoints[0]
             schema = await fetch_graphql_schema(schema_url, headers, proxy)
             if schema:
-                from apisniff.recon import _CAPTURES_DIR
+                from apisniff.recon import CAPTURES_DIR
                 domain = urlparse(url).hostname or "unknown"
-                ts = datetime.now().strftime("%Y-%m-%d_%H-%M")
-                schema_path = _CAPTURES_DIR / f"{domain}-schema-{ts}.graphql.json"
+                ts = datetime.now(UTC).strftime("%Y-%m-%d_%H-%M")
+                schema_path = CAPTURES_DIR / f"{domain}-schema-{ts}.graphql.json"
                 schema_path.parent.mkdir(parents=True, exist_ok=True)
                 schema_path.write_text(json.dumps(schema, indent=2))
                 graphql_schema_path = str(schema_path)

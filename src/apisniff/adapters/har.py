@@ -5,28 +5,19 @@ import json
 from datetime import datetime
 from urllib.parse import urlparse
 
+from apisniff.adapters import join_header_values
 from apisniff.models import CapturedFlow
 
 
 def _parse_headers(header_list: list[dict]) -> dict[str, str]:
-    """Group HAR headers by lowercased name.
-
-    Per RFC 9110 multiple values for the same header are joined with ", ",
-    except Set-Cookie which must remain newline-separated so each directive
-    is individually parseable.
-    """
     grouped: dict[str, list[str]] = {}
     for h in header_list:
-        key = h["name"].lower()
-        grouped.setdefault(key, []).append(h["value"])
-
-    result: dict[str, str] = {}
-    for key, values in grouped.items():
-        if key == "set-cookie":
-            result[key] = "\n".join(values)
-        else:
-            result[key] = ", ".join(values)
-    return result
+        name = h.get("name")
+        if not name:
+            continue
+        key = name.lower()
+        grouped.setdefault(key, []).append(h.get("value", ""))
+    return join_header_values(grouped)
 
 
 def _parse_timestamp(entry: dict) -> float:

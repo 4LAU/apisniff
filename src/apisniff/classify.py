@@ -29,7 +29,7 @@ def _load_yaml(name: str) -> dict | list:
         return yaml.safe_load(f)
 
 
-def _extract_registered_domain(hostname: str) -> str:
+def extract_registered_domain(hostname: str) -> str:
     h = hostname.lower().rstrip(".")
     if not h:
         return h
@@ -52,7 +52,7 @@ def _matches_domain_list(domain: str, domain_list: list[str]) -> bool:
 
 class Classifier:
     def __init__(self, target_domain: str) -> None:
-        self._target_rd = _extract_registered_domain(target_domain)
+        self._target_rd = extract_registered_domain(target_domain)
         self._related_domains: set[str] = set()
 
         indicators = _load_yaml("challenge_indicators.yaml")
@@ -125,7 +125,7 @@ class Classifier:
         return ""
 
     def _is_third_party(self, flow: CapturedFlow) -> bool:
-        rd = _extract_registered_domain(flow.host)
+        rd = extract_registered_domain(flow.host)
         if rd == self._target_rd:
             return False
         if rd in self._related_domains:
@@ -135,7 +135,7 @@ class Classifier:
         for val in (referer, origin):
             if val:
                 h = _host_from_url(val)
-                if h and _extract_registered_domain(h) == self._target_rd:
+                if h and extract_registered_domain(h) == self._target_rd:
                     self._related_domains.add(rd)
                     return False
         return True
@@ -155,7 +155,7 @@ class Classifier:
                     host = host.split("//", 1)[1].split("/", 1)[0].split(":", 1)[0]
                 if not host or "." not in host:
                     continue
-                rd = _extract_registered_domain(host)
+                rd = extract_registered_domain(host)
                 if rd and rd != self._target_rd:
                     if not _matches_domain_list(host, self._noise_domains):
                         self._related_domains.add(rd)

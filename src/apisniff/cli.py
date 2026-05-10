@@ -22,6 +22,15 @@ _EXIT_ERROR = 1
 _EXIT_BLOCKED = 2
 
 
+def _parse_header_args(header: list[str] | None) -> dict[str, str]:
+    result: dict[str, str] = {}
+    if header:
+        for h in header:
+            k, _, v = h.partition(":")
+            result[k.strip()] = v.strip()
+    return result
+
+
 @app.command()
 def probe(
     url: str = typer.Argument(help="URL to probe (e.g. redfin.com)"),
@@ -42,11 +51,7 @@ def probe(
     from apisniff.output import probe_to_json, render_probe
     from apisniff.probe import run_probes
 
-    extra_headers: dict[str, str] = {}
-    if header:
-        for h in header:
-            k, _, v = h.partition(":")
-            extra_headers[k.strip()] = v.strip()
+    extra_headers = _parse_header_args(header)
     if cookie:
         extra_headers["cookie"] = cookie
 
@@ -130,11 +135,7 @@ def replay(
     """Replay captured API calls and detect drift."""
     from apisniff.replay import run_replay
 
-    extra_headers: dict[str, str] = {}
-    if header:
-        for h in header:
-            k, _, v = h.partition(":")
-            extra_headers[k.strip()] = v.strip()
+    extra_headers = _parse_header_args(header)
 
     kwargs: dict = dict(
         filter_=filter_pattern,

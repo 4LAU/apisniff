@@ -16,9 +16,23 @@ from rich.console import Console
 
 from apisniff.models import CapturedFlow, SessionStats
 
-_CAPTURES_DIR = Path.home() / "apisniff-captures"
+CAPTURES_DIR = Path.home() / "apisniff-captures"
 
 stderr = Console(stderr=True)
+
+
+def safe_bundle_name(domain: str) -> str:
+    return domain.replace(".", "-").replace("/", "-")
+
+
+def find_latest_bundle(domain: str) -> Path | None:
+    safe = safe_bundle_name(domain)
+    candidates = sorted(
+        (p for p in CAPTURES_DIR.glob(f"{safe}_*") if p.is_dir()),
+        key=lambda p: p.name,
+        reverse=True,
+    )
+    return candidates[0] if candidates else None
 
 
 def write_flow_jsonl(f: IO, flow: CapturedFlow) -> None:
@@ -51,19 +65,84 @@ def detect_input_format(head: str) -> str:
 def load_flows(path: str) -> tuple[list[CapturedFlow], str]:
     """Load flows from HAR, Burp XML, or JSONL file. Returns (flows, format)."""
     p = Path(path)
-    head = p.read_bytes()[:1024].decode("utf-8", errors="replace")
-    fmt = detect_input_format(head)
+    text = p.read_text()
+    fmt = detect_input_format(text[:1024])
     if fmt == "har":
         from apisniff.adapters.har import har_to_flows
-        flows = har_to_flows(p.read_text())
+        flows = har_to_flows(text)
     elif fmt == "burp":
         from apisniff.adapters.burp import burp_to_flows
-        flows = burp_to_flows(p.read_text())
+        flows = burp_to_flows(text)
     elif fmt == "jsonl":
         flows = read_capture_jsonl(path)
     else:
         flows = []
     return flows, fmt
+
+
+def _post_process_bundle(
+    domain: str,
+    flows: list[CapturedFlow],
+    bundle_dir: Path,
+    session_stats: SessionStats | None,
+    *,
+    fetch_graphql: bool = True,
+) -> str:
+    """Auth, cookies, GraphQL, vendors, report. Returns report markdown."""
+    import asyncio
+
+    from apisniff.auth import cookies_to_cookiejar, detect_auth, extract_cookies
+    auth_patterns = detect_auth(flows)
+    cookies = extract_cookies(flows)
+
+    cookies_txt = cookies_to_cookiejar(cookies)
+    if cookies_txt:
+        cookies_path = bundle_dir / "cookies.txt"
+        cookies_path.write_text(cookies_txt)
+        stderr.print(f"  Cookies: {cookies_path}")
+
+    if fetch_graphql:
+        from apisniff.probe import fetch_graphql_schema
+        gql_flows = [f for f in flows if "graphql" in f.path.lower()]
+        gql_paths = sorted({f.path for f in gql_flows})
+        gql_headers: dict[str, str] = {}
+        if gql_flows:
+            sample = gql_flows[0].request_headers
+            for hdr in ("authorization", "cookie", "x-api-key"):
+                if hdr in sample:
+                    gql_headers[hdr] = sample[hdr]
+        for gql_path in gql_paths:
+            schema_url = f"https://{domain}{gql_path}"
+            schema = asyncio.run(
+                fetch_graphql_schema(schema_url, headers=gql_headers or None)
+            )
+            if schema:
+                schema_path = bundle_dir / "graphql-schema.json"
+                schema_path.write_text(json.dumps(schema, indent=2))
+                stderr.print(f"  GraphQL schema: {schema_path}")
+                break
+
+    from apisniff.models import ProbeResult
+    from apisniff.vendors import load_signatures, match_vendors
+    probe_results = [
+        ProbeResult(
+            label="captured", status=f.response_status,
+            headers=f.response_headers, body=f.response_body,
+            elapsed_ms=0.0, error=None,
+        )
+        for f in flows
+    ]
+    sigs = load_signatures()
+    vendors = match_vendors(probe_results, sigs)
+
+    from apisniff.report import generate_report
+    report = generate_report(
+        domain=domain, flows=flows, session_stats=session_stats,
+        vendors=vendors, auth_patterns=auth_patterns, cookies=cookies,
+    )
+    report_path = bundle_dir / "report.md"
+    report_path.write_text(report)
+    return report
 
 
 def run_recon(
@@ -72,11 +151,11 @@ def run_recon(
     proxy: str | None = None,
     json_output: bool = False,
 ) -> None:
-    _CAPTURES_DIR.mkdir(parents=True, exist_ok=True)
-    _CAPTURES_DIR.chmod(0o700)
+    CAPTURES_DIR.mkdir(parents=True, exist_ok=True)
+    CAPTURES_DIR.chmod(0o700)
     ts = datetime.now().strftime("%Y-%m-%d_%H-%M")
-    safe_domain = domain.replace(".", "-").replace("/", "-")
-    bundle_dir = _CAPTURES_DIR / f"{safe_domain}_{ts}"
+    safe_domain = safe_bundle_name(domain)
+    bundle_dir = CAPTURES_DIR / f"{safe_domain}_{ts}"
     bundle_dir.mkdir(parents=True, exist_ok=True)
     bundle_dir.chmod(0o700)
     output_path = bundle_dir / "flows.jsonl"
@@ -161,63 +240,10 @@ def run_recon(
         stderr.print(f"\n  No flows captured → {bundle_dir}\n")
         return
 
-    from apisniff.auth import cookies_to_cookiejar, detect_auth, extract_cookies
-    auth_patterns = detect_auth(flows)
-    cookies = extract_cookies(flows)
-
-    # Response-derived only — request cookies lack authoritative scope
-    cookies_txt = cookies_to_cookiejar(cookies)
-    if cookies_txt:
-        cookies_path = bundle_dir / "cookies.txt"
-        cookies_path.write_text(cookies_txt)
-        stderr.print(f"  Cookies: {cookies_path}")
-
-    import asyncio
-
-    from apisniff.probe import fetch_graphql_schema
-    gql_flows = [f for f in flows if "graphql" in f.path.lower()]
-    gql_paths = sorted({f.path for f in gql_flows})
-    # Schema fetch may require auth — forward headers from a captured GraphQL flow
-    gql_headers: dict[str, str] = {}
-    if gql_flows:
-        sample = gql_flows[0].request_headers
-        for hdr in ("authorization", "cookie", "x-api-key"):
-            if hdr in sample:
-                gql_headers[hdr] = sample[hdr]
-    for gql_path in gql_paths:
-        schema_url = f"https://{domain}{gql_path}"
-        schema = asyncio.run(fetch_graphql_schema(schema_url, headers=gql_headers or None))
-        if schema:
-            schema_path = bundle_dir / "graphql-schema.json"
-            schema_path.write_text(json.dumps(schema, indent=2))
-            stderr.print(f"  GraphQL schema: {schema_path}")
-            break  # one schema per session is enough
-
-    from apisniff.models import ProbeResult
-    from apisniff.vendors import load_signatures, match_vendors
-    probe_results = [
-        ProbeResult(
-            label="captured", status=f.response_status,
-            headers=f.response_headers, body=f.response_body,
-            elapsed_ms=0.0, error=None,
-        )
-        for f in flows
-    ]
-    sigs = load_signatures()
-    vendors = match_vendors(probe_results, sigs)
-
-    from apisniff.report import generate_report
-    report = generate_report(
-        domain=domain, flows=flows, session_stats=session_stats,
-        vendors=vendors, auth_patterns=auth_patterns, cookies=cookies,
-    )
-
-    report_path = bundle_dir / "report.md"
-    report_path.write_text(report)
-
+    report = _post_process_bundle(domain, flows, bundle_dir, session_stats)
     from rich.markdown import Markdown
     stderr.print(Markdown(report))
-    stderr.print(f"\n  Report: {report_path}")
+    stderr.print(f"\n  Report: {bundle_dir / 'report.md'}")
     stderr.print(f"  Captured [bold]{len(flows)}[/bold] classified flows → {bundle_dir}\n")
 
 
@@ -237,9 +263,9 @@ def run_analyze(
 
     # 2. Auto-detect domain from the flows if not provided
     if domain is None:
-        from apisniff.classify import _extract_registered_domain
+        from apisniff.classify import extract_registered_domain
         host_counter: Counter[str] = Counter(
-            _extract_registered_domain(f.host) for f in flows if f.host
+            extract_registered_domain(f.host) for f in flows if f.host
         )
         if not host_counter:
             stderr.print("[red]Cannot determine domain — use --domain.[/red]")
@@ -290,11 +316,11 @@ def run_analyze(
     if output_dir:
         bundle_dir = Path(output_dir)
     else:
-        _CAPTURES_DIR.mkdir(parents=True, exist_ok=True)
-        _CAPTURES_DIR.chmod(0o700)
+        CAPTURES_DIR.mkdir(parents=True, exist_ok=True)
+        CAPTURES_DIR.chmod(0o700)
         ts = datetime.now().strftime("%Y-%m-%d_%H-%M")
-        safe_domain = domain.replace(".", "-").replace("/", "-")
-        bundle_dir = _CAPTURES_DIR / f"{safe_domain}_{ts}_analyze"
+        safe_domain = safe_bundle_name(domain)
+        bundle_dir = CAPTURES_DIR / f"{safe_domain}_{ts}_analyze"
 
     bundle_dir.mkdir(parents=True, exist_ok=True)
     bundle_dir.chmod(0o700)
@@ -307,61 +333,10 @@ def run_analyze(
     session_path = bundle_dir / "session.json"
     session_path.write_text(json.dumps(session_stats.to_dict(), indent=2))
 
-    # 5. Auth + cookies
-    from apisniff.auth import cookies_to_cookiejar, detect_auth, extract_cookies
-    auth_patterns = detect_auth(kept_flows)
-    cookies = extract_cookies(kept_flows)
-
-    cookies_txt = cookies_to_cookiejar(cookies)
-    if cookies_txt:
-        cookies_path = bundle_dir / "cookies.txt"
-        cookies_path.write_text(cookies_txt)
-        stderr.print(f"  Cookies: {cookies_path}")
-
-    # 6. Optional GraphQL schema fetch
-    if fetch_graphql:
-        import asyncio
-
-        from apisniff.probe import fetch_graphql_schema
-        gql_flows = [f for f in kept_flows if "graphql" in f.path.lower()]
-        gql_paths = sorted({f.path for f in gql_flows})
-        gql_headers: dict[str, str] = {}
-        if gql_flows:
-            sample = gql_flows[0].request_headers
-            for hdr in ("authorization", "cookie", "x-api-key"):
-                if hdr in sample:
-                    gql_headers[hdr] = sample[hdr]
-        for gql_path in gql_paths:
-            schema_url = f"https://{domain}{gql_path}"
-            schema = asyncio.run(fetch_graphql_schema(schema_url, headers=gql_headers or None))
-            if schema:
-                schema_path = bundle_dir / "graphql-schema.json"
-                schema_path.write_text(json.dumps(schema, indent=2))
-                stderr.print(f"  GraphQL schema: {schema_path}")
-                break
-
-    # 7. Vendor matching
-    from apisniff.models import ProbeResult
-    from apisniff.vendors import load_signatures, match_vendors
-    probe_results = [
-        ProbeResult(
-            label="captured", status=f.response_status,
-            headers=f.response_headers, body=f.response_body,
-            elapsed_ms=0.0, error=None,
-        )
-        for f in kept_flows
-    ]
-    sigs = load_signatures()
-    vendors = match_vendors(probe_results, sigs)
-
-    # 8. Report
-    from apisniff.report import generate_report
-    report = generate_report(
-        domain=domain, flows=kept_flows, session_stats=session_stats,
-        vendors=vendors, auth_patterns=auth_patterns, cookies=cookies,
+    report = _post_process_bundle(
+        domain, kept_flows, bundle_dir, session_stats,
+        fetch_graphql=fetch_graphql,
     )
-    report_path = bundle_dir / "report.md"
-    report_path.write_text(report)
 
     if json_output:
         sys.stdout.write(json.dumps(session_stats.to_dict(), indent=2) + "\n")
@@ -369,5 +344,5 @@ def run_analyze(
         from rich.markdown import Markdown
         stderr.print(Markdown(report))
 
-    stderr.print(f"\n  Report: {report_path}")
+    stderr.print(f"\n  Report: {bundle_dir / 'report.md'}")
     stderr.print(f"  Analyzed [bold]{len(kept_flows)}[/bold] flows → {bundle_dir}\n")
