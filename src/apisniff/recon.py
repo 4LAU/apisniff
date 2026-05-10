@@ -47,7 +47,10 @@ def read_capture_jsonl(path: str) -> list[CapturedFlow]:
             line = line.strip()
             if not line:
                 continue
-            flows.append(CapturedFlow.from_dict(json.loads(line)))
+            try:
+                flows.append(CapturedFlow.from_dict(json.loads(line)))
+            except (json.JSONDecodeError, KeyError, TypeError, ValueError, AttributeError):
+                continue
     return flows
 
 
@@ -153,7 +156,7 @@ def run_recon(
 ) -> None:
     CAPTURES_DIR.mkdir(parents=True, exist_ok=True)
     CAPTURES_DIR.chmod(0o700)
-    ts = datetime.now().strftime("%Y-%m-%d_%H-%M")
+    ts = datetime.now(UTC).strftime("%Y-%m-%d_%H-%M")
     safe_domain = safe_bundle_name(domain)
     bundle_dir = CAPTURES_DIR / f"{safe_domain}_{ts}"
     bundle_dir.mkdir(parents=True, exist_ok=True)
@@ -318,7 +321,7 @@ def run_analyze(
     else:
         CAPTURES_DIR.mkdir(parents=True, exist_ok=True)
         CAPTURES_DIR.chmod(0o700)
-        ts = datetime.now().strftime("%Y-%m-%d_%H-%M")
+        ts = datetime.now(UTC).strftime("%Y-%m-%d_%H-%M")
         safe_domain = safe_bundle_name(domain)
         bundle_dir = CAPTURES_DIR / f"{safe_domain}_{ts}_analyze"
 

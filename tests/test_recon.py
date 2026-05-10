@@ -35,6 +35,34 @@ def test_write_and_read_jsonl():
         Path(path).unlink()
 
 
+def test_read_jsonl_skips_malformed_lines(tmp_path: Path):
+    valid_line = CapturedFlow(
+        method="GET",
+        host="example.com",
+        path="/ok",
+        url="https://example.com/ok",
+        request_headers={},
+        request_body=b"",
+        response_status=200,
+        response_headers={},
+        response_body=b"{}",
+        tags=[],
+        timestamp=1715100000.0,
+    ).to_jsonl()
+
+    p = tmp_path / "mixed.jsonl"
+    p.write_text("\n".join([
+        valid_line,
+        "not json at all",
+        '{"method": "GET"}',
+        "",
+        valid_line,
+    ]))
+
+    flows = read_capture_jsonl(str(p))
+    assert len(flows) == 2
+
+
 def test_detect_input_format_har():
     har = '{"log": {"entries": []}}'
     assert detect_input_format(har) == "har"

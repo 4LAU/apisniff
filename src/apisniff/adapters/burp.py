@@ -15,7 +15,10 @@ def _decode_raw(element: ET.Element) -> bytes:
     """
     text = element.text or ""
     if element.get("base64") == "true":
-        return base64.b64decode(text)
+        try:
+            return base64.b64decode(text)
+        except Exception:
+            return text.encode("utf-8", errors="replace")
     return text.encode("utf-8")
 
 
@@ -79,7 +82,10 @@ def burp_to_flows(xml_text: str) -> list[CapturedFlow]:
             path = path + "?" + parsed.query
 
         method = method_el.text.strip() if method_el is not None and method_el.text else "GET"
-        status = int(status_el.text.strip()) if status_el is not None and status_el.text else 0
+        try:
+            status = int(status_el.text.strip()) if status_el is not None and status_el.text else 0
+        except ValueError:
+            status = 0
 
         if request_el is not None:
             raw_req = _decode_raw(request_el)

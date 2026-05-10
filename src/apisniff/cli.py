@@ -116,7 +116,9 @@ def analyze(
 def replay(
     bundle: str = typer.Argument(help="Bundle directory path or domain name"),
     filter_pattern: str | None = typer.Option(None, "--filter", help="Glob filter for paths"),
-    concurrency: int = typer.Option(3, "--concurrency", help="Max concurrent requests"),
+    concurrency: int = typer.Option(
+        3, "--concurrency", min=1, max=100, help="Max concurrent requests"
+    ),
     timeout: int = typer.Option(10, "--timeout", help="Request timeout in seconds"),
     cookie_file: str | None = typer.Option(None, "--cookie-file", help="Netscape cookies.txt path"),
     header: list[str] | None = typer.Option(

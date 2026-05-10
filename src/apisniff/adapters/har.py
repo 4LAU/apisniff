@@ -56,8 +56,11 @@ def har_to_flows(har_text: str) -> list[CapturedFlow]:
 
         content = resp.get("content", {}) or {}
         resp_body_text = content.get("text", "") or ""
-        if content.get("encoding") == "base64" and resp_body_text:
-            resp_body: bytes = base64.b64decode(resp_body_text)
+        if content.get("encoding", "").lower() == "base64" and resp_body_text:
+            try:
+                resp_body: bytes = base64.b64decode(resp_body_text)
+            except Exception:
+                resp_body = resp_body_text.encode("utf-8", errors="replace")
         else:
             resp_body = (
                 resp_body_text.encode("utf-8")

@@ -325,7 +325,8 @@ async def run_probes(
                 domain = urlparse(url).hostname or "unknown"
                 ts = datetime.now(UTC).strftime("%Y-%m-%d_%H-%M")
                 schema_path = CAPTURES_DIR / f"{domain}-schema-{ts}.graphql.json"
-                schema_path.parent.mkdir(parents=True, exist_ok=True)
+                CAPTURES_DIR.mkdir(parents=True, exist_ok=True)
+                CAPTURES_DIR.chmod(0o700)
                 schema_path.write_text(json.dumps(schema, indent=2))
                 graphql_schema_path = str(schema_path)
 
