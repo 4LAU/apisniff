@@ -267,13 +267,15 @@ def run_analyze(
         for flow in flows:
             result = classifier.classify(flow)
             if result.action == "keep":
-                assert result.flow is not None
-                kept_flows.append(result.flow)
+                if result.flow is not None:
+                    kept_flows.append(result.flow)
             else:
                 drop_counts[result.category] = drop_counts.get(result.category, 0) + 1
-    else:
-        # JSONL: already classified during capture
+    elif fmt == "jsonl":
         kept_flows = flows
+    else:
+        stderr.print(f"[red]Unrecognised format for {input_file}[/red]")
+        return
 
     session_stats = SessionStats(
         domain=domain,
@@ -362,8 +364,7 @@ def run_analyze(
     report_path.write_text(report)
 
     if json_output:
-        import sys as _sys
-        _sys.stdout.write(json.dumps(session_stats.to_dict(), indent=2) + "\n")
+        sys.stdout.write(json.dumps(session_stats.to_dict(), indent=2) + "\n")
     else:
         from rich.markdown import Markdown
         stderr.print(Markdown(report))
