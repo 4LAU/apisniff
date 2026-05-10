@@ -3,8 +3,7 @@ from __future__ import annotations
 from collections import Counter
 
 from apisniff.auth import AuthPattern, ExtractedCookie
-from apisniff.models import CapturedFlow, SessionStats, VendorMatch
-from apisniff.spec import normalize_path
+from apisniff.models import CapturedFlow, SessionStats, VendorMatch, normalize_path
 
 
 def generate_report(

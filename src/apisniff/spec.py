@@ -2,7 +2,6 @@
 from __future__ import annotations
 
 import json
-import re
 import sys
 from collections import defaultdict
 from pathlib import Path
@@ -10,33 +9,11 @@ from pathlib import Path
 import yaml
 from rich.console import Console
 
-from apisniff.adapters.har import har_to_flows
 from apisniff.auth import AuthPattern, detect_auth
-from apisniff.models import CapturedFlow
-from apisniff.recon import detect_input_format, read_capture_jsonl
+from apisniff.models import CapturedFlow, normalize_path
+from apisniff.recon import load_flows, read_capture_jsonl
 
 stderr = Console(stderr=True)
-
-_UUID_RE = re.compile(
-    r"^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$",
-    re.I,
-)
-_NUMERIC_RE = re.compile(r"^\d+$")
-_HEX_RE = re.compile(r"^[0-9a-f]{16,}$", re.I)
-
-
-def normalize_path(path: str) -> str:
-    parts = path.split("?")[0].split("/")
-    normalized = []
-    for part in parts:
-        if not part:
-            normalized.append(part)
-            continue
-        if _UUID_RE.match(part) or _NUMERIC_RE.match(part) or _HEX_RE.match(part):
-            normalized.append("{id}")
-        else:
-            normalized.append(part)
-    return "/".join(normalized)
 
 
 def _infer_schema(value) -> dict:
@@ -168,14 +145,8 @@ def run_spec(
     infer_schemes: bool = False,
 ) -> None:
     if input_file:
-        path = Path(input_file)
-        text = path.read_text()
-        fmt = detect_input_format(text[:1024])
-        if fmt == "har":
-            flows = har_to_flows(text)
-        elif fmt == "jsonl":
-            flows = read_capture_jsonl(str(path))
-        else:
+        flows, fmt = load_flows(input_file)
+        if fmt == "unknown":
             stderr.print(f"[red]Unknown input format for {input_file}[/red]")
             return
     else:
