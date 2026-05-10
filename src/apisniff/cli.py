@@ -26,7 +26,9 @@ def _parse_header_args(header: list[str] | None) -> dict[str, str]:
     result: dict[str, str] = {}
     if header:
         for h in header:
-            k, _, v = h.partition(":")
+            k, sep, v = h.partition(":")
+            if not sep:
+                raise typer.BadParameter(f"Invalid header (missing ':'): {h}")
             result[k.strip()] = v.strip()
     return result
 

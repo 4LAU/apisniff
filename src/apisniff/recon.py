@@ -49,14 +49,14 @@ def read_capture_jsonl(path: str) -> list[CapturedFlow]:
                 continue
             try:
                 flows.append(CapturedFlow.from_dict(json.loads(line)))
-            except (json.JSONDecodeError, KeyError, TypeError, ValueError, AttributeError):
+            except (json.JSONDecodeError, KeyError, TypeError, ValueError):
                 continue
     return flows
 
 
 def detect_input_format(head: str) -> str:
     stripped = head.strip()
-    if '"log"' in stripped and stripped.startswith("{"):
+    if stripped.startswith('{"log"'):
         return "har"
     if stripped.startswith("{") and '"method"' in stripped:
         return "jsonl"

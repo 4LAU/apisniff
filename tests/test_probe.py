@@ -1,5 +1,5 @@
 # tests/test_probe.py
-from unittest.mock import AsyncMock, patch
+from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
@@ -17,7 +17,7 @@ async def test_fetch_graphql_schema_success():
         }
     }
 
-    mock_response = AsyncMock()
+    mock_response = MagicMock()
     mock_response.status_code = 200
     mock_response.json.return_value = mock_schema
 

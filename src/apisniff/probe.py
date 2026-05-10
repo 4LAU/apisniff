@@ -272,8 +272,7 @@ async def fetch_graphql_schema(
                 },
             )
             if resp.status_code == 200:
-                _raw = resp.json()
-                data = await _raw if asyncio.iscoroutine(_raw) else _raw
+                data = resp.json()
                 if "data" in data and "__schema" in data.get("data", {}):
                     return data
     except Exception:

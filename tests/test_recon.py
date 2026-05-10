@@ -68,6 +68,11 @@ def test_detect_input_format_har():
     assert detect_input_format(har) == "har"
 
 
+def test_detect_input_format_jsonl_with_log_field():
+    line = '{"method": "GET", "host": "example.com", "log": "debug info"}'
+    assert detect_input_format(line) == "jsonl"
+
+
 def test_detect_input_format_jsonl():
     line = '{"method": "GET", "host": "example.com"}'
     assert detect_input_format(line) == "jsonl"
