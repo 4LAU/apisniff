@@ -7,7 +7,8 @@ import signal
 import subprocess
 import sys
 import time
-from datetime import datetime
+from collections import Counter
+from datetime import UTC, datetime
 from pathlib import Path
 from typing import IO
 
@@ -218,3 +219,154 @@ def run_recon(
     stderr.print(Markdown(report))
     stderr.print(f"\n  Report: {report_path}")
     stderr.print(f"  Captured [bold]{len(flows)}[/bold] classified flows → {bundle_dir}\n")
+
+
+def run_analyze(
+    input_file: str,
+    domain: str | None = None,
+    json_output: bool = False,
+    output_dir: str | None = None,
+    fetch_graphql: bool = False,
+) -> None:
+    """Offline analysis: load a traffic capture, classify, extract everything."""
+    # 1. Load flows
+    flows, fmt = load_flows(input_file)
+    if not flows:
+        stderr.print("[yellow]No flows found in input file.[/yellow]")
+        return
+
+    # 2. Auto-detect domain from the flows if not provided
+    if domain is None:
+        from apisniff.classify import _extract_registered_domain
+        host_counter: Counter[str] = Counter(
+            _extract_registered_domain(f.host) for f in flows if f.host
+        )
+        if not host_counter:
+            stderr.print("[red]Cannot determine domain — use --domain.[/red]")
+            return
+        most_common = host_counter.most_common(2)
+        top_domain, top_count = most_common[0]
+        if len(most_common) > 1:
+            _, second_count = most_common[1]
+            if top_count < 2 * second_count:
+                stderr.print(
+                    f"[yellow]Warning: ambiguous domain — "
+                    f"top '{top_domain}' ({top_count}) is not 2x second "
+                    f"({second_count}). Use --domain to specify explicitly.[/yellow]"
+                )
+        domain = top_domain
+
+    # 3. Classify (HAR/Burp) or skip (JSONL)
+    kept_flows: list[CapturedFlow]
+    drop_counts: dict[str, int] = {}
+
+    if fmt in ("har", "burp"):
+        from apisniff.classify import Classifier
+        classifier = Classifier(target_domain=domain)
+        kept_flows = []
+        for flow in flows:
+            result = classifier.classify(flow)
+            if result.action == "keep":
+                assert result.flow is not None
+                kept_flows.append(result.flow)
+            else:
+                drop_counts[result.category] = drop_counts.get(result.category, 0) + 1
+    else:
+        # JSONL: already classified during capture
+        kept_flows = flows
+
+    session_stats = SessionStats(
+        domain=domain,
+        started_at=datetime.now(tz=UTC).isoformat(),
+        duration_seconds=0.0,
+        total_flows=len(flows),
+        kept_flows=len(kept_flows),
+        dropped=drop_counts,
+    )
+
+    # 4. Create bundle dir, write flows.jsonl and session.json
+    if output_dir:
+        bundle_dir = Path(output_dir)
+    else:
+        _CAPTURES_DIR.mkdir(parents=True, exist_ok=True)
+        _CAPTURES_DIR.chmod(0o700)
+        ts = datetime.now().strftime("%Y-%m-%d_%H-%M")
+        safe_domain = domain.replace(".", "-").replace("/", "-")
+        bundle_dir = _CAPTURES_DIR / f"{safe_domain}_{ts}_analyze"
+
+    bundle_dir.mkdir(parents=True, exist_ok=True)
+    bundle_dir.chmod(0o700)
+
+    flows_path = bundle_dir / "flows.jsonl"
+    with open(flows_path, "w") as fh:
+        for flow in kept_flows:
+            fh.write(flow.to_jsonl() + "\n")
+
+    session_path = bundle_dir / "session.json"
+    session_path.write_text(json.dumps(session_stats.to_dict(), indent=2))
+
+    # 5. Auth + cookies
+    from apisniff.auth import cookies_to_cookiejar, detect_auth, extract_cookies
+    auth_patterns = detect_auth(kept_flows)
+    cookies = extract_cookies(kept_flows)
+
+    cookies_txt = cookies_to_cookiejar(cookies)
+    if cookies_txt:
+        cookies_path = bundle_dir / "cookies.txt"
+        cookies_path.write_text(cookies_txt)
+        stderr.print(f"  Cookies: {cookies_path}")
+
+    # 6. Optional GraphQL schema fetch
+    if fetch_graphql:
+        import asyncio
+
+        from apisniff.probe import fetch_graphql_schema
+        gql_flows = [f for f in kept_flows if "graphql" in f.path.lower()]
+        gql_paths = sorted({f.path for f in gql_flows})
+        gql_headers: dict[str, str] = {}
+        if gql_flows:
+            sample = gql_flows[0].request_headers
+            for hdr in ("authorization", "cookie", "x-api-key"):
+                if hdr in sample:
+                    gql_headers[hdr] = sample[hdr]
+        for gql_path in gql_paths:
+            schema_url = f"https://{domain}{gql_path}"
+            schema = asyncio.run(fetch_graphql_schema(schema_url, headers=gql_headers or None))
+            if schema:
+                schema_path = bundle_dir / "graphql-schema.json"
+                schema_path.write_text(json.dumps(schema, indent=2))
+                stderr.print(f"  GraphQL schema: {schema_path}")
+                break
+
+    # 7. Vendor matching
+    from apisniff.models import ProbeResult
+    from apisniff.vendors import load_signatures, match_vendors
+    probe_results = [
+        ProbeResult(
+            label="captured", status=f.response_status,
+            headers=f.response_headers, body=f.response_body,
+            elapsed_ms=0.0, error=None,
+        )
+        for f in kept_flows
+    ]
+    sigs = load_signatures()
+    vendors = match_vendors(probe_results, sigs)
+
+    # 8. Report
+    from apisniff.report import generate_report
+    report = generate_report(
+        domain=domain, flows=kept_flows, session_stats=session_stats,
+        vendors=vendors, auth_patterns=auth_patterns, cookies=cookies,
+    )
+    report_path = bundle_dir / "report.md"
+    report_path.write_text(report)
+
+    if json_output:
+        import sys as _sys
+        _sys.stdout.write(json.dumps(session_stats.to_dict(), indent=2) + "\n")
+    else:
+        from rich.markdown import Markdown
+        stderr.print(Markdown(report))
+
+    stderr.print(f"\n  Report: {report_path}")
+    stderr.print(f"  Analyzed [bold]{len(kept_flows)}[/bold] flows → {bundle_dir}\n")

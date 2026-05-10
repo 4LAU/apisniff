@@ -81,6 +81,32 @@ def recon(
 
 
 @app.command()
+def analyze(
+    input_file: str = typer.Argument(..., help="Input file (HAR, Burp XML, or JSONL)"),
+    domain: str | None = typer.Option(
+        None, "--domain", "-d", help="Target domain (auto-detected if omitted)"
+    ),
+    json_output: bool = typer.Option(False, "--json", help="Output session stats as JSON"),
+    output_dir: str | None = typer.Option(
+        None, "--output-dir", help="Directory to write bundle (default: ~/apisniff-captures/)"
+    ),
+    fetch_graphql: bool = typer.Option(
+        False, "--fetch-graphql", help="Fetch GraphQL schema from detected endpoints"
+    ),
+) -> None:
+    """Offline analysis -- import traffic capture, classify, extract everything."""
+    from apisniff.recon import run_analyze
+
+    run_analyze(
+        input_file,
+        domain=domain,
+        json_output=json_output,
+        output_dir=output_dir,
+        fetch_graphql=fetch_graphql,
+    )
+
+
+@app.command()
 def spec(
     domain: str = typer.Argument(help="Domain to generate spec for"),
     input_file: str | None = typer.Option(
