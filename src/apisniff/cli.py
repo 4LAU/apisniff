@@ -107,6 +107,68 @@ def analyze(
 
 
 @app.command()
+def replay(
+    bundle: str = typer.Argument(help="Bundle directory path or domain name"),
+    filter_pattern: str | None = typer.Option(None, "--filter", help="Glob filter for paths"),
+    concurrency: int = typer.Option(3, "--concurrency", help="Max concurrent requests"),
+    timeout: int = typer.Option(10, "--timeout", help="Request timeout in seconds"),
+    cookie_file: str | None = typer.Option(None, "--cookie-file", help="Netscape cookies.txt path"),
+    header: list[str] | None = typer.Option(
+        None, "--header", "-H", help="Extra header (key:value)"
+    ),
+    json_output: bool = typer.Option(False, "--json", help="Output as JSON"),
+    output_file: str | None = typer.Option(
+        None, "--output", "-o", help="Write JSON output to file"
+    ),
+    dry_run: bool = typer.Option(False, "--dry-run", help="List endpoints without replaying"),
+    include_unsafe: bool = typer.Option(
+        False, "--include-unsafe", help="Include non-GET/HEAD/OPTIONS methods"
+    ),
+    insecure: bool = typer.Option(False, "--insecure", help="Skip TLS verification"),
+) -> None:
+    """Replay captured API calls and detect drift."""
+    import os
+
+    from apisniff.replay import run_replay
+
+    extra_headers: dict[str, str] = {}
+    if header:
+        for h in header:
+            k, _, v = h.partition(":")
+            extra_headers[k.strip()] = v.strip()
+
+    # Detect whether `bundle` is a directory path or a domain name
+    if os.path.isdir(bundle):
+        asyncio.run(run_replay(
+            bundle_dir=bundle,
+            filter_=filter_pattern,
+            concurrency=concurrency,
+            timeout=timeout,
+            cookie_file=cookie_file,
+            extra_headers=extra_headers or None,
+            include_unsafe=include_unsafe,
+            insecure=insecure,
+            dry_run=dry_run,
+            json_output=json_output,
+            output_file=output_file,
+        ))
+    else:
+        asyncio.run(run_replay(
+            domain=bundle,
+            filter_=filter_pattern,
+            concurrency=concurrency,
+            timeout=timeout,
+            cookie_file=cookie_file,
+            extra_headers=extra_headers or None,
+            include_unsafe=include_unsafe,
+            insecure=insecure,
+            dry_run=dry_run,
+            json_output=json_output,
+            output_file=output_file,
+        ))
+
+
+@app.command()
 def spec(
     domain: str = typer.Argument(help="Domain to generate spec for"),
     input_file: str | None = typer.Option(
