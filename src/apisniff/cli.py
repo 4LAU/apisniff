@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import asyncio
+import os
 import sys
 
 import click
@@ -127,8 +128,6 @@ def replay(
     insecure: bool = typer.Option(False, "--insecure", help="Skip TLS verification"),
 ) -> None:
     """Replay captured API calls and detect drift."""
-    import os
-
     from apisniff.replay import run_replay
 
     extra_headers: dict[str, str] = {}
@@ -137,35 +136,24 @@ def replay(
             k, _, v = h.partition(":")
             extra_headers[k.strip()] = v.strip()
 
-    # Detect whether `bundle` is a directory path or a domain name
+    kwargs: dict = dict(
+        filter_=filter_pattern,
+        concurrency=concurrency,
+        timeout=timeout,
+        cookie_file=cookie_file,
+        extra_headers=extra_headers or None,
+        include_unsafe=include_unsafe,
+        insecure=insecure,
+        dry_run=dry_run,
+        json_output=json_output,
+        output_file=output_file,
+    )
     if os.path.isdir(bundle):
-        asyncio.run(run_replay(
-            bundle_dir=bundle,
-            filter_=filter_pattern,
-            concurrency=concurrency,
-            timeout=timeout,
-            cookie_file=cookie_file,
-            extra_headers=extra_headers or None,
-            include_unsafe=include_unsafe,
-            insecure=insecure,
-            dry_run=dry_run,
-            json_output=json_output,
-            output_file=output_file,
-        ))
+        kwargs["bundle_dir"] = bundle
     else:
-        asyncio.run(run_replay(
-            domain=bundle,
-            filter_=filter_pattern,
-            concurrency=concurrency,
-            timeout=timeout,
-            cookie_file=cookie_file,
-            extra_headers=extra_headers or None,
-            include_unsafe=include_unsafe,
-            insecure=insecure,
-            dry_run=dry_run,
-            json_output=json_output,
-            output_file=output_file,
-        ))
+        kwargs["domain"] = bundle
+
+    asyncio.run(run_replay(**kwargs))
 
 
 @app.command()
