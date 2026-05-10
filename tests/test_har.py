@@ -14,7 +14,10 @@ Without these tests, a change could ship that:
 
 from __future__ import annotations
 
+import base64
 import json
+
+import pytest
 
 from apisniff.adapters.har import har_to_flows
 
@@ -32,6 +35,8 @@ def _entry(
     status: int = 200,
     resp_headers: list[dict] | None = None,
     resp_body: str = "",
+    resp_encoding: str | None = None,
+    started_date_time: str | None = None,
 ) -> dict:
     req: dict = {
         "method": method,
@@ -41,12 +46,21 @@ def _entry(
     if post_data_text is not None:
         req["postData"] = {"text": post_data_text}
 
+    content: dict = {"text": resp_body}
+    if resp_encoding is not None:
+        content["encoding"] = resp_encoding
+
     resp: dict = {
         "status": status,
         "headers": resp_headers or [],
-        "content": {"text": resp_body},
+        "content": content,
     }
-    return {"request": req, "response": resp}
+
+    entry: dict = {"request": req, "response": resp}
+    if started_date_time is not None:
+        entry["startedDateTime"] = started_date_time
+
+    return entry
 
 
 # ---------------------------------------------------------------------------
@@ -76,7 +90,7 @@ def test_path_extracted_from_url():
     """Without this test, a change could ship that sets path to '' or the full
     URL and nobody would know."""
     flows = har_to_flows(_har([_entry(url="https://api.example.com/v1/items?q=1")]))
-    assert flows[0].path == "/v1/items"
+    assert flows[0].path == "/v1/items?q=1"
 
 
 # ---------------------------------------------------------------------------
@@ -178,3 +192,65 @@ def test_url_stored_verbatim():
     url = "https://api.example.com/search?q=foo&page=2"
     flows = har_to_flows(_har([_entry(url=url)]))
     assert flows[0].url == url
+
+
+# ---------------------------------------------------------------------------
+# Base64 response body decoding
+# ---------------------------------------------------------------------------
+
+def test_base64_response_body_decoded():
+    """Without this test, a base64-encoded response body would be stored as raw
+    base64 text bytes instead of the actual binary content and nobody would know
+    until binary response analysis silently produced garbage."""
+    raw = b"\x89PNG\r\n\x1a\n"  # PNG magic bytes
+    encoded = base64.b64encode(raw).decode("ascii")
+    flows = har_to_flows(_har([_entry(resp_body=encoded, resp_encoding="base64")]))
+    assert flows[0].response_body == raw
+
+
+# ---------------------------------------------------------------------------
+# Timestamp parsing from startedDateTime
+# ---------------------------------------------------------------------------
+
+def test_timestamp_parsed_from_started_date_time():
+    """Without this test, a change could silently leave timestamp at 0.0 even
+    when startedDateTime is present and nobody would know until time-based
+    analysis produced wrong orderings."""
+    flows = har_to_flows(_har([_entry(started_date_time="2024-03-15T10:30:00Z")]))
+    # 2024-03-15T10:30:00 UTC → Unix timestamp 1710498600
+    assert flows[0].timestamp == pytest.approx(1710498600.0, abs=1.0)
+
+
+def test_missing_started_date_time_defaults_to_zero():
+    """Without this test, a missing startedDateTime could raise an exception
+    instead of defaulting to 0.0 and crash on real HAR files that omit it."""
+    flows = har_to_flows(_har([_entry()]))
+    assert flows[0].timestamp == 0.0
+
+
+# ---------------------------------------------------------------------------
+# Multi-value response headers joined correctly
+# ---------------------------------------------------------------------------
+
+def test_duplicate_non_cookie_response_headers_joined_with_comma():
+    """Without this test, duplicate headers (e.g. Vary) could silently lose all
+    but the last value and nobody would know until cache analysis dropped hints."""
+    resp_h = [
+        {"name": "Vary", "value": "Accept"},
+        {"name": "Vary", "value": "Accept-Encoding"},
+    ]
+    flows = har_to_flows(_har([_entry(resp_headers=resp_h)]))
+    assert flows[0].response_headers["vary"] == "Accept, Accept-Encoding"
+
+
+def test_duplicate_set_cookie_headers_joined_with_newline():
+    """Without this test, multiple Set-Cookie headers would be collapsed into one
+    and cookie parsing would silently mangle auth tokens and nobody would know."""
+    resp_h = [
+        {"name": "Set-Cookie", "value": "session=abc; HttpOnly"},
+        {"name": "Set-Cookie", "value": "theme=dark; SameSite=Lax"},
+    ]
+    flows = har_to_flows(_har([_entry(resp_headers=resp_h)]))
+    assert flows[0].response_headers["set-cookie"] == "session=abc; HttpOnly\ntheme=dark; SameSite=Lax"
+
+
