@@ -1,10 +1,12 @@
 from __future__ import annotations
 
 import asyncio
+import fnmatch
 import json
+import sys
 import time
 from pathlib import Path
-from typing import Any
+from typing import Any, Literal
 
 from apisniff.models import CapturedFlow, ReplayResult, replay_dedup_key
 from apisniff.recon import _CAPTURES_DIR, read_capture_jsonl
@@ -164,6 +166,9 @@ def _has_auth_headers(flow: CapturedFlow) -> bool:
     return bool(lower_keys & _AUTH_HEADERS)
 
 
+_ReplayCategory = Literal["match", "drift", "auth_expired", "blocked", "error"]
+
+
 def _assign_category(
     flow: CapturedFlow,
     replayed_status: int | None,
@@ -171,7 +176,7 @@ def _assign_category(
     size_original: int,
     size_replayed: int,
     error: str | None,
-) -> tuple[str, bool]:
+) -> tuple[_ReplayCategory, bool]:
     """Return (category, status_match)."""
     if error or replayed_status is None:
         return "error", False
@@ -279,7 +284,7 @@ async def replay_endpoint(
         replayed_status=replayed_status,
         elapsed_ms=elapsed_ms,
         error=error,
-        category=category,  # type: ignore[arg-type]
+        category=category,
         status_match=status_match,
         body_shape_match=body_shape_match,
         body_shape_diff=body_shape_diff,
@@ -306,10 +311,13 @@ def _find_latest_bundle(domain: str) -> Path | None:
 def _filter_flows(
     flows: list[CapturedFlow],
     include_unsafe: bool,
-) -> list[CapturedFlow]:
+) -> tuple[list[CapturedFlow], list[CapturedFlow]]:
+    """Return (safe_or_all, unsafe). If include_unsafe, unsafe is empty."""
     if include_unsafe:
-        return flows
-    return [f for f in flows if f.method.upper() in _SAFE_METHODS]
+        return flows, []
+    safe = [f for f in flows if f.method.upper() in _SAFE_METHODS]
+    unsafe = [f for f in flows if f.method.upper() not in _SAFE_METHODS]
+    return safe, unsafe
 
 
 def _deduplicate(flows: list[CapturedFlow]) -> list[CapturedFlow]:
@@ -355,22 +363,30 @@ async def run_replay(
         raise FileNotFoundError(f"flows.jsonl not found in {bundle}")
 
     # 2. Load flows
-    flows = read_capture_jsonl(str(flows_path))
+    all_flows = read_capture_jsonl(str(flows_path))
 
     # 3. Filter by method safety
-    flows = _filter_flows(flows, include_unsafe)
+    safe_flows, unsafe_flows = _filter_flows(all_flows, include_unsafe)
 
-    # 4. Deduplicate
-    flows = _deduplicate(flows)
+    # 4. Apply path filter
+    if filter_:
+        safe_flows = [
+            f for f in safe_flows if fnmatch.fnmatch(f.path, filter_)
+        ]
 
-    # 5. Dry run — return endpoint list
+    # 5. Deduplicate
+    flows = _deduplicate(safe_flows)
+
+    # Derive domain from bundle name or flows
+    resolved_domain = domain or bundle.name.rsplit("_", 1)[0].replace("-", ".")
+
+    # 6. Dry run — return endpoint list
     if dry_run:
-        try:
-            from apisniff.output import render_dry_run
-            render_dry_run(flows)
-        except ImportError:
-            pass
-        # Return empty results for dry run — caller just wants the list
+        from rich.console import Console
+
+        from apisniff.output import render_dry_run
+        console = Console(stderr=True)
+        render_dry_run(flows, unsafe_flows, resolved_domain, console)
         return []
 
     # 6. Parse cookie file
@@ -383,7 +399,7 @@ async def run_replay(
     results: list[ReplayResult] = []
 
     async def _replay_with_retry(flow: CapturedFlow, index: int) -> ReplayResult:
-        await asyncio.sleep(index * 0.1)  # 100ms stagger
+        await asyncio.sleep(min(index * 0.1, 2.0))
         backoff_delays = [1.0, 2.0, 4.0]
         async with semaphore:
             for attempt, delay in enumerate([0.0] + backoff_delays):
@@ -406,22 +422,22 @@ async def run_replay(
     results = list(await asyncio.gather(*tasks))
 
     # 8. Output
+    from rich.console import Console
+
+    from apisniff.output import render_replay, replay_to_json
+
     if json_output:
-        try:
-            from apisniff.output import replay_to_json
-            output = replay_to_json(results)
-            if output_file:
-                Path(output_file).write_text(output)
-            else:
-                import sys
-                print(output, file=sys.stdout)
-        except ImportError:
-            pass
+        output = replay_to_json(results, resolved_domain)
+        if output_file:
+            Path(output_file).write_text(output)
+        else:
+            sys.stdout.write(output + "\n")
     else:
-        try:
-            from apisniff.output import render_replay
-            render_replay(results, output_file=output_file)
-        except ImportError:
-            pass
+        console = Console(stderr=True)
+        render_replay(results, console)
+        if output_file:
+            Path(output_file).write_text(
+                replay_to_json(results, resolved_domain)
+            )
 
     return results

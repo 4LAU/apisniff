@@ -322,14 +322,12 @@ class TestMethodFilter:
         original_filter = replay_mod._filter_flows
 
         def capturing_filter(flows, include_unsafe_):
-            result = original_filter(flows, include_unsafe_)
-            captured.extend(result)
-            return result
+            safe, unsafe = original_filter(flows, include_unsafe_)
+            captured.extend(safe)
+            return safe, unsafe
 
-        # render_dry_run is imported lazily from apisniff.output inside run_replay.
-        # Patch it at the source module with create=True (Task 8 not done yet).
         with patch.object(replay_mod, "_filter_flows", side_effect=capturing_filter):
-            with patch("apisniff.output.render_dry_run", create=True):
+            with patch("apisniff.output.render_dry_run"):
                 asyncio.run(
                     run_replay(
                         bundle_dir=tmpdir.name,
