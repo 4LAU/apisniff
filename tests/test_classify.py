@@ -117,3 +117,20 @@ def test_ip_address_not_crash():
     c = Classifier(target_domain="example.com")
     result = c.classify(_flow(host="192.168.1.1"))
     assert result.action == "drop"
+
+
+def test_query_string_beacon_not_dropped():
+    """Query param containing a drop-pattern substring must not false-positive."""
+    c = Classifier(target_domain="example.com")
+    result = c.classify(_flow(path="/api/search?q=beacon.gif"))
+    assert result.action == "keep", (
+        f"Expected keep but got drop (category={result.category!r})"
+    )
+
+
+def test_telemetry_path_in_path_segment_dropped():
+    """A drop-pattern in the actual path (not query string) must still be dropped."""
+    c = Classifier(target_domain="example.com")
+    result = c.classify(_flow(path="/tracking/beacon.gif"))
+    assert result.action == "drop"
+    assert result.category == "path_telemetry"

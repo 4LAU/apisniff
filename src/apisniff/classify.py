@@ -71,6 +71,7 @@ class Classifier:
         tags: list[str] = []
         host = flow.host
         path = flow.path
+        path_only = path.split("?", 1)[0]
 
         # 1. Allowlist
         allowlist_type = self._check_allowlist(flow)
@@ -86,7 +87,7 @@ class Classifier:
 
         # 3. Path telemetry
         if allowlist_type not in ("domain", "path"):
-            if any(s in path for s in self._drop_path_substrings):
+            if any(s in path_only for s in self._drop_path_substrings):
                 return ClassifyResult(action="drop", category="path_telemetry", flow=None)
 
         # 4. Third-party
@@ -109,7 +110,7 @@ class Classifier:
 
         # 6. Same-site noise
         if allowlist_type not in ("domain", "path"):
-            if any(p in path for p in self._same_site_drop_paths):
+            if any(p in path_only for p in self._same_site_drop_paths):
                 return ClassifyResult(action="drop", category="same_site_noise", flow=None)
 
         kept = replace(flow, tags=tags)
@@ -118,7 +119,8 @@ class Classifier:
     def _check_allowlist(self, flow: CapturedFlow) -> str:
         if _matches_domain_list(flow.host, self._allowlist_domains):
             return "domain"
-        if any(frag in flow.path for frag in self._allowlist_paths):
+        path_only = flow.path.split("?", 1)[0]
+        if any(frag in path_only for frag in self._allowlist_paths):
             return "path"
         return ""
 
