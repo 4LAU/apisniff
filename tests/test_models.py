@@ -1,12 +1,21 @@
 """
-Tests for CapturedFlow.content_type, ProbeResult.is_blocked, ProbeResult.is_challenge.
+Tests for CapturedFlow.content_type, ProbeResult.is_blocked, ProbeResult.is_challenge,
+body serialization roundtrip, normalize_path, and replay_dedup_key.
 
 Each test defends a silent failure mode — a bug that would produce wrong classification
 output without any crash or visible error.
 """
 
 
-from apisniff.models import CapturedFlow, ClassifyResult, ProbeResult, SessionStats
+from apisniff.models import (
+    CapturedFlow,
+    ClassifyResult,
+    ProbeResult,
+    ReplayResult,
+    SessionStats,
+    normalize_path,
+    replay_dedup_key,
+)
 
 # ---------------------------------------------------------------------------
 # Helpers
@@ -236,3 +245,175 @@ def test_session_stats_from_dict_missing_fields():
          "duration_seconds": 10.0, "total_flows": 5, "kept_flows": 3, "dropped": {}}
     stats = SessionStats.from_dict(d)
     assert stats.dropped == {}
+
+
+# ---------------------------------------------------------------------------
+# CapturedFlow body serialization roundtrip (base64)
+# ---------------------------------------------------------------------------
+
+def _base_flow(request_body: bytes = b"", response_body: bytes = b"") -> CapturedFlow:
+    return CapturedFlow(
+        method="POST",
+        host="example.com",
+        path="/api/upload",
+        url="https://example.com/api/upload",
+        request_headers={"content-type": "application/octet-stream"},
+        request_body=request_body,
+        response_status=200,
+        response_headers={"content-type": "application/json"},
+        response_body=response_body,
+    )
+
+
+def test_body_serialization_binary_roundtrip():
+    # Invariant: binary data that cannot be losslessly decoded as UTF-8 must
+    # survive to_dict() → from_dict() without corruption. The old utf-8/replace
+    # path silently mangled non-UTF-8 bytes.
+    binary = bytes(range(256))
+    flow = _base_flow(request_body=binary, response_body=binary)
+    d = flow.to_dict()
+    assert d.get("_body_encoding") == "base64"
+    restored = CapturedFlow.from_dict(d)
+    assert restored.request_body == binary
+    assert restored.response_body == binary
+
+
+def test_body_serialization_empty_bodies():
+    # Invariant: empty bodies (None sentinel in dict) must come back as b"" not
+    # raise an exception during base64 decode.
+    flow = _base_flow(request_body=b"", response_body=b"")
+    d = flow.to_dict()
+    assert d["request_body"] is None
+    assert d["response_body"] is None
+    restored = CapturedFlow.from_dict(d)
+    assert restored.request_body == b""
+    assert restored.response_body == b""
+
+
+def test_body_serialization_utf8_ascii_roundtrip():
+    # Invariant: normal JSON bodies (valid UTF-8) must also roundtrip correctly
+    # through the base64 path.
+    payload = b'{"key": "value", "num": 42}'
+    flow = _base_flow(request_body=payload, response_body=payload)
+    restored = CapturedFlow.from_dict(flow.to_dict())
+    assert restored.request_body == payload
+    assert restored.response_body == payload
+
+
+def test_body_serialization_legacy_format_no_marker():
+    # Invariant: JSONL files written before the base64 change (no _body_encoding
+    # key) must still load correctly via the str.encode("utf-8") fallback path.
+    d = {
+        "method": "GET",
+        "host": "example.com",
+        "path": "/legacy",
+        "url": "https://example.com/legacy",
+        "request_headers": {},
+        "request_body": "hello legacy",
+        "response_status": 200,
+        "response_headers": {},
+        "response_body": '{"ok": true}',
+        "tags": [],
+        "timestamp": 0.0,
+        # No "_body_encoding" key — legacy format
+    }
+    flow = CapturedFlow.from_dict(d)
+    assert flow.request_body == b"hello legacy"
+    assert flow.response_body == b'{"ok": true}'
+
+
+def test_body_serialization_to_jsonl_roundtrip():
+    # Invariant: to_jsonl() → from_dict() must produce an identical CapturedFlow,
+    # including non-ASCII bytes.
+    import json
+    binary = b"\x89PNG\r\n\x1a\n\x00\x00\x00\rIHDR"
+    flow = _base_flow(request_body=binary, response_body=binary)
+    jsonl = flow.to_jsonl()
+    restored = CapturedFlow.from_dict(json.loads(jsonl))
+    assert restored.request_body == binary
+    assert restored.response_body == binary
+
+
+# ---------------------------------------------------------------------------
+# normalize_path (moved from spec.py to models.py)
+# ---------------------------------------------------------------------------
+
+def test_normalize_path_uuid():
+    assert normalize_path("/api/users/550e8400-e29b-41d4-a716-446655440000") == "/api/users/{id}"
+
+
+def test_normalize_path_numeric():
+    assert normalize_path("/api/users/12345") == "/api/users/{id}"
+
+
+def test_normalize_path_hex():
+    # 16+ hex chars are treated as IDs
+    assert normalize_path("/api/objects/deadbeefcafe0000") == "/api/objects/{id}"
+
+
+def test_normalize_path_no_dynamic_segment():
+    assert normalize_path("/api/users") == "/api/users"
+
+
+def test_normalize_path_strips_query_string():
+    # query string must be ignored — normalize_path only handles the path portion
+    assert normalize_path("/api/users/42?foo=bar") == "/api/users/{id}"
+
+
+def test_normalize_path_preserves_static_segments():
+    assert normalize_path("/api/v1/search") == "/api/v1/search"
+
+
+def test_normalize_path_multiple_dynamic_segments():
+    assert normalize_path("/orgs/99/repos/abc-def-ghi") == "/orgs/{id}/repos/abc-def-ghi"
+
+
+# ---------------------------------------------------------------------------
+# replay_dedup_key
+# ---------------------------------------------------------------------------
+
+def test_replay_dedup_key_no_query_string_equals_normalize_path():
+    # Invariant: paths without query strings must produce the same key as
+    # normalize_path() — dedup logic must not add extra structure.
+    path = "/api/users/12345"
+    assert replay_dedup_key(path) == normalize_path(path)
+
+
+def test_replay_dedup_key_same_keys_different_values_dedup_together():
+    # Invariant: two requests with the same param names but different values
+    # must produce the same key — value divergence is not part of the dedup key.
+    key1 = replay_dedup_key("/search?q=apple&page=1")
+    key2 = replay_dedup_key("/search?q=banana&page=99")
+    assert key1 == key2
+
+
+def test_replay_dedup_key_different_keys_dont_dedup():
+    # Invariant: requests with different query parameter *names* must produce
+    # different keys — merging them would collapse structurally distinct calls.
+    key1 = replay_dedup_key("/search?q=apple")
+    key2 = replay_dedup_key("/search?query=apple")
+    assert key1 != key2
+
+
+def test_replay_dedup_key_sorts_query_params():
+    # Invariant: param order must not affect the key — param ordering varies
+    # across clients and is not semantically meaningful.
+    key1 = replay_dedup_key("/search?page=1&q=test")
+    key2 = replay_dedup_key("/search?q=test&page=1")
+    assert key1 == key2
+
+
+def test_replay_dedup_key_normalizes_path_segment():
+    # Invariant: dynamic path segments must be normalized even when a query
+    # string is also present.
+    key = replay_dedup_key("/api/users/12345?include=details")
+    assert key == "/api/users/{id}?include={v}"
+
+
+def test_replay_dedup_key_empty_query_string_acts_like_no_qs():
+    # Edge case: a trailing "?" with no params should not add "?" to the key.
+    key_with = replay_dedup_key("/api/users?")
+    key_without = replay_dedup_key("/api/users")
+    # Both should normalize the path; with empty qs parse_qs returns {} so no
+    # query portion is appended.
+    assert key_with == key_without
