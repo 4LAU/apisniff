@@ -10,6 +10,7 @@ from typing import Any
 
 from apisniff.models import (
     CapturedFlow,
+    ReplayAbort,
     ReplayCategory,
     ReplayResult,
     replay_dedup_key,
@@ -307,13 +308,6 @@ def _deduplicate(flows: list[CapturedFlow]) -> list[CapturedFlow]:
             seen[key] = flow
     return list(seen.values())
 
-
-class ReplayAbort:
-    """Signals why replay stopped early."""
-
-    def __init__(self, reason: str, remaining: int) -> None:
-        self.reason = reason
-        self.remaining = remaining
 
 
 async def _replay_with_retry(

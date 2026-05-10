@@ -68,14 +68,15 @@ def detect_input_format(head: str) -> str:
 def load_flows(path: str) -> tuple[list[CapturedFlow], str]:
     """Load flows from HAR, Burp XML, or JSONL file. Returns (flows, format)."""
     p = Path(path)
-    text = p.read_text()
-    fmt = detect_input_format(text[:1024])
+    with open(p) as f:
+        head = f.read(1024)
+    fmt = detect_input_format(head)
     if fmt == "har":
         from apisniff.adapters.har import har_to_flows
-        flows = har_to_flows(text)
+        flows = har_to_flows(p.read_text())
     elif fmt == "burp":
         from apisniff.adapters.burp import burp_to_flows
-        flows = burp_to_flows(text)
+        flows = burp_to_flows(p.read_text())
     elif fmt == "jsonl":
         flows = read_capture_jsonl(path)
     else:

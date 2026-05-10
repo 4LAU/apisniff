@@ -240,6 +240,12 @@ ReplayCategory = Literal["match", "drift", "auth_expired", "blocked", "error"]
 
 
 @dataclass(frozen=True, slots=True)
+class ReplayAbort:
+    reason: str
+    remaining: int
+
+
+@dataclass(frozen=True, slots=True)
 class ReplayResult:
     original_flow: CapturedFlow
     replayed_status: int | None

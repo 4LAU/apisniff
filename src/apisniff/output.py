@@ -2,13 +2,21 @@ from __future__ import annotations
 
 import json
 from datetime import UTC, datetime
+from typing import get_args
 
 from rich.console import Console
 from rich.panel import Panel
 from rich.table import Table
 from rich.text import Text
 
-from apisniff.models import CapturedFlow, ProbeAssessment, ProbeVerdict, ReplayResult
+from apisniff.models import (
+    CapturedFlow,
+    ProbeAssessment,
+    ProbeVerdict,
+    ReplayAbort,
+    ReplayCategory,
+    ReplayResult,
+)
 
 _VERDICT_STYLES = {
     ProbeVerdict.NO_PROTECTION: ("green", "No Protection"),
@@ -163,7 +171,7 @@ _CATEGORY_LABEL = {
 }
 
 
-_CATEGORIES = ("match", "drift", "auth_expired", "blocked", "error")
+_CATEGORIES = get_args(ReplayCategory)
 
 
 def _tally_results(results: list[ReplayResult]) -> dict[str, int]:
@@ -190,7 +198,7 @@ def _auth_label(headers: dict[str, str]) -> str:
 def render_replay(
     results: list[ReplayResult],
     console: Console,
-    abort: object | None = None,
+    abort: ReplayAbort | None = None,
 ) -> None:
     console.print()
     counts = _tally_results(results)
@@ -224,7 +232,7 @@ def render_replay(
                             Text(f"    ~ {key}", style="yellow")
                         )
 
-    if abort and hasattr(abort, "reason") and hasattr(abort, "remaining"):
+    if abort:
         console.print()
         console.print(
             Text(
@@ -280,7 +288,7 @@ def render_dry_run(
 def replay_to_json(
     results: list[ReplayResult],
     domain: str,
-    abort: object | None = None,
+    abort: ReplayAbort | None = None,
 ) -> str:
     replayed_at = datetime.now(UTC).strftime("%Y-%m-%dT%H:%M:%SZ")
     counts = _tally_results(results)
@@ -303,7 +311,7 @@ def replay_to_json(
         "endpoints": endpoints,
         "summary": counts,
     }
-    if abort and hasattr(abort, "reason") and hasattr(abort, "remaining"):
+    if abort:
         data["aborted"] = {
             "reason": abort.reason,
             "endpoints_not_tested": abort.remaining,
