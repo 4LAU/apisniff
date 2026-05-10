@@ -86,10 +86,16 @@ class CapturedFlow:
             "path": self.path,
             "url": self.url,
             "request_headers": self.request_headers,
-            "request_body": base64.b64encode(self.request_body).decode("ascii") if self.request_body else None,
+            "request_body": (
+                base64.b64encode(self.request_body).decode("ascii")
+                if self.request_body else None
+            ),
             "response_status": self.response_status,
             "response_headers": self.response_headers,
-            "response_body": base64.b64encode(self.response_body).decode("ascii") if self.response_body else None,
+            "response_body": (
+                base64.b64encode(self.response_body).decode("ascii")
+                if self.response_body else None
+            ),
             "_body_encoding": "base64",
             "tags": self.tags,
             "timestamp": self.timestamp,
@@ -101,11 +107,19 @@ class CapturedFlow:
     @classmethod
     def from_dict(cls, d: dict) -> CapturedFlow:
         if d.get("_body_encoding") == "base64":
-            req_body = base64.b64decode(d["request_body"]) if d.get("request_body") else b""
-            resp_body = base64.b64decode(d["response_body"]) if d.get("response_body") else b""
+            req_body = (
+                base64.b64decode(d["request_body"]) if d.get("request_body") else b""
+            )
+            resp_body = (
+                base64.b64decode(d["response_body"]) if d.get("response_body") else b""
+            )
         else:
-            req_body = d.get("request_body", "").encode("utf-8") if d.get("request_body") else b""
-            resp_body = d.get("response_body", "").encode("utf-8") if d.get("response_body") else b""
+            req_body = (
+                d.get("request_body", "").encode("utf-8") if d.get("request_body") else b""
+            )
+            resp_body = (
+                d.get("response_body", "").encode("utf-8") if d.get("response_body") else b""
+            )
         return cls(
             method=d["method"],
             host=d["host"],

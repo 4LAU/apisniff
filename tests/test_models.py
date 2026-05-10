@@ -11,7 +11,6 @@ from apisniff.models import (
     CapturedFlow,
     ClassifyResult,
     ProbeResult,
-    ReplayResult,
     SessionStats,
     normalize_path,
     replay_dedup_key,

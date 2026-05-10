@@ -24,7 +24,7 @@ def _parse_raw_headers(header_block: str) -> dict[str, str]:
     Multi-value headers are joined with ", " except set-cookie which uses "\\n".
     """
     grouped: dict[str, list[str]] = {}
-    for line in header_block.split("\r\n"):
+    for line in header_block.replace("\r\n", "\n").split("\n"):
         if not line:
             continue
         colon = line.find(":")
@@ -50,22 +50,28 @@ def _split_http_message(raw: bytes) -> tuple[dict[str, str], bytes]:
     """
     sep = b"\r\n\r\n"
     idx = raw.find(sep)
-    if idx == -1:
-        header_bytes = raw
-        body = b""
-    else:
+    if idx != -1:
         header_bytes = raw[:idx]
         body = raw[idx + len(sep):]
+        line_sep = "\r\n"
+    else:
+        idx = raw.find(b"\n\n")
+        if idx != -1:
+            header_bytes = raw[:idx]
+            body = raw[idx + 2:]
+        else:
+            header_bytes = raw
+            body = b""
+        line_sep = "\n"
 
-    lines = header_bytes.decode("utf-8", errors="replace").split("\r\n")
-    # Drop the first line (GET /path HTTP/1.1 or HTTP/1.1 200 OK)
-    header_lines = "\r\n".join(lines[1:])
+    lines = header_bytes.decode("utf-8", errors="replace").split(line_sep)
+    header_lines = line_sep.join(lines[1:])
     return _parse_raw_headers(header_lines), body
 
 
 def burp_to_flows(xml_text: str) -> list[CapturedFlow]:
     """Parse a Burp Suite XML export and return a list of CapturedFlow objects."""
-    root = ET.fromstring(xml_text)
+    root = ET.fromstring(xml_text)  # noqa: S314 — local files only
     flows: list[CapturedFlow] = []
 
     for item in root.iter("item"):

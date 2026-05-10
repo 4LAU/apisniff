@@ -251,6 +251,7 @@ def test_duplicate_set_cookie_headers_joined_with_newline():
         {"name": "Set-Cookie", "value": "theme=dark; SameSite=Lax"},
     ]
     flows = har_to_flows(_har([_entry(resp_headers=resp_h)]))
-    assert flows[0].response_headers["set-cookie"] == "session=abc; HttpOnly\ntheme=dark; SameSite=Lax"
+    expected = "session=abc; HttpOnly\ntheme=dark; SameSite=Lax"
+    assert flows[0].response_headers["set-cookie"] == expected
 
 

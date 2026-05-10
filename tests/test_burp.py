@@ -14,15 +14,15 @@ Without these tests, a change could ship that:
 
 from __future__ import annotations
 
-import base64
-
-import pytest
-
 from apisniff.adapters.burp import burp_to_flows
 
 # ---------------------------------------------------------------------------
 # Fixture helpers
 # ---------------------------------------------------------------------------
+
+def _xml_escape(text: str) -> str:
+    return text.replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;")
+
 
 # Precomputed base64 of raw HTTP messages used across tests.
 # GET /api/users?page=1 with Authorization + Content-Type headers, no body.
@@ -69,17 +69,14 @@ def _item(
     if request_b64 is not None:
         req_tag = f'<request base64="true">{request_b64}</request>'
     elif request_plain is not None:
-        # base64-encode so CRLF bytes survive XML serialization cleanly
-        import base64 as _b64
-        req_tag = f'<request base64="true">{_b64.b64encode(request_plain.encode()).decode()}</request>'
+        req_tag = f"<request>{_xml_escape(request_plain)}</request>"
     else:
         req_tag = "<request />"
 
     if response_b64 is not None:
         resp_tag = f'<response base64="true">{response_b64}</response>'
     elif response_plain is not None:
-        import base64 as _b64
-        resp_tag = f'<response base64="true">{_b64.b64encode(response_plain.encode()).decode()}</response>'
+        resp_tag = f"<response>{_xml_escape(response_plain)}</response>"
     else:
         resp_tag = "<response />"
 
