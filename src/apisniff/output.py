@@ -187,7 +187,11 @@ def _auth_label(headers: dict[str, str]) -> str:
     return "+".join(parts) if parts else "none"
 
 
-def render_replay(results: list[ReplayResult], console: Console) -> None:
+def render_replay(
+    results: list[ReplayResult],
+    console: Console,
+    abort: object | None = None,
+) -> None:
     console.print()
     counts = _tally_results(results)
 
@@ -219,6 +223,17 @@ def render_replay(results: list[ReplayResult], console: Console) -> None:
                         console.print(
                             Text(f"    ~ {key}", style="yellow")
                         )
+
+    if abort and hasattr(abort, "reason") and hasattr(abort, "remaining"):
+        console.print()
+        console.print(
+            Text(
+                f"  Aborted: {abort.reason} — "
+                f"{abort.remaining} endpoint"
+                f"{'s' if abort.remaining != 1 else ''} not tested",
+                style="red bold",
+            )
+        )
 
     summary_parts = []
     for cat in _CATEGORIES:
@@ -262,7 +277,11 @@ def render_dry_run(
     )
 
 
-def replay_to_json(results: list[ReplayResult], domain: str) -> str:
+def replay_to_json(
+    results: list[ReplayResult],
+    domain: str,
+    abort: object | None = None,
+) -> str:
     replayed_at = datetime.now(UTC).strftime("%Y-%m-%dT%H:%M:%SZ")
     counts = _tally_results(results)
 
@@ -278,12 +297,16 @@ def replay_to_json(results: list[ReplayResult], domain: str) -> str:
             "elapsed_ms": r.elapsed_ms,
         })
 
-    return json.dumps(
-        {
-            "domain": domain,
-            "replayed_at": replayed_at,
-            "endpoints": endpoints,
-            "summary": counts,
-        },
-        indent=2,
-    )
+    data: dict = {
+        "domain": domain,
+        "replayed_at": replayed_at,
+        "endpoints": endpoints,
+        "summary": counts,
+    }
+    if abort and hasattr(abort, "reason") and hasattr(abort, "remaining"):
+        data["aborted"] = {
+            "reason": abort.reason,
+            "endpoints_not_tested": abort.remaining,
+        }
+
+    return json.dumps(data, indent=2)

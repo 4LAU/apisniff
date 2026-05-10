@@ -308,11 +308,42 @@ def _deduplicate(flows: list[CapturedFlow]) -> list[CapturedFlow]:
     return list(seen.values())
 
 
+class ReplayAbort:
+    """Signals why replay stopped early."""
+
+    def __init__(self, reason: str, remaining: int) -> None:
+        self.reason = reason
+        self.remaining = remaining
+
+
+async def _replay_with_retry(
+    flow: CapturedFlow,
+    headers: dict[str, str] | None,
+    cookies: list[tuple[str, str, str]],
+    timeout: float,
+    insecure: bool,
+) -> ReplayResult:
+    backoff_delays = [1.0, 2.0, 4.0]
+    for attempt, delay in enumerate([0.0] + backoff_delays):
+        if delay:
+            await asyncio.sleep(delay)
+        result = await replay_endpoint(
+            flow,
+            headers=headers,
+            cookies=cookies,
+            timeout=timeout,
+            insecure=insecure,
+        )
+        if result.replayed_status == 429 and attempt < len(backoff_delays):
+            continue
+        return result
+    return result  # type: ignore[return-value]
+
+
 async def run_replay(
     bundle_dir: str | None = None,
     domain: str | None = None,
     filter_: str | None = None,
-    concurrency: int = 5,
     timeout: float = 15.0,
     cookie_file: str | None = None,
     extra_headers: dict[str, str] | None = None,
@@ -322,7 +353,7 @@ async def run_replay(
     json_output: bool = False,
     output_file: str | None = None,
 ) -> list[ReplayResult]:
-    """Orchestrate full replay of a captured session bundle."""
+    """Replay captured endpoints serially, aborting on auth failure or block."""
     if bundle_dir:
         bundle = Path(bundle_dir)
     elif domain:
@@ -369,47 +400,42 @@ async def run_replay(
     if cookie_file:
         cookies = parse_cookie_file(cookie_file)
 
-    semaphore = asyncio.Semaphore(concurrency)
     results: list[ReplayResult] = []
+    abort: ReplayAbort | None = None
 
-    async def _replay_with_retry(flow: CapturedFlow, index: int) -> ReplayResult:
-        await asyncio.sleep(min(index * 0.1, 2.0))
-        backoff_delays = [1.0, 2.0, 4.0]
-        for attempt, delay in enumerate([0.0] + backoff_delays):
-            if delay:
-                await asyncio.sleep(delay)
-            async with semaphore:
-                result = await replay_endpoint(
-                    flow,
-                    headers=extra_headers,
-                    cookies=cookies,
-                    timeout=timeout,
-                    insecure=insecure,
-                )
-            if result.replayed_status == 429 and attempt < len(backoff_delays):
-                continue
-            return result
-        return result  # type: ignore[return-value]
+    for flow in flows:
+        result = await _replay_with_retry(
+            flow, extra_headers, cookies, timeout, insecure,
+        )
+        results.append(result)
 
-    tasks = [_replay_with_retry(flow, i) for i, flow in enumerate(flows)]
-    results = list(await asyncio.gather(*tasks))
+        remaining = len(flows) - len(results)
+        if result.category == "auth_expired":
+            abort = ReplayAbort("auth expired", remaining)
+            break
+        if result.category == "blocked":
+            abort = ReplayAbort("blocked", remaining)
+            break
+        if result.replayed_status == 429:
+            abort = ReplayAbort("rate limited (retries exhausted)", remaining)
+            break
 
     from rich.console import Console
 
     from apisniff.output import render_replay, replay_to_json
 
     if json_output:
-        output = replay_to_json(results, resolved_domain)
+        output = replay_to_json(results, resolved_domain, abort)
         if output_file:
             Path(output_file).write_text(output)
         else:
             sys.stdout.write(output + "\n")
     else:
         console = Console(stderr=True)
-        render_replay(results, console)
+        render_replay(results, console, abort)
         if output_file:
             Path(output_file).write_text(
-                replay_to_json(results, resolved_domain)
+                replay_to_json(results, resolved_domain, abort)
             )
 
     return results

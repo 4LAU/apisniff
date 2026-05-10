@@ -358,3 +358,65 @@ class TestMethodFilter:
             methods = self._run_dry(tmpdir, include_unsafe=False)
         assert "HEAD" in methods
         assert "OPTIONS" in methods
+
+
+class TestEarlyAbort:
+    """Replay aborts on auth failure instead of continuing."""
+
+    def _make_bundle(self, tmp_path: Path, flows: list[CapturedFlow]) -> Path:
+        p = tmp_path / "flows.jsonl"
+        with open(p, "w") as f:
+            for flow in flows:
+                f.write(flow.to_jsonl() + "\n")
+        return tmp_path
+
+    def test_aborts_on_auth_expired(self, tmp_path: Path):
+        flows = [
+            _flow(
+                path="/api/a",
+                request_headers={"authorization": "Bearer tok"},
+                timestamp=1.0,
+            ),
+            _flow(path="/api/b", timestamp=2.0),
+            _flow(path="/api/c", timestamp=3.0),
+        ]
+        bundle = self._make_bundle(tmp_path, flows)
+
+        session_mock = AsyncMock()
+        session_mock.__aenter__ = AsyncMock(return_value=session_mock)
+        session_mock.__aexit__ = AsyncMock(return_value=False)
+        session_mock.request = AsyncMock(
+            return_value=_mock_response(403, b"Forbidden")
+        )
+
+        with patch("curl_cffi.requests.AsyncSession", return_value=session_mock):
+            with patch("apisniff.output.render_replay"):
+                results = asyncio.run(
+                    run_replay(bundle_dir=str(bundle))
+                )
+
+        assert len(results) == 1
+        assert results[0].category == "auth_expired"
+
+    def test_aborts_on_blocked(self, tmp_path: Path):
+        flows = [
+            _flow(path="/api/a", timestamp=1.0),
+            _flow(path="/api/b", timestamp=2.0),
+        ]
+        bundle = self._make_bundle(tmp_path, flows)
+
+        session_mock = AsyncMock()
+        session_mock.__aenter__ = AsyncMock(return_value=session_mock)
+        session_mock.__aexit__ = AsyncMock(return_value=False)
+        session_mock.request = AsyncMock(
+            return_value=_mock_response(403, b"Forbidden")
+        )
+
+        with patch("curl_cffi.requests.AsyncSession", return_value=session_mock):
+            with patch("apisniff.output.render_replay"):
+                results = asyncio.run(
+                    run_replay(bundle_dir=str(bundle))
+                )
+
+        assert len(results) == 1
+        assert results[0].category == "blocked"
