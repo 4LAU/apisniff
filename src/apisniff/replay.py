@@ -6,9 +6,14 @@ import json
 import sys
 import time
 from pathlib import Path
-from typing import Any, Literal
+from typing import Any
 
-from apisniff.models import CapturedFlow, ReplayResult, replay_dedup_key
+from apisniff.models import (
+    CapturedFlow,
+    ReplayResult,
+    _ReplayCategory,
+    replay_dedup_key,
+)
 from apisniff.recon import _CAPTURES_DIR, read_capture_jsonl
 
 _HOP_BY_HOP = frozenset(
@@ -164,9 +169,6 @@ def cookies_for_host(
 def _has_auth_headers(flow: CapturedFlow) -> bool:
     lower_keys = {k.lower() for k in flow.request_headers}
     return bool(lower_keys & _AUTH_HEADERS)
-
-
-_ReplayCategory = Literal["match", "drift", "auth_expired", "blocked", "error"]
 
 
 def _assign_category(

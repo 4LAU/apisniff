@@ -200,12 +200,16 @@ def render_replay(results: list[ReplayResult], console: Console) -> None:
         console.print(Text(line, style=style))
 
         if cat == "drift" and r.body_shape_diff:
-            added = r.body_shape_diff.get("added", [])
-            removed = r.body_shape_diff.get("removed", [])
-            for key in added:
-                console.print(Text(f"    + {key}", style="green"))
-            for key in removed:
-                console.print(Text(f"    - {key}", style="red"))
+            for key, change in r.body_shape_diff.items():
+                if isinstance(change, dict):
+                    if change.get("was") is None:
+                        console.print(Text(f"    + {key}", style="green"))
+                    elif change.get("now") is None:
+                        console.print(Text(f"    - {key}", style="red"))
+                    else:
+                        console.print(
+                            Text(f"    ~ {key}", style="yellow")
+                        )
 
     summary_parts = []
     for cat in ("match", "drift", "auth_expired", "blocked", "error"):

@@ -136,12 +136,17 @@ def test_render_replay_auth_expired():
 
 
 def test_render_replay_drift_shows_diff():
-    diff = {"added": ["data.items[].discount_price"], "removed": ["data.items[].sale_ends"]}
+    diff = {
+        "extra_field": {"was": None, "now": "str"},
+        "removed_field": {"was": "str", "now": None},
+        "changed_field": {"was": "int", "now": "str"},
+    }
     out = _capture_console(render_replay, [_result("drift", body_shape_diff=diff)])
     assert "~" in out
     assert "shape:drift" in out
-    assert "+ data.items[].discount_price" in out
-    assert "- data.items[].sale_ends" in out
+    assert "+ extra_field" in out
+    assert "- removed_field" in out
+    assert "~ changed_field" in out
 
 
 def test_render_replay_summary_line():
@@ -149,7 +154,7 @@ def test_render_replay_summary_line():
         _result("match"),
         _result("match"),
         _result("blocked", replayed_status=403),
-        _result("drift", body_shape_diff={"added": [], "removed": []}),
+        _result("drift", body_shape_diff={"x": {"was": "int", "now": "str"}}),
     ]
     out = _capture_console(render_replay, results)
     assert "Summary:" in out
@@ -254,7 +259,7 @@ def test_replay_to_json_summary_counts():
     results = [
         _result("match"),
         _result("match"),
-        _result("drift", body_shape_diff={"added": [], "removed": []}),
+        _result("drift", body_shape_diff={"x": {"was": "int", "now": "str"}}),
         _result("auth_expired", replayed_status=401),
         _result("blocked", replayed_status=403),
     ]
@@ -268,7 +273,7 @@ def test_replay_to_json_summary_counts():
 
 
 def test_replay_to_json_drift_diff_preserved():
-    diff = {"added": ["data.x"], "removed": ["data.y"]}
+    diff = {"data.x": {"was": None, "now": "str"}, "data.y": {"was": "str", "now": None}}
     results = [_result("drift", body_shape_diff=diff)]
     data = json.loads(replay_to_json(results, "example.com"))
     assert data["endpoints"][0]["body_shape_diff"] == diff
