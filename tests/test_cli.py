@@ -21,8 +21,8 @@ def test_main_help():
 
 
 def test_parse_header_rejects_missing_colon():
-    import typer
     import pytest
+    import typer
     with pytest.raises(typer.BadParameter, match="missing ':'"):
         _parse_header_args(["badheader"])
 

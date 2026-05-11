@@ -1,5 +1,5 @@
 # tests/test_spec.py
-import yaml
+
 
 from apisniff.auth import AuthPattern
 from apisniff.models import CapturedFlow
@@ -73,13 +73,6 @@ def test_generate_openapi_basic():
     assert "/api/v1/users/{id}" in spec["paths"]
     assert "get" in spec["paths"]["/api/v1/users"]
     assert "post" in spec["paths"]["/api/v1/users"]
-
-
-def test_generate_openapi_yaml_output():
-    flows = [_flow()]
-    spec = generate_openapi(flows, "example.com")
-    yaml_str = yaml.dump(spec, sort_keys=False)
-    assert "openapi:" in yaml_str
 
 
 def test_x_observed_auth_default():

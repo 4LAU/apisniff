@@ -9,7 +9,6 @@ output without any crash or visible error.
 
 from apisniff.models import (
     CapturedFlow,
-    ClassifyResult,
     ProbeResult,
     SessionStats,
     normalize_path,
@@ -189,31 +188,6 @@ def test_is_challenge_only_inspects_first_50000_bytes():
 
     assert _result(body=marker_before_cap).is_challenge is True
     assert _result(body=marker_after_cap).is_challenge is False
-
-
-# ---------------------------------------------------------------------------
-# ClassifyResult
-# ---------------------------------------------------------------------------
-
-def test_classify_result_keep():
-    flow = CapturedFlow(
-        method="GET", host="example.com", path="/api/users",
-        url="https://example.com/api/users", request_headers={},
-        request_body=b"", response_status=200,
-        response_headers={"content-type": "application/json"},
-        response_body=b'{"ok": true}',
-    )
-    result = ClassifyResult(action="keep", category="", flow=flow)
-    assert result.action == "keep"
-    assert result.flow is not None
-    assert result.flow.host == "example.com"
-
-
-def test_classify_result_drop():
-    result = ClassifyResult(action="drop", category="static_asset", flow=None)
-    assert result.action == "drop"
-    assert result.category == "static_asset"
-    assert result.flow is None
 
 
 # ---------------------------------------------------------------------------

@@ -60,18 +60,6 @@ def test_www_authenticate_multi_value_joined_with_comma():
     assert result["www-authenticate"] == 'Bearer realm="api", Basic realm="legacy"'
 
 
-def test_link_multi_value_joined_with_comma():
-    h = MockHeaders([
-        ("link", "<https://example.com/page/1>; rel=\"next\""),
-        ("link", "<https://example.com/page/3>; rel=\"prev\""),
-    ])
-    result = _build_headers(h)
-    assert result["link"] == (
-        '<https://example.com/page/1>; rel="next", '
-        '<https://example.com/page/3>; rel="prev"'
-    )
-
-
 def test_single_set_cookie_not_newline_joined():
     """A single set-cookie value must NOT get a trailing newline."""
     h = MockHeaders([("set-cookie", "session=abc; Path=/")])

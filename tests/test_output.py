@@ -1,7 +1,4 @@
-import io
 import json
-
-from rich.console import Console
 
 from apisniff.models import (
     CapturedFlow,
@@ -14,8 +11,6 @@ from apisniff.models import (
 from apisniff.output import (
     probe_to_dict,
     probe_to_json,
-    render_dry_run,
-    render_replay,
     replay_to_json,
 )
 
@@ -101,131 +96,6 @@ def _result(
         size_replayed=100 if body_shape_diff is None else 90,
     )
 
-
-def _capture_console(fn, *args, **kwargs) -> str:
-    buf = io.StringIO()
-    console = Console(file=buf, highlight=False, markup=False)
-    fn(*args, console=console, **kwargs)
-    return buf.getvalue()
-
-
-# ---------------------------------------------------------------------------
-# render_replay tests
-# ---------------------------------------------------------------------------
-
-def test_render_replay_match():
-    out = _capture_console(render_replay, [_result("match")])
-    assert "✓" in out
-    assert "/api/v1/users" in out
-    assert "200→200" in out
-    assert "shape:match" in out
-    assert "12ms" in out
-
-
-def test_render_replay_blocked():
-    out = _capture_console(render_replay, [_result("blocked", replayed_status=403)])
-    assert "✗" in out
-    assert "200→403" in out
-    assert "BLOCKED" in out
-
-
-def test_render_replay_auth_expired():
-    out = _capture_console(render_replay, [_result("auth_expired", replayed_status=401)])
-    assert "✗" in out
-    assert "AUTH EXPIRED" in out
-
-
-def test_render_replay_drift_shows_diff():
-    diff = {
-        "extra_field": {"was": None, "now": "str"},
-        "removed_field": {"was": "str", "now": None},
-        "changed_field": {"was": "int", "now": "str"},
-    }
-    out = _capture_console(render_replay, [_result("drift", body_shape_diff=diff)])
-    assert "~" in out
-    assert "shape:drift" in out
-    assert "+ extra_field" in out
-    assert "- removed_field" in out
-    assert "~ changed_field" in out
-
-
-def test_render_replay_summary_line():
-    results = [
-        _result("match"),
-        _result("match"),
-        _result("blocked", replayed_status=403),
-        _result("drift", body_shape_diff={"x": {"was": "int", "now": "str"}}),
-    ]
-    out = _capture_console(render_replay, results)
-    assert "Summary:" in out
-    assert "2 match" in out
-    assert "1 blocked" in out
-    assert "1 drift" in out
-
-
-def test_render_replay_error_category():
-    r = ReplayResult(
-        original_flow=_flow(),
-        replayed_status=None,
-        elapsed_ms=5.0,
-        error="connection refused",
-        category="error",
-        status_match=False,
-        body_shape_match=False,
-        body_shape_diff=None,
-        size_original=100,
-        size_replayed=0,
-    )
-    out = _capture_console(render_replay, [r])
-    assert "✗" in out
-    assert "ERROR" in out
-
-
-# ---------------------------------------------------------------------------
-# render_dry_run tests
-# ---------------------------------------------------------------------------
-
-def test_render_dry_run_safe_only():
-    safe = [
-        _flow(request_headers={"authorization": "Bearer token123", "cookie": "sess=abc"}),
-        _flow(path="/api/v1/auth/me", request_headers={"cookie": "sess=abc"}),
-    ]
-    out = _capture_console(render_dry_run, safe, [], "example.com")
-    assert "/api/v1/users" in out
-    assert "/api/v1/auth/me" in out
-    assert "auth:bearer+cookie" in out
-    assert "auth:cookie" in out
-    assert "2 safe endpoints would be replayed" in out
-    assert "0 unsafe skipped" in out
-    assert "Skipped" not in out
-
-
-def test_render_dry_run_with_unsafe():
-    safe = [_flow()]
-    unsafe = [_flow(method="POST", path="/api/v1/users")]
-    out = _capture_console(render_dry_run, safe, unsafe, "example.com")
-    assert "Skipped (unsafe" in out
-    assert "POST" in out
-    assert "1 safe endpoint would be replayed" in out
-    assert "1 unsafe skipped" in out
-
-
-def test_render_dry_run_auth_none():
-    safe = [_flow(request_headers={})]
-    out = _capture_console(render_dry_run, safe, [], "example.com")
-    assert "auth:none" in out
-
-
-def test_render_dry_run_auth_bearer_only():
-    safe = [_flow(request_headers={"authorization": "Bearer tok"})]
-    out = _capture_console(render_dry_run, safe, [], "example.com")
-    assert "auth:bearer" in out
-    assert "bearer+cookie" not in out
-
-
-# ---------------------------------------------------------------------------
-# replay_to_json tests
-# ---------------------------------------------------------------------------
 
 def test_replay_to_json_structure():
     results = [

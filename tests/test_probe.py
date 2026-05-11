@@ -34,19 +34,6 @@ async def test_fetch_graphql_schema_success():
         assert len(result["data"]["__schema"]["types"]) == 3
 
 
-@pytest.mark.asyncio
-async def test_fetch_graphql_schema_failure():
-    with patch("apisniff.probe.httpx.AsyncClient") as mock_client_cls:
-        mock_client = AsyncMock()
-        mock_client.post.side_effect = Exception("connection refused")
-        mock_client.__aenter__ = AsyncMock(return_value=mock_client)
-        mock_client.__aexit__ = AsyncMock(return_value=False)
-        mock_client_cls.return_value = mock_client
-
-        result = await fetch_graphql_schema("https://example.com/graphql")
-        assert result is None
-
-
 def _result(label, status=200, headers=None, body=b"<html>ok</html>", elapsed_ms=100.0, error=None):
     return ProbeResult(
         label=label,

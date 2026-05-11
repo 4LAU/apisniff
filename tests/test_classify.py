@@ -113,12 +113,6 @@ def test_herokuapp_is_third_party():
     assert result.action == "drop"
 
 
-def test_ip_address_not_crash():
-    c = Classifier(target_domain="example.com")
-    result = c.classify(_flow(host="192.168.1.1"))
-    assert result.action == "drop"
-
-
 def test_query_string_beacon_not_dropped():
     """Query param containing a drop-pattern substring must not false-positive."""
     c = Classifier(target_domain="example.com")

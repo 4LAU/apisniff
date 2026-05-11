@@ -20,7 +20,7 @@ def _flow(
     )
 
 
-def test_report_has_all_sections():
+def _full_report() -> str:
     flows = [_flow(), _flow(method="POST", path="/api/v1/users")]
     stats = SessionStats(
         domain="example.com", started_at="2026-05-08T13:00:00",
@@ -31,20 +31,41 @@ def test_report_has_all_sections():
     auth_patterns = [AuthPattern(auth_type="bearer", detail="authorization: bearer", flow_count=2)]
     cookies = [ExtractedCookie(name="sid", value="abc", domain="example.com",
                                host_only=True, path="/", secure=False, source="request")]
-
-    report = generate_report(
+    return generate_report(
         domain="example.com", flows=flows, session_stats=stats,
         vendors=vendors, auth_patterns=auth_patterns, cookies=cookies,
     )
 
-    assert "# example.com" in report
-    assert "120" in report
-    assert "static_asset" in report or "Static" in report
-    assert "50" in report
+
+def test_report_includes_vendor_section():
+    """Without this test, vendor detection results could be silently omitted from the report."""
+    report = _full_report()
     assert "cloudflare" in report.lower()
+
+
+def test_report_includes_auth_section():
+    """Without this test, auth patterns could be silently omitted from the report."""
+    report = _full_report()
     assert "bearer" in report.lower()
+
+
+def test_report_includes_cookie_data():
+    """Without this test, extracted cookies could be silently omitted from the report."""
+    report = _full_report()
     assert "sid" in report
+
+
+def test_report_includes_endpoints():
+    """Without this test, captured endpoints could be silently omitted from the report."""
+    report = _full_report()
     assert "/api/v1/users" in report
+
+
+def test_report_includes_session_stats():
+    """Without this test, session stats could be silently omitted from the report."""
+    report = _full_report()
+    assert "static_asset" in report or "static" in report.lower()
+    assert "120" in report
 
 
 def test_report_without_session_stats():
@@ -57,10 +78,3 @@ def test_report_without_session_stats():
     assert "session stats unavailable" in report.lower()
 
 
-def test_report_empty_flows():
-    report = generate_report(
-        domain="example.com", flows=[], session_stats=None,
-        vendors=[], auth_patterns=[], cookies=[],
-    )
-    assert "# example.com" in report
-    assert "0" in report

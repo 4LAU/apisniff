@@ -84,7 +84,7 @@ def test_run_analyze_har_flows_content(tmp_path: Path) -> None:
     run_analyze(str(har_file), domain="example.com", output_dir=str(bundle_dir))
 
     lines = (bundle_dir / "flows.jsonl").read_text().strip().splitlines()
-    assert len(lines) >= 1
+    assert len(lines) == 1
     flow_dict = json.loads(lines[0])
     assert flow_dict["host"] == "api.example.com"
     assert flow_dict["method"] == "GET"

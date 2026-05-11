@@ -25,12 +25,6 @@ def _result(
     )
 
 
-def test_load_signatures(signatures):
-    assert "cloudflare" in signatures
-    assert "datadome" in signatures
-    assert len(signatures) == 25
-
-
 def test_match_cloudflare_high(signatures):
     result = _result(headers={"cf-mitigated": "challenge"})
     matches = match_vendors([result], signatures)

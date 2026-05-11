@@ -1,12 +1,12 @@
 from __future__ import annotations
 
 import asyncio
-import tempfile
 from pathlib import Path
 from unittest.mock import AsyncMock, MagicMock, patch
 
 from apisniff.models import CapturedFlow
 from apisniff.replay import (
+    _filter_flows,
     compare_shape,
     cookies_for_host,
     parse_cookie_file,
@@ -292,72 +292,30 @@ class TestReplayEndpoint:
 
 
 # ---------------------------------------------------------------------------
-# 7d. run_replay — method safety filter
+# Method safety filter — pure function, no mocks needed
 # ---------------------------------------------------------------------------
 
-class TestMethodFilter:
-    """Verify safety filter logic without running real HTTP."""
+def test_get_included_post_excluded_by_default():
+    """Without this test, unsafe methods could silently slip through the safety filter."""
+    flows = [_flow("GET"), _flow("POST")]
+    safe, unsafe = _filter_flows(flows, include_unsafe=False)
+    assert [f.method for f in safe] == ["GET"]
+    assert [f.method for f in unsafe] == ["POST"]
 
-    def _make_bundle(self, flows: list[CapturedFlow]) -> tempfile.TemporaryDirectory:
-        """Return a TemporaryDirectory whose path contains a flows.jsonl."""
-        tmpdir = tempfile.TemporaryDirectory()
-        p = Path(tmpdir.name) / "flows.jsonl"
-        with open(p, "w") as f:
-            for flow in flows:
-                f.write(flow.to_jsonl() + "\n")
-        return tmpdir
 
-    def _run_dry(
-        self, tmpdir: tempfile.TemporaryDirectory, include_unsafe: bool = False
-    ) -> list[str]:
-        """Run replay in dry_run mode and return the methods of surviving flows."""
-        from apisniff import replay as replay_mod
+def test_include_unsafe_passes_all():
+    """Without this test, --include-unsafe could silently still filter methods."""
+    flows = [_flow("GET"), _flow("POST")]
+    safe, unsafe = _filter_flows(flows, include_unsafe=True)
+    assert [f.method for f in safe] == ["GET", "POST"]
+    assert unsafe == []
 
-        captured: list[CapturedFlow] = []
-        original_filter = replay_mod._filter_flows
 
-        def capturing_filter(flows, include_unsafe_):
-            safe, unsafe = original_filter(flows, include_unsafe_)
-            captured.extend(safe)
-            return safe, unsafe
-
-        with patch.object(replay_mod, "_filter_flows", side_effect=capturing_filter):
-            with patch("apisniff.output.render_dry_run"):
-                asyncio.run(
-                    run_replay(
-                        bundle_dir=tmpdir.name,
-                        include_unsafe=include_unsafe,
-                        dry_run=True,
-                    )
-                )
-        return [f.method for f in captured]
-
-    def test_get_included_by_default(self):
-        tmpdir = self._make_bundle([_flow("GET"), _flow("POST")])
-        with tmpdir:
-            methods = self._run_dry(tmpdir, include_unsafe=False)
-        assert "GET" in methods
-        assert "POST" not in methods
-
-    def test_post_excluded_by_default(self):
-        tmpdir = self._make_bundle([_flow("POST")])
-        with tmpdir:
-            methods = self._run_dry(tmpdir, include_unsafe=False)
-        assert methods == []
-
-    def test_post_included_with_include_unsafe(self):
-        tmpdir = self._make_bundle([_flow("GET"), _flow("POST")])
-        with tmpdir:
-            methods = self._run_dry(tmpdir, include_unsafe=True)
-        assert "GET" in methods
-        assert "POST" in methods
-
-    def test_head_and_options_included_by_default(self):
-        tmpdir = self._make_bundle([_flow("HEAD"), _flow("OPTIONS")])
-        with tmpdir:
-            methods = self._run_dry(tmpdir, include_unsafe=False)
-        assert "HEAD" in methods
-        assert "OPTIONS" in methods
+def test_head_and_options_are_safe():
+    """Without this test, HEAD/OPTIONS could be silently classified as unsafe."""
+    flows = [_flow("HEAD"), _flow("OPTIONS")]
+    safe, _ = _filter_flows(flows, include_unsafe=False)
+    assert [f.method for f in safe] == ["HEAD", "OPTIONS"]
 
 
 class TestEarlyAbort:
