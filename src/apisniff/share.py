@@ -9,10 +9,10 @@ import yaml
 
 from apisniff.auth import ExtractedCookie, detect_auth, extract_cookies
 from apisniff.bundle import read_capture_jsonl
-from apisniff.models import CapturedFlow, ProbeResult, SessionStats, normalize_path
+from apisniff.models import CapturedFlow, SessionStats, normalize_path
 from apisniff.report import generate_report
-from apisniff.spec import _is_api_flow, generate_openapi
-from apisniff.vendors import load_signatures, match_vendors
+from apisniff.spec import generate_openapi, is_api_flow
+from apisniff.vendors import flows_to_probe_results, load_signatures, match_vendors
 
 
 def generate_inventory(flows: list[CapturedFlow]) -> list[dict]:
@@ -55,7 +55,7 @@ def share_bundle(src: str, dst: str, domain: str) -> dict:
         raise FileNotFoundError(f"No flows.jsonl in {src_path}")
     flows = read_capture_jsonl(str(flows_path))
 
-    api_flows = [f for f in flows if _is_api_flow(f)]
+    api_flows = [f for f in flows if is_api_flow(f)]
     auth_patterns = detect_auth(flows)
     cookies = extract_cookies(flows)
 
@@ -70,15 +70,7 @@ def share_bundle(src: str, dst: str, domain: str) -> dict:
 
     session_stats = _load_session_stats(src_path)
 
-    probe_results = [
-        ProbeResult(
-            label="captured", status=f.response_status,
-            headers=f.response_headers, body=f.response_body,
-            elapsed_ms=0.0, error=None,
-        )
-        for f in flows
-    ]
-    vendors = match_vendors(probe_results, load_signatures())
+    vendors = match_vendors(flows_to_probe_results(flows), load_signatures())
 
     safe_cookies = [
         ExtractedCookie(

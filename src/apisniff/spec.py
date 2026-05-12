@@ -41,7 +41,7 @@ def _get_header_ci(headers: dict[str, str], name: str) -> str:
     return ""
 
 
-def _is_api_flow(flow: CapturedFlow) -> bool:
+def is_api_flow(flow: CapturedFlow) -> bool:
     """Return True if flow is API traffic worth including in a spec."""
     if "json" in flow.content_type:
         return True
@@ -384,7 +384,7 @@ def run_spec(
             return
         flows = read_capture_jsonl(str(flows_path))
 
-    api_flows = [f for f in flows if _is_api_flow(f)]
+    api_flows = [f for f in flows if is_api_flow(f)]
 
     auth_patterns = detect_auth(flows)
     spec = generate_openapi(
