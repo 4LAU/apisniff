@@ -4,7 +4,7 @@ from unittest.mock import AsyncMock, MagicMock, patch
 import pytest
 
 from apisniff.models import ProbeResult, ProbeVerdict
-from apisniff.probe import classify_results, fetch_graphql_schema, _probe_curl_cffi, run_probes
+from apisniff.probe import _probe_curl_cffi, classify_results, fetch_graphql_schema, run_probes
 
 
 @pytest.mark.asyncio

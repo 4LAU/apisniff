@@ -13,7 +13,6 @@ from apisniff.models import (
     CapturedFlow,
     ProbeAssessment,
     ProbeVerdict,
-    RateLimitResult,
     ReplayAbort,
     ReplayCategory,
     ReplayResult,
@@ -155,14 +154,17 @@ def render_probe(assessment: ProbeAssessment, console: Console | None = None) ->
     if assessment.rate_limit:
         rl = assessment.rate_limit
         console.print("  Rate Limit Probe:")
-        if rl.first_block_at:
+        if rl.first_block_at is not None:
             console.print(f"    Blocked at request {rl.first_block_at} (HTTP {rl.block_status})")
             if rl.retry_after:
                 console.print(f"    Retry-After: {rl.retry_after}s")
         elif rl.silent_throttle:
-            console.print("    [yellow]Possible silent throttle[/yellow] (response times >2x in second half)")
+            msg = "Possible silent throttle (response times >2x in second half)"
+            console.print(f"    [yellow]{msg}[/yellow]")
         else:
-            console.print(f"    No rate limiting observed in {rl.requests_sent} sequential requests")
+            console.print(
+                f"    No rate limiting observed in {rl.requests_sent} sequential requests"
+            )
         console.print(f"    Median response: {rl.median_ms:.0f}ms over {rl.requests_sent} requests")
 
     console.print()

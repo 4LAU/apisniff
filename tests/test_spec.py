@@ -2,14 +2,11 @@
 
 
 from apisniff.auth import AuthPattern
-from apisniff.models import CapturedFlow
+from apisniff.models import CapturedFlow, normalize_path
 from apisniff.spec import (
     _infer_schema,
     _is_api_flow,
-    _merge_schemas,
-    _redact_if_secret,
     generate_openapi,
-    normalize_path,
 )
 
 
@@ -37,6 +34,17 @@ def _flow(
         response_headers=response_headers,
         response_body=body,
     )
+
+
+def _resp_schema(spec, path="/api/v1/users", method="get", status="200"):
+    return (
+        spec["paths"][path][method]["responses"][status]
+        ["content"]["application/json"]["schema"]
+    )
+
+
+def _req_schema(spec, path="/api/v1/users", method="post", ct="application/json"):
+    return spec["paths"][path][method]["requestBody"]["content"][ct]["schema"]
 
 
 def test_normalize_path_uuid():
@@ -171,10 +179,15 @@ def test_is_api_flow_form_post():
 
 def test_is_api_flow_multipart():
     """multipart upload is API traffic."""
+    mp_body = (
+        b"--abc\r\n"
+        b'Content-Disposition: form-data; name="file"; filename="a.txt"\r\n'
+        b"\r\ndata\r\n--abc--"
+    )
     flow = _flow(
         method="POST",
         request_headers={"content-type": "multipart/form-data; boundary=abc"},
-        request_body=b"--abc\r\nContent-Disposition: form-data; name=\"file\"; filename=\"a.txt\"\r\n\r\ndata\r\n--abc--",
+        request_body=mp_body,
         response_headers={"content-type": "text/plain"},
         body=b"OK",
     )
@@ -263,7 +276,7 @@ def test_response_schemas_merged_across_flows():
     f1 = _flow(body=b'{"id": 1}')
     f2 = _flow(body=b'{"id": 2, "email": "a@b.com"}')
     spec = generate_openapi([f1, f2], "example.com")
-    schema = spec["paths"]["/api/v1/users"]["get"]["responses"]["200"]["content"]["application/json"]["schema"]
+    schema = _resp_schema(spec)
     props = schema["properties"]
     assert "id" in props
     assert "email" in props
@@ -282,7 +295,7 @@ def test_request_body_schemas_merged_across_flows():
         request_body=b'{"name": "Bob", "age": 30}',
     )
     spec = generate_openapi([f1, f2], "example.com")
-    schema = spec["paths"]["/api/v1/users"]["post"]["requestBody"]["content"]["application/json"]["schema"]
+    schema = _req_schema(spec)
     props = schema["properties"]
     assert "name" in props
     assert "age" in props
@@ -327,7 +340,7 @@ def test_empty_array_enriched_by_populated_array():
     f_empty = _flow(body=b"[]")
     f_populated = _flow(body=b'[{"id": 1, "name": "Alice"}]')
     spec = generate_openapi([f_empty, f_populated], "example.com")
-    schema = spec["paths"]["/api/v1/users"]["get"]["responses"]["200"]["content"]["application/json"]["schema"]
+    schema = _resp_schema(spec)
     assert schema["type"] == "array"
     assert schema["items"].get("type") == "object"
     assert "id" in schema["items"]["properties"]
@@ -340,7 +353,7 @@ def test_examples_in_response_schema():
     """include_examples=True adds example values."""
     flow = _flow(body=b'{"id": 1, "name": "Alice"}')
     spec = generate_openapi([flow], "example.com", include_examples=True)
-    schema = spec["paths"]["/api/v1/users"]["get"]["responses"]["200"]["content"]["application/json"]["schema"]
+    schema = _resp_schema(spec)
     props = schema["properties"]
     assert props["id"]["example"] == 1
     assert props["name"]["example"] == "Alice"
@@ -350,10 +363,20 @@ def test_examples_redact_secrets():
     """Bearer tokens and API keys redacted."""
     flow = _flow(body=b'{"token": "bearer abc123", "key": "sk_live_secret"}')
     spec = generate_openapi([flow], "example.com", include_examples=True)
-    schema = spec["paths"]["/api/v1/users"]["get"]["responses"]["200"]["content"]["application/json"]["schema"]
+    schema = _resp_schema(spec)
     props = schema["properties"]
     assert props["token"]["example"] == "***REDACTED***"
     assert props["key"]["example"] == "***REDACTED***"
+
+
+def test_examples_redact_mid_string_secrets():
+    """Secrets not at start of string are still redacted."""
+    flow = _flow(body=b'{"auth": "token=sk_live_abc", "header": "Authorization: Bearer eyJhbGc"}')
+    spec = generate_openapi([flow], "example.com", include_examples=True)
+    schema = _resp_schema(spec)
+    props = schema["properties"]
+    assert props["auth"]["example"] == "***REDACTED***"
+    assert props["header"]["example"] == "***REDACTED***"
 
 
 def test_examples_truncate_long_strings():
@@ -361,7 +384,7 @@ def test_examples_truncate_long_strings():
     long_str = "a" * 300
     flow = _flow(body=f'{{"text": "{long_str}"}}'.encode())
     spec = generate_openapi([flow], "example.com", include_examples=True)
-    schema = spec["paths"]["/api/v1/users"]["get"]["responses"]["200"]["content"]["application/json"]["schema"]
+    schema = _resp_schema(spec)
     props = schema["properties"]
     assert len(props["text"]["example"]) == 203  # 200 + "..."
     assert props["text"]["example"].endswith("...")
@@ -371,7 +394,7 @@ def test_examples_off_by_default():
     """No example fields without include_examples."""
     flow = _flow(body=b'{"id": 1, "name": "Alice"}')
     spec = generate_openapi([flow], "example.com")
-    schema = spec["paths"]["/api/v1/users"]["get"]["responses"]["200"]["content"]["application/json"]["schema"]
+    schema = _resp_schema(spec)
     props = schema["properties"]
     assert "example" not in props["id"]
     assert "example" not in props["name"]
