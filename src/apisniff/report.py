@@ -69,7 +69,7 @@ def generate_report(
         for dom, clist in sorted(by_domain.items()):
             lines.append(f"**{dom}** ({len(clist)} cookies)")
             for c in clist:
-                lines.append(f"- `{c.name}` = `{c.value[:40]}{'...' if len(c.value) > 40 else ''}`")
+                lines.append(f"- `{c.name}` ({c.domain}, {'secure' if c.secure else 'plaintext'})")
         lines.append("")
 
     # Top endpoints
