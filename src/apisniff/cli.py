@@ -51,6 +51,9 @@ def probe(
         "chrome", "--impersonate",
         help="TLS profile: chrome, chrome131, chrome120, safari17_0, firefox133",
     ),
+    probe_rate: bool = typer.Option(
+        False, "--probe-rate", help="Send 20 requests to detect rate limiting (opt-in)",
+    ),
 ) -> None:
     """Defense preflight -- what kind of surface am I dealing with?"""
     from apisniff.models import ProbeVerdict
@@ -68,6 +71,7 @@ def probe(
             proxy=proxy,
             skip_graphql=skip_graphql,
             impersonate=impersonate,
+            probe_rate=probe_rate,
         )
     )
 
