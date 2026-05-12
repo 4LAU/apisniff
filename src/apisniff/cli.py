@@ -180,6 +180,9 @@ def spec(
         False, "--infer-security-schemes",
         help="Promote observed auth to securitySchemes (default: extensions only)",
     ),
+    include_examples: bool = typer.Option(
+        False, "--examples", help="Include sample response values in generated spec",
+    ),
 ) -> None:
     """Extract API structure -- generate OpenAPI from captured traffic."""
     from apisniff.spec import run_spec
@@ -187,4 +190,5 @@ def spec(
     run_spec(
         domain, input_file=input_file, output_format=output_format,
         output_file=output_file, infer_schemes=infer_schemes,
+        include_examples=include_examples,
     )
