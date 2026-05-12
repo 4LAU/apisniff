@@ -169,7 +169,8 @@ def run_recon(
     env = {**os.environ, "APISNIFF_TARGET": domain, "APISNIFF_OUTPUT": str(output_path)}
 
     cmd = [
-        sys.executable, "-m", "mitmproxy",
+        sys.executable, "-c",
+        "from mitmproxy.tools.main import mitmdump; mitmdump()",
         "--listen-port", str(port),
         "--set", "console_eventlog_verbosity=error",
         "-s", str(addon_path),

@@ -168,7 +168,7 @@ def run_spec(
 
     api_flows = [
         f for f in flows
-        if f.content_type == "application/json" and 200 <= f.response_status < 300
+        if "json" in (f.content_type or "") and 200 <= f.response_status < 300
     ]
 
     auth_patterns = detect_auth(flows)
