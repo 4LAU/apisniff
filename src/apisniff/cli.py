@@ -47,6 +47,10 @@ def probe(
     skip_graphql: bool = typer.Option(
         False, "--skip-graphql", help="Skip GraphQL endpoint detection"
     ),
+    impersonate: str = typer.Option(
+        "chrome", "--impersonate",
+        help="TLS profile: chrome, chrome131, chrome120, safari17_0, firefox133",
+    ),
 ) -> None:
     """Defense preflight -- what kind of surface am I dealing with?"""
     from apisniff.models import ProbeVerdict
@@ -63,6 +67,7 @@ def probe(
             headers=extra_headers or None,
             proxy=proxy,
             skip_graphql=skip_graphql,
+            impersonate=impersonate,
         )
     )
 
@@ -136,6 +141,10 @@ def replay(
         False, "--include-unsafe", help="Include non-GET/HEAD/OPTIONS methods"
     ),
     insecure: bool = typer.Option(False, "--insecure", help="Skip TLS verification"),
+    impersonate: str = typer.Option(
+        "chrome", "--impersonate",
+        help="TLS profile: chrome, chrome131, chrome120, safari17_0, firefox133",
+    ),
 ) -> None:
     """Replay captured API calls and detect drift."""
     from apisniff.replay import run_replay
@@ -152,6 +161,7 @@ def replay(
         dry_run=dry_run,
         json_output=json_output,
         output_file=output_file,
+        impersonate=impersonate,
     )
     if os.path.isdir(bundle):
         kwargs["bundle_dir"] = bundle

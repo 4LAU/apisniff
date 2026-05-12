@@ -204,6 +204,7 @@ async def replay_endpoint(
     cookies: list[tuple[str, str, str]] | None = None,
     timeout: float = 15.0,
     insecure: bool = False,
+    impersonate: str = "chrome",
 ) -> ReplayResult:
     """Replay a single captured flow and return a categorized ReplayResult."""
     from curl_cffi.requests import AsyncSession
@@ -237,7 +238,7 @@ async def replay_endpoint(
     replayed_body = b""
 
     try:
-        async with AsyncSession(impersonate="chrome") as session:
+        async with AsyncSession(impersonate=impersonate) as session:
             resp = await session.request(
                 method=flow.method,
                 url=flow.url,
@@ -316,6 +317,7 @@ async def _replay_with_retry(
     cookies: list[tuple[str, str, str]],
     timeout: float,
     insecure: bool,
+    impersonate: str = "chrome",
 ) -> ReplayResult:
     backoff_delays = [1.0, 2.0, 4.0]
     for attempt, delay in enumerate([0.0] + backoff_delays):
@@ -327,6 +329,7 @@ async def _replay_with_retry(
             cookies=cookies,
             timeout=timeout,
             insecure=insecure,
+            impersonate=impersonate,
         )
         if result.replayed_status == 429 and attempt < len(backoff_delays):
             continue
@@ -346,6 +349,7 @@ async def run_replay(
     dry_run: bool = False,
     json_output: bool = False,
     output_file: str | None = None,
+    impersonate: str = "chrome",
 ) -> list[ReplayResult]:
     """Replay captured endpoints serially, aborting on auth failure or block."""
     if bundle_dir:
@@ -399,7 +403,7 @@ async def run_replay(
 
     for flow in flows:
         result = await _replay_with_retry(
-            flow, extra_headers, cookies, timeout, insecure,
+            flow, extra_headers, cookies, timeout, insecure, impersonate,
         )
         results.append(result)
 

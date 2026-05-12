@@ -72,6 +72,7 @@ async def _probe_curl_cffi(
     ua: str,
     headers: dict[str, str] | None = None,
     proxy: str | None = None,
+    impersonate: str = "chrome",
 ) -> ProbeResult:
     from curl_cffi.requests import AsyncSession
 
@@ -84,7 +85,7 @@ async def _probe_curl_cffi(
             resp = await session.get(
                 url,
                 headers=req_headers,
-                impersonate="chrome",
+                impersonate=impersonate,
                 timeout=_TIMEOUT,
                 allow_redirects=True,
                 verify=False,
@@ -285,14 +286,15 @@ async def run_probes(
     headers: dict[str, str] | None = None,
     proxy: str | None = None,
     skip_graphql: bool = False,
+    impersonate: str = "chrome",
 ) -> ProbeAssessment:
     if not url.startswith(("http://", "https://")):
         url = f"https://{url}"
 
     tasks = [
         _probe_httpx(url, "naked", _BOT_UA, headers, proxy),
-        _probe_curl_cffi(url, "impersonated", _CHROME_UA, headers, proxy),
-        _probe_curl_cffi(url, "tls_only", _BOT_UA, headers, proxy),
+        _probe_curl_cffi(url, "impersonated", _CHROME_UA, headers, proxy, impersonate=impersonate),
+        _probe_curl_cffi(url, "tls_only", _BOT_UA, headers, proxy, impersonate=impersonate),
     ]
     if not skip_graphql:
         tasks.append(detect_graphql(url, headers, proxy))
