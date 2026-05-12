@@ -16,7 +16,6 @@ from rich.console import Console
 from apisniff.bundle import (
     CAPTURES_DIR,
     detect_input_format,  # noqa: F401 — re-exported for backwards compat
-    find_latest_bundle,  # noqa: F401 — re-exported for backwards compat
     load_flows,
     read_capture_jsonl,
     safe_bundle_name,

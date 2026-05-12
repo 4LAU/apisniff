@@ -6,7 +6,7 @@ import re
 import sys
 from collections import defaultdict
 from pathlib import Path
-from urllib.parse import parse_qs, urlparse
+from urllib.parse import parse_qs
 
 import yaml
 from rich.console import Console
@@ -19,8 +19,11 @@ stderr = Console(stderr=True)
 
 _MULTIPART_NAME_RE = re.compile(r'name="([^"]+)"')
 _MULTIPART_FILENAME_RE = re.compile(r'filename="[^"]*"')
-_SECRET_RE = re.compile(r"(?i)^(bearer |eyj|sk_|pk_|api_|ghp_|gho_|xox[bpsar]-|AKIA)")
+_SECRET_RE = re.compile(
+    r"(?i)(bearer |basic |eyj|sk_|pk_|api_|ghp_|gho_|ghs_|glpat-|xox[bpsar]-|AKIA)"
+)
 _MAX_EXAMPLE_LEN = 200
+_FILE_SENTINEL = "__file__"
 
 _API_CONTENT_TYPES = frozenset({
     "application/json",
@@ -40,13 +43,10 @@ def _get_header_ci(headers: dict[str, str], name: str) -> str:
 
 def _is_api_flow(flow: CapturedFlow) -> bool:
     """Return True if flow is API traffic worth including in a spec."""
-    resp_ct = _get_header_ci(flow.response_headers, "content-type").split(";")[0].strip().lower()
-    if "json" in resp_ct:
+    if "json" in flow.content_type:
         return True
     req_ct = _get_header_ci(flow.request_headers, "content-type").split(";")[0].strip().lower()
-    if req_ct in _API_CONTENT_TYPES:
-        return True
-    return False
+    return req_ct in _API_CONTENT_TYPES
 
 
 def _redact_if_secret(value: str) -> str:
@@ -85,7 +85,8 @@ def _infer_schema(value, *, include_examples: bool = False) -> dict:
     if isinstance(value, list):
         if not value:
             return {"type": "array", "items": {}}
-        return {"type": "array", "items": _infer_schema(value[0], include_examples=include_examples)}
+        items = _infer_schema(value[0], include_examples=include_examples)
+        return {"type": "array", "items": items}
     if isinstance(value, dict):
         properties = {}
         for k, v in value.items():
@@ -94,7 +95,7 @@ def _infer_schema(value, *, include_examples: bool = False) -> dict:
     return {"type": "string"}
 
 
-def _parse_response_body(body: bytes) -> dict | None:
+def _parse_json_body(body: bytes) -> dict | None:
     if not body:
         return None
     try:
@@ -138,13 +139,9 @@ def _parse_multipart(body: bytes, content_type: str) -> dict | None:
     if not boundary:
         return None
 
-    try:
-        text = body.decode("utf-8", errors="replace")
-    except Exception:
-        return None
+    text = body.decode("utf-8", errors="replace")
 
     result: dict = {}
-    # Split on boundary markers
     parts = text.split(f"--{boundary}")
     for segment in parts:
         name_m = _MULTIPART_NAME_RE.search(segment)
@@ -153,9 +150,8 @@ def _parse_multipart(body: bytes, content_type: str) -> dict | None:
         field_name = name_m.group(1)
         is_file = bool(_MULTIPART_FILENAME_RE.search(segment))
         if is_file:
-            result[field_name] = "__file__"
+            result[field_name] = _FILE_SENTINEL
         else:
-            # Value is after the double newline in the part
             header_body = segment.split("\r\n\r\n", 1)
             if len(header_body) < 2:
                 header_body = segment.split("\n\n", 1)
@@ -209,6 +205,13 @@ def _merge_schemas(existing: dict, new: dict) -> dict:
     return existing
 
 
+def _upsert_request_schema(content: dict[str, dict], ct_key: str, new_schema: dict) -> None:
+    if ct_key in content:
+        content[ct_key]["schema"] = _merge_schemas(content[ct_key]["schema"], new_schema)
+    else:
+        content[ct_key] = {"schema": new_schema}
+
+
 def generate_openapi(
     flows: list[CapturedFlow],
     domain: str,
@@ -248,7 +251,7 @@ def generate_openapi(
         response_schemas: dict[str, dict] = {}
         for flow in group:
             status_key = str(flow.response_status)
-            parsed = _parse_response_body(flow.response_body)
+            parsed = _parse_json_body(flow.response_body)
             if status_key not in operation["responses"]:
                 operation["responses"][status_key] = {
                     "description": "Observed response",
@@ -267,7 +270,6 @@ def generate_openapi(
                 "application/json": {"schema": schema}
             }
 
-        # --- Aggregate request bodies per content type ---
         if method in ("post", "put", "patch"):
             request_content: dict[str, dict] = {}
             for flow in group:
@@ -277,47 +279,29 @@ def generate_openapi(
                 req_ct = req_ct_raw.split(";")[0].strip().lower()
 
                 if req_ct == "application/json":
-                    req_parsed = _parse_response_body(flow.request_body)
+                    req_parsed = _parse_json_body(flow.request_body)
                     if req_parsed is not None:
                         new_schema = _infer_schema(req_parsed, include_examples=include_examples)
-                        ct_key = "application/json"
-                        if ct_key in request_content:
-                            request_content[ct_key]["schema"] = _merge_schemas(
-                                request_content[ct_key]["schema"], new_schema
-                            )
-                        else:
-                            request_content[ct_key] = {"schema": new_schema}
+                        _upsert_request_schema(request_content, "application/json", new_schema)
 
                 elif req_ct == "application/x-www-form-urlencoded":
                     form_data = _parse_form_urlencoded(flow.request_body)
                     if form_data is not None:
                         new_schema = _infer_schema(form_data, include_examples=include_examples)
-                        ct_key = "application/x-www-form-urlencoded"
-                        if ct_key in request_content:
-                            request_content[ct_key]["schema"] = _merge_schemas(
-                                request_content[ct_key]["schema"], new_schema
-                            )
-                        else:
-                            request_content[ct_key] = {"schema": new_schema}
+                        ct = "application/x-www-form-urlencoded"
+                        _upsert_request_schema(request_content, ct, new_schema)
 
                 elif req_ct == "multipart/form-data":
                     mp_data = _parse_multipart(flow.request_body, req_ct_raw)
                     if mp_data is not None:
-                        # Build schema manually for multipart: file fields get format: binary
                         props: dict[str, dict] = {}
                         for k, v in mp_data.items():
-                            if v == "__file__":
+                            if v == _FILE_SENTINEL:
                                 props[k] = {"type": "string", "format": "binary"}
                             else:
                                 props[k] = _infer_schema(v, include_examples=include_examples)
                         new_schema = {"type": "object", "properties": props}
-                        ct_key = "multipart/form-data"
-                        if ct_key in request_content:
-                            request_content[ct_key]["schema"] = _merge_schemas(
-                                request_content[ct_key]["schema"], new_schema
-                            )
-                        else:
-                            request_content[ct_key] = {"schema": new_schema}
+                        _upsert_request_schema(request_content, "multipart/form-data", new_schema)
 
             if request_content:
                 operation["requestBody"] = {"content": request_content}

@@ -305,6 +305,7 @@ async def probe_rate_limit(
             first_block_at = i + 1
             block_status = r.status
             retry_after = r.headers.get("retry-after")
+            break
 
     times = [r.elapsed_ms for r in results if r.status is not None]
     median_ms = statistics.median(times) if times else 0.0
@@ -318,7 +319,7 @@ async def probe_rate_limit(
             silent_throttle = True
 
     return RateLimitResult(
-        requests_sent=count,
+        requests_sent=len(results),
         first_block_at=first_block_at,
         block_status=block_status,
         retry_after=retry_after,

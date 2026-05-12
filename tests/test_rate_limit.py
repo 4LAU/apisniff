@@ -1,4 +1,5 @@
 import pytest
+
 from apisniff.models import ProbeResult, RateLimitResult
 
 
