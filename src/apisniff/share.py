@@ -7,7 +7,7 @@ from pathlib import Path
 
 import yaml
 
-from apisniff.auth import detect_auth, extract_cookies
+from apisniff.auth import ExtractedCookie, detect_auth, extract_cookies
 from apisniff.bundle import read_capture_jsonl
 from apisniff.models import CapturedFlow, normalize_path
 from apisniff.report import generate_report
@@ -79,16 +79,37 @@ def share_bundle(src: str, dst: str, domain: str) -> dict:
     ]
     vendors = match_vendors(probe_results, load_signatures())
 
+    # Redact cookie values before passing to report
+    safe_cookies = [
+        ExtractedCookie(
+            name=c.name, value="[redacted]", domain=c.domain,
+            host_only=c.host_only, path=c.path, secure=c.secure, source=c.source
+        )
+        for c in cookies
+    ]
+
     report = generate_report(
         domain=domain, flows=flows, session_stats=session_stats,
-        vendors=vendors, auth_patterns=auth_patterns, cookies=cookies,
+        vendors=vendors, auth_patterns=auth_patterns, cookies=safe_cookies,
     )
     (dst_path / "report.md").write_text(report)
 
-    for name in ("session.json", "graphql-schema.json"):
-        src_file = src_path / name
-        if src_file.exists():
-            shutil.copy2(src_file, dst_path / name)
+    # Write filtered session.json with only safe fields
+    if session_stats:
+        safe_session = {
+            "domain": session_stats.domain,
+            "started_at": session_stats.started_at,
+            "duration_seconds": session_stats.duration_seconds,
+            "total_flows": session_stats.total_flows,
+            "kept_flows": session_stats.kept_flows,
+            "dropped": dict(session_stats.dropped),
+        }
+        (dst_path / "session.json").write_text(json.dumps(safe_session, indent=2))
+
+    # Copy graphql-schema.json verbatim if present
+    gql_src = src_path / "graphql-schema.json"
+    if gql_src.exists():
+        shutil.copy2(gql_src, dst_path / "graphql-schema.json")
 
     return {
         "flows_processed": len(flows),

@@ -42,7 +42,15 @@ def _write_bundle(tmp_path, flows, extras=None):
     src.mkdir()
     lines = [f.to_jsonl() for f in flows]
     (src / "flows.jsonl").write_text("\n".join(lines) + "\n")
-    (src / "session.json").write_text('{"domain": "example.com"}')
+    session_data = {
+        "domain": "example.com",
+        "started_at": "2025-01-01T00:00:00Z",
+        "duration_seconds": 60.0,
+        "total_flows": len(flows),
+        "kept_flows": len(flows),
+        "dropped": {},
+    }
+    (src / "session.json").write_text(json.dumps(session_data))
     (src / "report.md").write_text("# example.com\n")
     if extras:
         for name, content in extras.items():
@@ -194,6 +202,7 @@ def test_share_bundle_no_raw_secrets_in_output(tmp_path):
         content = p.read_text()
         assert "sk_live_secret" not in content
         assert "session=abc123" not in content
+        assert "abc123" not in content
         assert "secret_key_999" not in content
         assert "hunter2" not in content
         assert "eyJhbGciOiJSUzI1NiJ9" not in content
