@@ -46,6 +46,10 @@ def _post_process_bundle(
         cookies_path = bundle_dir / "cookies.txt"
         cookies_path.write_text(cookies_txt)
         stderr.print(f"  Cookies: {cookies_path}")
+        stderr.print(
+            "  [yellow]cookies.txt contains session credentials"
+            " — do not share or commit to git[/yellow]"
+        )
 
     if fetch_graphql:
         from apisniff.probe import fetch_graphql_schema
