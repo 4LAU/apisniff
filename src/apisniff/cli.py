@@ -206,3 +206,56 @@ def spec(
         output_file=output_file, infer_schemes=infer_schemes,
         include_examples=include_examples,
     )
+
+
+@app.command()
+def share(
+    bundle: str = typer.Argument(help="Bundle directory path or domain name"),
+    output: str | None = typer.Option(
+        None, "--output", "-o",
+        help="Output directory (default: <bundle>-shared)",
+    ),
+    domain: str | None = typer.Option(
+        None, "--domain", "-d",
+        help="Domain (auto-detected from session.json if omitted)",
+    ),
+) -> None:
+    """Export a shareable summary — no raw traffic, no credentials."""
+    from apisniff.share import share_bundle
+
+    if os.path.isdir(bundle):
+        src = bundle
+    else:
+        from apisniff.bundle import find_latest_bundle
+        found = find_latest_bundle(bundle)
+        if found is None:
+            stderr.print(
+                f"[red]No captures found for {bundle}.[/red]"
+            )
+            raise SystemExit(_EXIT_ERROR)
+        src = str(found)
+
+    if domain is None:
+        import json
+        session_path = os.path.join(src, "session.json")
+        try:
+            with open(session_path) as f:
+                domain = json.load(f).get("domain")
+        except (FileNotFoundError, json.JSONDecodeError, KeyError):
+            pass
+        if domain is None:
+            stderr.print(
+                "[red]Cannot detect domain — use --domain.[/red]"
+            )
+            raise SystemExit(_EXIT_ERROR)
+
+    dst = output or f"{src}-shared"
+    if os.path.exists(dst):
+        stderr.print(f"[red]Output directory already exists: {dst}[/red]")
+        raise SystemExit(_EXIT_ERROR)
+
+    stats = share_bundle(src, dst, domain)
+    stderr.print(f"  Shared {stats['flows_processed']} flows as derived artifacts → {dst}")
+    stderr.print(f"  {stats['paths']} paths, {stats['endpoints']} endpoints")
+    stderr.print("  Contains: spec.yaml, inventory.json, session.json, report.md")
+    stderr.print("  No raw traffic or credentials included.")
