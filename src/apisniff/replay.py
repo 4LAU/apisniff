@@ -8,6 +8,7 @@ import time
 from pathlib import Path
 from typing import Any
 
+from apisniff.bundle import find_latest_bundle, read_capture_jsonl
 from apisniff.models import (
     CapturedFlow,
     ReplayAbort,
@@ -15,7 +16,6 @@ from apisniff.models import (
     ReplayResult,
     replay_dedup_key,
 )
-from apisniff.recon import find_latest_bundle, read_capture_jsonl
 
 _HOP_BY_HOP = frozenset(
     {"host", "content-length", "content-encoding", "transfer-encoding"}

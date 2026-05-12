@@ -320,7 +320,7 @@ async def run_probes(
             schema_url = url.rstrip("/") + graphql_endpoints[0]
             schema = await fetch_graphql_schema(schema_url, headers, proxy)
             if schema:
-                from apisniff.recon import CAPTURES_DIR
+                from apisniff.bundle import CAPTURES_DIR
                 domain = urlparse(url).hostname or "unknown"
                 ts = datetime.now(UTC).strftime("%Y-%m-%d_%H-%M")
                 schema_path = CAPTURES_DIR / f"{domain}-schema-{ts}.graphql.json"

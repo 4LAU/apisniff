@@ -10,8 +10,8 @@ import yaml
 from rich.console import Console
 
 from apisniff.auth import AuthPattern, detect_auth
+from apisniff.bundle import load_flows, read_capture_jsonl
 from apisniff.models import CapturedFlow, normalize_path
-from apisniff.recon import load_flows, read_capture_jsonl
 
 stderr = Console(stderr=True)
 
@@ -150,7 +150,7 @@ def run_spec(
             stderr.print(f"[red]Unknown input format for {input_file}[/red]")
             return
     else:
-        from apisniff.recon import find_latest_bundle
+        from apisniff.bundle import find_latest_bundle
 
         bundle = find_latest_bundle(domain)
         if bundle is None:
