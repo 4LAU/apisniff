@@ -13,6 +13,7 @@ from apisniff.models import (
     CapturedFlow,
     ProbeAssessment,
     ProbeVerdict,
+    RateLimitResult,
     ReplayAbort,
     ReplayCategory,
     ReplayResult,
@@ -42,7 +43,7 @@ def probe_to_dict(assessment: ProbeAssessment) -> dict:
         for v in assessment.vendors
     ]
 
-    return {
+    result: dict = {
         "url": assessment.url,
         "verdict": assessment.verdict.value,
         "recommendation": assessment.recommendation,
@@ -54,6 +55,16 @@ def probe_to_dict(assessment: ProbeAssessment) -> dict:
             "schema_path": assessment.graphql_schema_path,
         },
     }
+    if assessment.rate_limit:
+        result["rate_limit"] = {
+            "requests_sent": assessment.rate_limit.requests_sent,
+            "first_block_at": assessment.rate_limit.first_block_at,
+            "block_status": assessment.rate_limit.block_status,
+            "retry_after": assessment.rate_limit.retry_after,
+            "median_ms": assessment.rate_limit.median_ms,
+            "silent_throttle": assessment.rate_limit.silent_throttle,
+        }
+    return result
 
 
 def probe_to_json(assessment: ProbeAssessment) -> str:
@@ -140,6 +151,19 @@ def render_probe(assessment: ProbeAssessment, console: Console | None = None) ->
                 )
             except (FileNotFoundError, json.JSONDecodeError, KeyError):
                 console.print(f"  GraphQL schema: {assessment.graphql_schema_path}")
+
+    if assessment.rate_limit:
+        rl = assessment.rate_limit
+        console.print("  Rate Limit Probe:")
+        if rl.first_block_at:
+            console.print(f"    Blocked at request {rl.first_block_at} (HTTP {rl.block_status})")
+            if rl.retry_after:
+                console.print(f"    Retry-After: {rl.retry_after}s")
+        elif rl.silent_throttle:
+            console.print("    [yellow]Possible silent throttle[/yellow] (response times >2x in second half)")
+        else:
+            console.print(f"    No rate limiting observed in {rl.requests_sent} sequential requests")
+        console.print(f"    Median response: {rl.median_ms:.0f}ms over {rl.requests_sent} requests")
 
     console.print()
     console.print(f"  [bold]Recommendation:[/bold] {assessment.recommendation}")

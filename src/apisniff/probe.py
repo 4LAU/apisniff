@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import asyncio
 import json
+import statistics
 import time
 from datetime import UTC, datetime
 from urllib.parse import urlparse
@@ -12,6 +13,7 @@ from apisniff.models import (
     ProbeAssessment,
     ProbeResult,
     ProbeVerdict,
+    RateLimitResult,
 )
 from apisniff.vendors import load_signatures, match_vendors
 
@@ -281,12 +283,57 @@ async def fetch_graphql_schema(
     return None
 
 
+async def probe_rate_limit(
+    url: str,
+    count: int = 20,
+    headers: dict[str, str] | None = None,
+    proxy: str | None = None,
+    impersonate: str = "chrome",
+) -> RateLimitResult:
+    results: list[ProbeResult] = []
+    first_block_at: int | None = None
+    block_status: int | None = None
+    retry_after: str | None = None
+
+    for i in range(count):
+        r = await _probe_curl_cffi(
+            url, f"rate_{i}", _CHROME_UA,
+            headers=headers, proxy=proxy, impersonate=impersonate,
+        )
+        results.append(r)
+        if r.status in (429, 503) and first_block_at is None:
+            first_block_at = i + 1
+            block_status = r.status
+            retry_after = r.headers.get("retry-after")
+
+    times = [r.elapsed_ms for r in results if r.status is not None]
+    median_ms = statistics.median(times) if times else 0.0
+
+    silent_throttle = False
+    if len(times) >= 4:
+        mid = len(times) // 2
+        first_half_median = statistics.median(times[:mid])
+        second_half_median = statistics.median(times[mid:])
+        if first_half_median > 0 and second_half_median > 2 * first_half_median:
+            silent_throttle = True
+
+    return RateLimitResult(
+        requests_sent=count,
+        first_block_at=first_block_at,
+        block_status=block_status,
+        retry_after=retry_after,
+        median_ms=round(median_ms, 1),
+        silent_throttle=silent_throttle,
+    )
+
+
 async def run_probes(
     url: str,
     headers: dict[str, str] | None = None,
     proxy: str | None = None,
     skip_graphql: bool = False,
     impersonate: str = "chrome",
+    probe_rate: bool = False,
 ) -> ProbeAssessment:
     if not url.startswith(("http://", "https://")):
         url = f"https://{url}"
@@ -331,6 +378,12 @@ async def run_probes(
                 schema_path.write_text(json.dumps(schema, indent=2))
                 graphql_schema_path = str(schema_path)
 
+    rate_limit: RateLimitResult | None = None
+    if probe_rate:
+        rate_limit = await probe_rate_limit(
+            url, headers=headers, proxy=proxy, impersonate=impersonate,
+        )
+
     return ProbeAssessment(
         url=url,
         verdict=verdict,
@@ -340,4 +393,5 @@ async def run_probes(
         graphql_endpoints=graphql_endpoints,
         graphql_introspection=graphql_introspection,
         graphql_schema_path=graphql_schema_path,
+        rate_limit=rate_limit,
     )

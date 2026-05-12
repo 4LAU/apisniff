@@ -181,6 +181,16 @@ class VendorMatch:
 
 
 @dataclass(frozen=True, slots=True)
+class RateLimitResult:
+    requests_sent: int
+    first_block_at: int | None
+    block_status: int | None
+    retry_after: str | None
+    median_ms: float
+    silent_throttle: bool
+
+
+@dataclass(frozen=True, slots=True)
 class ProbeAssessment:
     url: str
     verdict: ProbeVerdict
@@ -190,6 +200,7 @@ class ProbeAssessment:
     graphql_endpoints: list[str] = field(default_factory=list)
     graphql_introspection: bool = False
     graphql_schema_path: str | None = None
+    rate_limit: RateLimitResult | None = None
 
 
 _DropCategory = Literal[
