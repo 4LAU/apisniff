@@ -4,7 +4,7 @@ from unittest.mock import AsyncMock, MagicMock, patch
 import pytest
 
 from apisniff.models import ProbeResult, ProbeVerdict
-from apisniff.probe import classify_results, fetch_graphql_schema
+from apisniff.probe import classify_results, fetch_graphql_schema, _probe_curl_cffi, run_probes
 
 
 @pytest.mark.asyncio
@@ -105,3 +105,56 @@ def test_classify_naked_challenge_impersonated_pass():
     }
     verdict, recommendation = classify_results(results)
     assert verdict == ProbeVerdict.CLIENT_DEPENDENT
+
+
+@pytest.mark.asyncio
+async def test_probe_curl_cffi_impersonate_threaded(monkeypatch):
+    """Verify impersonate parameter reaches curl_cffi session."""
+    captured_impersonate = {}
+
+    class FakeResp:
+        status_code = 200
+        headers = {}
+        content = b"ok"
+
+    class FakeSession:
+        async def __aenter__(self):
+            return self
+        async def __aexit__(self, *a):
+            pass
+        async def get(self, url, **kwargs):
+            captured_impersonate["value"] = kwargs.get("impersonate")
+            return FakeResp()
+
+    monkeypatch.setattr("curl_cffi.requests.AsyncSession", FakeSession)
+    await _probe_curl_cffi("https://example.com", "test", "ua", impersonate="safari17_0")
+    assert captured_impersonate["value"] == "safari17_0"
+
+
+@pytest.mark.asyncio
+async def test_run_probes_impersonate_parameter(monkeypatch):
+    """run_probes passes impersonate to curl_cffi probes."""
+    calls = []
+
+    async def fake_curl(url, label, ua, headers=None, proxy=None, impersonate="chrome"):
+        calls.append({"label": label, "impersonate": impersonate})
+        return ProbeResult(
+            label=label, status=200, headers={}, body=b"",
+            elapsed_ms=1.0, error=None,
+        )
+
+    async def fake_httpx(url, label, ua, headers=None, proxy=None):
+        return ProbeResult(
+            label=label, status=200, headers={}, body=b"",
+            elapsed_ms=1.0, error=None,
+        )
+
+    monkeypatch.setattr("apisniff.probe._probe_curl_cffi", fake_curl)
+    monkeypatch.setattr("apisniff.probe._probe_httpx", fake_httpx)
+    monkeypatch.setattr("apisniff.probe.load_signatures", lambda: {})
+    monkeypatch.setattr("apisniff.probe.match_vendors", lambda *a: [])
+
+    await run_probes("https://example.com", skip_graphql=True, impersonate="safari17_0")
+
+    curl_calls = [c for c in calls if c["label"] in ("impersonated", "tls_only")]
+    assert all(c["impersonate"] == "safari17_0" for c in curl_calls)

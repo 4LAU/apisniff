@@ -4,6 +4,8 @@ import asyncio
 from pathlib import Path
 from unittest.mock import AsyncMock, MagicMock, patch
 
+import pytest
+
 from apisniff.models import CapturedFlow
 from apisniff.replay import (
     _filter_flows,
@@ -378,3 +380,30 @@ class TestEarlyAbort:
 
         assert len(results) == 1
         assert results[0].category == "blocked"
+
+
+@pytest.mark.asyncio
+async def test_replay_endpoint_impersonate(monkeypatch):
+    """replay_endpoint passes impersonate to curl_cffi."""
+    captured = {}
+
+    class FakeResp:
+        status_code = 200
+        content = b'{"ok": true}'
+        headers = {}
+
+    class FakeSession:
+        def __init__(self, **kwargs):
+            captured["init_impersonate"] = kwargs.get("impersonate")
+        async def __aenter__(self):
+            return self
+        async def __aexit__(self, *a):
+            pass
+        async def request(self, **kwargs):
+            return FakeResp()
+
+    monkeypatch.setattr("curl_cffi.requests.AsyncSession", FakeSession)
+    from apisniff.replay import replay_endpoint
+    flow = _flow()
+    await replay_endpoint(flow, impersonate="safari17_0")
+    assert captured["init_impersonate"] == "safari17_0"
