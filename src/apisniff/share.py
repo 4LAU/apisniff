@@ -9,9 +9,10 @@ import yaml
 
 from apisniff.auth import ExtractedCookie, detect_auth, extract_cookies
 from apisniff.bundle import read_capture_jsonl
-from apisniff.models import CapturedFlow, normalize_path
+from apisniff.models import CapturedFlow, ProbeResult, SessionStats, normalize_path
 from apisniff.report import generate_report
 from apisniff.spec import _is_api_flow, generate_openapi
+from apisniff.vendors import load_signatures, match_vendors
 
 
 def generate_inventory(flows: list[CapturedFlow]) -> list[dict]:
@@ -35,7 +36,6 @@ def generate_inventory(flows: list[CapturedFlow]) -> list[dict]:
 
 
 def _load_session_stats(src_path: Path):
-    from apisniff.models import SessionStats
     session_path = src_path / "session.json"
     if not session_path.exists():
         return None
@@ -67,8 +67,6 @@ def share_bundle(src: str, dst: str, domain: str) -> dict:
 
     session_stats = _load_session_stats(src_path)
 
-    from apisniff.models import ProbeResult
-    from apisniff.vendors import load_signatures, match_vendors
     probe_results = [
         ProbeResult(
             label="captured", status=f.response_status,
@@ -79,7 +77,6 @@ def share_bundle(src: str, dst: str, domain: str) -> dict:
     ]
     vendors = match_vendors(probe_results, load_signatures())
 
-    # Redact cookie values before passing to report
     safe_cookies = [
         ExtractedCookie(
             name=c.name, value="[redacted]", domain=c.domain,
@@ -94,7 +91,6 @@ def share_bundle(src: str, dst: str, domain: str) -> dict:
     )
     (dst_path / "report.md").write_text(report)
 
-    # Write filtered session.json with only safe fields
     if session_stats:
         safe_session = {
             "domain": session_stats.domain,
@@ -106,7 +102,6 @@ def share_bundle(src: str, dst: str, domain: str) -> dict:
         }
         (dst_path / "session.json").write_text(json.dumps(safe_session, indent=2))
 
-    # Copy graphql-schema.json verbatim if present
     gql_src = src_path / "graphql-schema.json"
     if gql_src.exists():
         shutil.copy2(gql_src, dst_path / "graphql-schema.json")
