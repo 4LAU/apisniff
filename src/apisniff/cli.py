@@ -243,7 +243,7 @@ def share(
                 domain = json.load(f).get("domain")
         except (FileNotFoundError, json.JSONDecodeError, KeyError):
             pass
-        if domain is None:
+        if not domain:
             stderr.print(
                 "[red]Cannot detect domain — use --domain.[/red]"
             )
