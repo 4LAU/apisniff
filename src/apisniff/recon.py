@@ -72,18 +72,8 @@ def _post_process_bundle(
                 stderr.print(f"  GraphQL schema: {schema_path}")
                 break
 
-    from apisniff.models import ProbeResult
-    from apisniff.vendors import load_signatures, match_vendors
-    probe_results = [
-        ProbeResult(
-            label="captured", status=f.response_status,
-            headers=f.response_headers, body=f.response_body,
-            elapsed_ms=0.0, error=None,
-        )
-        for f in flows
-    ]
-    sigs = load_signatures()
-    vendors = match_vendors(probe_results, sigs)
+    from apisniff.vendors import flows_to_probe_results, load_signatures, match_vendors
+    vendors = match_vendors(flows_to_probe_results(flows), load_signatures())
 
     from apisniff.report import generate_report
     report = generate_report(

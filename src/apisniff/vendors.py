@@ -4,7 +4,7 @@ import json
 import re
 from pathlib import Path
 
-from apisniff.models import ProbeResult, VendorMatch
+from apisniff.models import CapturedFlow, ProbeResult, VendorMatch
 
 _SIGNATURES_PATH = Path(__file__).parent / "signatures" / "vendors.json"
 
@@ -104,6 +104,17 @@ def _compute_confidence(high_count: int, medium_count: int, low_count: int) -> s
     if low_count > 0:
         return "low"
     return None
+
+
+def flows_to_probe_results(flows: list[CapturedFlow]) -> list[ProbeResult]:
+    return [
+        ProbeResult(
+            label="captured", status=f.response_status,
+            headers=f.response_headers, body=f.response_body,
+            elapsed_ms=0.0, error=None,
+        )
+        for f in flows
+    ]
 
 
 def match_vendors(

@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import asyncio
+import json
 import os
 import sys
 
@@ -236,7 +237,6 @@ def share(
         src = str(found)
 
     if domain is None:
-        import json
         session_path = os.path.join(src, "session.json")
         try:
             with open(session_path) as f:

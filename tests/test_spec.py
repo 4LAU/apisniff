@@ -5,7 +5,7 @@ from apisniff.auth import AuthPattern
 from apisniff.models import CapturedFlow, normalize_path
 from apisniff.spec import (
     _infer_schema,
-    _is_api_flow,
+    is_api_flow,
     generate_openapi,
 )
 
@@ -150,22 +150,22 @@ def test_no_auth_patterns_no_extensions():
     assert "x-observed-auth" not in spec
 
 
-# ── Part A: _is_api_flow tests ──────────────────────────────────────
+# ── Part A: is_api_flow tests ──────────────────────────────────────
 
 
-def test_is_api_flow_json_response():
+def testis_api_flow_json_response():
     """JSON 200 is API traffic."""
     flow = _flow(status=200)
-    assert _is_api_flow(flow) is True
+    assert is_api_flow(flow) is True
 
 
-def test_is_api_flow_json_error():
+def testis_api_flow_json_error():
     """JSON 404 is still API traffic."""
     flow = _flow(status=404, body=b'{"error": "not found"}')
-    assert _is_api_flow(flow) is True
+    assert is_api_flow(flow) is True
 
 
-def test_is_api_flow_form_post():
+def testis_api_flow_form_post():
     """form-urlencoded POST (even with HTML response) is API traffic."""
     flow = _flow(
         method="POST",
@@ -174,10 +174,10 @@ def test_is_api_flow_form_post():
         response_headers={"content-type": "text/html"},
         body=b"<html>OK</html>",
     )
-    assert _is_api_flow(flow) is True
+    assert is_api_flow(flow) is True
 
 
-def test_is_api_flow_multipart():
+def testis_api_flow_multipart():
     """multipart upload is API traffic."""
     mp_body = (
         b"--abc\r\n"
@@ -191,25 +191,25 @@ def test_is_api_flow_multipart():
         response_headers={"content-type": "text/plain"},
         body=b"OK",
     )
-    assert _is_api_flow(flow) is True
+    assert is_api_flow(flow) is True
 
 
-def test_is_api_flow_html_page_excluded():
+def testis_api_flow_html_page_excluded():
     """Pure HTML GET is not API traffic."""
     flow = _flow(
         response_headers={"content-type": "text/html"},
         body=b"<html><body>Hello</body></html>",
     )
-    assert _is_api_flow(flow) is False
+    assert is_api_flow(flow) is False
 
 
-def test_is_api_flow_case_insensitive_content_type():
+def testis_api_flow_case_insensitive_content_type():
     """Mixed case Content-Type matched."""
     flow = _flow(
         response_headers={"Content-Type": "Application/JSON; charset=utf-8"},
         body=b'{"ok": true}',
     )
-    assert _is_api_flow(flow) is True
+    assert is_api_flow(flow) is True
 
 
 # ── Part B: Aggregation model tests ─────────────────────────────────
