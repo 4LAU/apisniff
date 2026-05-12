@@ -308,15 +308,6 @@ def run_analyze(
         stderr.print(f"[red]Unrecognised format for {input_file}[/red]")
         return
 
-    session_stats = SessionStats(
-        domain=domain,
-        started_at=datetime.now(tz=UTC).isoformat(),
-        duration_seconds=0.0,
-        total_flows=len(flows),
-        kept_flows=len(kept_flows),
-        dropped=drop_counts,
-    )
-
     # 4. Create bundle dir, write flows.jsonl and session.json
     if output_dir:
         bundle_dir = Path(output_dir)
@@ -330,13 +321,30 @@ def run_analyze(
     bundle_dir.mkdir(parents=True, exist_ok=True)
     bundle_dir.chmod(0o700)
 
-    flows_path = bundle_dir / "flows.jsonl"
-    with open(flows_path, "w") as fh:
-        for flow in kept_flows:
-            fh.write(flow.to_jsonl() + "\n")
-
     session_path = bundle_dir / "session.json"
-    session_path.write_text(json.dumps(session_stats.to_dict(), indent=2))
+    if session_path.exists():
+        try:
+            session_stats = SessionStats.from_dict(json.loads(session_path.read_text()))
+        except (json.JSONDecodeError, KeyError):
+            session_stats = None
+    else:
+        session_stats = None
+    if session_stats is None:
+        session_stats = SessionStats(
+            domain=domain,
+            started_at=datetime.now(tz=UTC).isoformat(),
+            duration_seconds=0.0,
+            total_flows=len(flows),
+            kept_flows=len(kept_flows),
+            dropped=drop_counts,
+        )
+        session_path.write_text(json.dumps(session_stats.to_dict(), indent=2))
+
+    flows_path = bundle_dir / "flows.jsonl"
+    if Path(input_file).resolve() != flows_path.resolve():
+        with open(flows_path, "w") as fh:
+            for flow in kept_flows:
+                fh.write(flow.to_jsonl() + "\n")
 
     report = _post_process_bundle(
         domain, kept_flows, bundle_dir, session_stats,
