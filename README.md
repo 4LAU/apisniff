@@ -69,6 +69,28 @@ apisniff spec example.com --input traffic.har --format json
 apisniff spec example.com --output spec.yaml
 ```
 
+### `share` — Export shareable summary
+
+Create a directory of derived artifacts that can be safely shared. Contains an OpenAPI spec, endpoint inventory, session metadata, and redacted report — no raw traffic.
+
+```bash
+# Share the latest capture for a domain
+apisniff share example.com
+
+# Share a specific bundle
+apisniff share ~/apisniff-captures/example-com_2026-05-12_14-30
+
+# Specify output location
+apisniff share example.com --output ./for-teammate/
+```
+
+Output files:
+- `spec.yaml` — OpenAPI 3.0.3 spec generated from captured traffic
+- `inventory.json` — endpoint summary (method, path, status codes, content types, counts)
+- `session.json` — capture metadata (domain, duration, flow counts)
+- `report.md` — recon report (vendors, auth patterns, cookie names — no values)
+- `graphql-schema.json` — GraphQL introspection result (if captured)
+
 ## Important Warnings
 
 ### Your IP address is exposed
@@ -79,7 +101,22 @@ Results also reflect your current IP's reputation. Residential IPs typically see
 
 ### Capture files contain sensitive data
 
-The `recon` command captures **full HTTP traffic** including cookies, auth tokens, API keys, session data, and form submissions. Capture files (JSONL) are stored locally in `~/apisniff-captures/`. **Treat capture files like credentials** — do not share them, commit them to git, or upload them to public services.
+The `recon` and `analyze` commands capture **full HTTP traffic** including cookies, auth tokens, API keys, session data, and form submissions. Raw capture bundles are stored locally in `~/apisniff-captures/` with owner-only permissions. **Raw bundles are private by design** — they are never safe to share, commit to git, or upload.
+
+To create a shareable summary, use the `share` command:
+
+```bash
+# Export derived artifacts from the latest capture
+apisniff share example.com
+
+# From a specific bundle directory
+apisniff share ~/apisniff-captures/example-com_2026-05-12_14-30
+
+# Specify output location
+apisniff share example.com --output ./to-share/
+```
+
+The shared output contains only derived artifacts — an OpenAPI spec, endpoint inventory, session metadata, and a redacted report. **No raw request/response bodies, no headers, no cookies, no query parameter values.** The output is intentionally non-replayable.
 
 ### About the mitmproxy certificate
 
