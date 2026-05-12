@@ -103,6 +103,10 @@ def analyze(
     ),
 ) -> None:
     """Offline analysis -- import traffic capture, classify, extract everything."""
+    if not os.path.isfile(input_file):
+        stderr.print(f"[red]File not found: {input_file}[/red]")
+        raise SystemExit(_EXIT_ERROR)
+
     from apisniff.recon import run_analyze
 
     run_analyze(
@@ -154,7 +158,11 @@ def replay(
     else:
         kwargs["domain"] = bundle
 
-    asyncio.run(run_replay(**kwargs))
+    try:
+        asyncio.run(run_replay(**kwargs))
+    except FileNotFoundError as e:
+        stderr.print(f"[red]{e}[/red]")
+        raise SystemExit(_EXIT_ERROR)
 
 
 @app.command()
