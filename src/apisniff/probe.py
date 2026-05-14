@@ -135,13 +135,18 @@ def classify_results(
             v.vendor.replace("_", " ").title() for v in vendors
         ) + " "
 
+    def _rec(text: str) -> str:
+        if vendor_prefix:
+            return f"{vendor_prefix}{text}"
+        return text[0].upper() + text[1:]
+
     if all_pass:
         if vendors:
             return (
                 ProbeVerdict.NO_PROTECTION,
-                f"{vendor_prefix}detected but not enforcing on this page. "
-                "Raw HTTP requests sufficient, but API endpoints may "
-                "behave differently under bot detection.",
+                _rec("detected but not enforcing on this page. "
+                     "Raw HTTP requests sufficient, but API endpoints may "
+                     "behave differently under bot detection."),
             )
         return (
             ProbeVerdict.NO_PROTECTION,
@@ -150,8 +155,8 @@ def classify_results(
 
     if all_challenge:
         if vendors:
-            return ProbeVerdict.JS_CHALLENGE, (
-                f"{vendor_prefix}issuing JS challenges on all probe types. "
+            return ProbeVerdict.JS_CHALLENGE, _rec(
+                "issuing JS challenges on all probe types. "
                 "Full browser capture required. Use `apisniff recon`."
             )
         return ProbeVerdict.JS_CHALLENGE, (
@@ -161,8 +166,8 @@ def classify_results(
 
     if all_blocked:
         if vendors:
-            return ProbeVerdict.FULL_BLOCK, (
-                f"{vendor_prefix}blocking all probe types. "
+            return ProbeVerdict.FULL_BLOCK, _rec(
+                "blocking all probe types. "
                 "Full browser with manual interaction required. "
                 "Use `apisniff recon`."
             )
@@ -174,37 +179,37 @@ def classify_results(
 
     if naked.is_blocked and not impersonated.is_blocked:
         if tls_only.is_blocked:
-            return ProbeVerdict.CLIENT_DEPENDENT, (
-                f"{vendor_prefix}filtering on both TLS fingerprint and User-Agent. "
+            return ProbeVerdict.CLIENT_DEPENDENT, _rec(
+                "filtering on both TLS fingerprint and User-Agent. "
                 "Requests must present a browser-like TLS handshake and realistic User-Agent."
             )
-        return ProbeVerdict.CLIENT_DEPENDENT, (
-            f"{vendor_prefix}filtering on TLS fingerprint. "
+        return ProbeVerdict.CLIENT_DEPENDENT, _rec(
+            "filtering on TLS fingerprint. "
             "Requests must present a browser-like TLS handshake (JA3/JA4)."
         )
 
     if not naked.is_blocked and impersonated.is_blocked:
         if tls_only.is_blocked:
-            return ProbeVerdict.CLIENT_DEPENDENT, (
-                f"{vendor_prefix}detecting impersonated browser TLS fingerprints. "
+            return ProbeVerdict.CLIENT_DEPENDENT, _rec(
+                "detecting impersonated browser TLS fingerprints. "
                 "The defense distinguishes real browsers from clients mimicking browser handshakes. "
                 "Bot-identified clients pass because they bypass browser validation."
             )
-        return ProbeVerdict.CLIENT_DEPENDENT, (
-            f"{vendor_prefix}blocking requests that present a browser User-Agent without "
+        return ProbeVerdict.CLIENT_DEPENDENT, _rec(
+            "blocking requests that present a browser User-Agent without "
             "completing JavaScript challenges. Bot-identified clients pass because they "
             "don't trigger the browser validation path. "
             "A full browser session is required for browser-level access."
         )
 
     if any_challenge and not all_challenge:
-        return ProbeVerdict.CLIENT_DEPENDENT, (
-            f"{vendor_prefix}challenging selectively based on client signals. "
+        return ProbeVerdict.CLIENT_DEPENDENT, _rec(
+            "challenging selectively based on client signals. "
             "A browser-like TLS fingerprint and User-Agent may bypass challenges."
         )
 
-    return ProbeVerdict.CLIENT_DEPENDENT, (
-        f"{vendor_prefix}producing mixed results across probe types. "
+    return ProbeVerdict.CLIENT_DEPENDENT, _rec(
+        "producing mixed results across probe types. "
         "A browser-like TLS fingerprint is likely required."
     )
 
