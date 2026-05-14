@@ -244,12 +244,12 @@ def render_probe(assessment: ProbeAssessment, console: Console | None = None) ->
     console.print()
     verdict_text = Text()
     verdict_text.append(f" {icon} ", style=f"bold {style}")
-    verdict_text.append(label, style=f"bold {style}")
     if assessment.vendors:
         vendor_names = ", ".join(
             v.vendor.replace("_", " ").title() for v in assessment.vendors
         )
-        verdict_text.append(f"  {vendor_names}", style="dim")
+        verdict_text.append(f"{vendor_names} ", style=f"bold {style}")
+    verdict_text.append(label, style=f"bold {style}")
     console.print(Align.center(verdict_text))
     console.print()
 

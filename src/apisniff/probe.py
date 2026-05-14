@@ -129,16 +129,19 @@ def classify_results(
     any_challenge = naked.is_challenge or impersonated.is_challenge or tls_only.is_challenge
     all_challenge = naked.is_challenge and impersonated.is_challenge and tls_only.is_challenge
 
+    vendor_prefix = ""
+    if vendors:
+        vendor_prefix = ", ".join(
+            v.vendor.replace("_", " ").title() for v in vendors
+        ) + " "
+
     if all_pass:
         if vendors:
-            names = ", ".join(
-                v.vendor.replace("_", " ").title() for v in vendors
-            )
             return (
                 ProbeVerdict.NO_PROTECTION,
-                f"{names} detected but not enforcing. "
-                "Raw HTTP requests sufficient, but WAF rules may activate "
-                "on unusual patterns or higher volume.",
+                f"{vendor_prefix}detected but not enforcing on this page. "
+                "Raw HTTP requests sufficient, but API endpoints may "
+                "behave differently under bot detection.",
             )
         return (
             ProbeVerdict.NO_PROTECTION,
@@ -146,36 +149,49 @@ def classify_results(
         )
 
     if all_challenge:
+        if vendors:
+            return ProbeVerdict.JS_CHALLENGE, (
+                f"{vendor_prefix}issuing JS challenges on all probe types. "
+                "Full browser capture required. Use `apisniff recon`."
+            )
         return ProbeVerdict.JS_CHALLENGE, (
             "All probes received JS challenges. "
-            "Full browser capture recommended — use `apisniff recon`."
+            "Full browser capture required. Use `apisniff recon`."
         )
 
     if all_blocked:
+        if vendors:
+            return ProbeVerdict.FULL_BLOCK, (
+                f"{vendor_prefix}blocking all probe types. "
+                "Full browser with manual interaction required. "
+                "Use `apisniff recon`."
+            )
         return ProbeVerdict.FULL_BLOCK, (
             "All probes blocked. "
-            "Full browser with manual interaction recommended — use `apisniff recon`."
+            "Full browser with manual interaction required. "
+            "Use `apisniff recon`."
         )
 
     if naked.is_blocked and not impersonated.is_blocked:
         if tls_only.is_blocked:
             return ProbeVerdict.CLIENT_DEPENDENT, (
-                "Impersonated client changed outcome; UA also matters. "
-                "Use curl_cffi with Chrome profile and realistic User-Agent."
+                f"{vendor_prefix}filtering on both TLS fingerprint and User-Agent. "
+                "Requests must present a browser-like TLS handshake and realistic User-Agent."
             )
         return ProbeVerdict.CLIENT_DEPENDENT, (
-            "Impersonated client changed outcome; TLS likely a factor. "
-            "Use curl_cffi with Chrome profile."
+            f"{vendor_prefix}filtering on TLS fingerprint. "
+            "Requests must present a browser-like TLS handshake (JA3/JA4)."
         )
 
     if any_challenge and not all_challenge:
         return ProbeVerdict.CLIENT_DEPENDENT, (
-            "Some probes received challenges. "
-            "Use curl_cffi with Chrome profile for best results."
+            f"{vendor_prefix}challenging selectively based on client signals. "
+            "A browser-like TLS fingerprint and User-Agent may bypass challenges."
         )
 
     return ProbeVerdict.CLIENT_DEPENDENT, (
-        "Mixed results across probes. Use curl_cffi with Chrome profile."
+        f"{vendor_prefix}producing mixed results across probe types. "
+        "A browser-like TLS fingerprint is likely required."
     )
 
 
