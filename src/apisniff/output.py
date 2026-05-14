@@ -173,16 +173,19 @@ def render_probe(assessment: ProbeAssessment, console: Console | None = None) ->
 
     if assessment.vendors:
         panel_parts.append(Text())
+        vendor_table = Table(
+            show_header=False, box=None, padding=(0, 1), show_edge=False,
+        )
+        vendor_table.add_column("Name", style="cyan")
+        vendor_table.add_column("Confidence")
+        vendor_table.add_column("Signals", style="dim")
         for v in assessment.vendors:
-            vendor_line = Text("  ")
-            vendor_line.append(
-                v.vendor.replace("_", " ").title(), style="cyan"
+            vendor_table.add_row(
+                v.vendor.replace("_", " ").title(),
+                _confidence_badge(v.confidence),
+                ", ".join(v.signals),
             )
-            vendor_line.append("  ")
-            vendor_line.append_text(_confidence_badge(v.confidence))
-            vendor_line.append("  ")
-            vendor_line.append(", ".join(v.signals), style="dim")
-            panel_parts.append(vendor_line)
+        panel_parts.append(vendor_table)
 
     console.print(Panel(
         Group(*panel_parts),
