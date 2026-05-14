@@ -47,6 +47,11 @@ def _matches_domain_list(domain: str, domain_list: list[str]) -> bool:
     return any(d == entry or d.endswith("." + entry) for entry in domain_list)
 
 
+_SENSOR_DATA_PREFIX = b'{"sensor_data":'
+
+_TELEMETRY_SUBDOMAIN_INDICATORS = ("analytics.", "smetrics.", "telemetry.", "metrics.")
+
+
 class Classifier:
     def __init__(self, target_domain: str) -> None:
         self._target_rd = extract_registered_domain(target_domain)
@@ -110,6 +115,22 @@ class Classifier:
             p in path_only for p in self._same_site_drop_paths
         ):
             return ClassifyResult(action="drop", category="same_site_noise", flow=None)
+
+        # 7. Antibot sensor data (Akamai Bot Manager POSTs with {"sensor_data":…})
+        if (
+            not allowlist_type
+            and flow.method == "POST"
+            and flow.request_body
+            and flow.request_body[:len(_SENSOR_DATA_PREFIX)] == _SENSOR_DATA_PREFIX
+        ):
+            return ClassifyResult(action="drop", category="same_site_noise", flow=None)
+
+        # 8. Same-site telemetry subdomains (analytics.*, smetrics.*, etc.)
+        if not allowlist_type and extract_registered_domain(host) == self._target_rd:
+            host_lower = host.lower()
+            if any(host_lower.startswith(ind) or f".{ind}" in host_lower
+                   for ind in _TELEMETRY_SUBDOMAIN_INDICATORS):
+                return ClassifyResult(action="drop", category="same_site_noise", flow=None)
 
         kept = replace(flow, tags=tags)
         return ClassifyResult(action="keep", category="", flow=kept)

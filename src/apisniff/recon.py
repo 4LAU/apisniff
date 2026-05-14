@@ -101,6 +101,59 @@ def _post_process_bundle(
     )
 
 
+_MITMPROXY_CA = Path.home() / ".mitmproxy" / "mitmproxy-ca-cert.pem"
+_SYSTEM_KEYCHAIN = Path("/Library/Keychains/System.keychain")
+_LOGIN_KEYCHAIN = Path.home() / "Library" / "Keychains" / "login.keychain-db"
+
+
+def _is_ca_trusted() -> bool:
+    for keychain in (_SYSTEM_KEYCHAIN, _LOGIN_KEYCHAIN):
+        result = subprocess.run(
+            ["security", "find-certificate", "-c", "mitmproxy", str(keychain)],
+            capture_output=True,
+        )
+        if result.returncode == 0:
+            return True
+    return False
+
+
+def _install_ca_trust(console: Console) -> bool:
+    if not _MITMPROXY_CA.exists():
+        console.print("[red]mitmproxy CA not found — cannot auto-install certificate[/red]")
+        return False
+
+    console.print("\n[bold]One-time setup: HTTPS certificate[/bold]\n")
+    console.print(
+        "  apisniff uses [link=https://mitmproxy.org]mitmproxy[/link], a widely-used"
+        " open-source proxy, to read HTTPS traffic.\n"
+        "  A local certificate is generated on your machine and stays on your machine.\n"
+        "  Trusting it lets the proxied browser share HTTPS details with apisniff.\n"
+    )
+    console.print(
+        "  [bold]What this does not affect:[/bold] your normal browser, other apps,\n"
+        "  or any traffic outside this proxy session.\n"
+    )
+    console.print(
+        f"  [dim]$ sudo security add-trusted-cert -d -r trustRoot \\\n"
+        f"      -k /Library/Keychains/System.keychain {_MITMPROXY_CA}[/dim]\n"
+    )
+    console.print(
+        "  [dim]To remove later: Keychain Access → search 'mitmproxy' → delete[/dim]\n"
+    )
+    console.print("  macOS will ask for your password.\n")
+
+    result = subprocess.run([
+        "sudo", "security", "add-trusted-cert", "-d", "-r", "trustRoot",
+        "-k", str(_SYSTEM_KEYCHAIN), str(_MITMPROXY_CA),
+    ])
+    if result.returncode == 0:
+        console.print("  [green]Certificate trusted.[/green]\n")
+        return True
+    console.print("  [red]Certificate install failed.[/red]")
+    console.print("  Fallback: open [bold]http://mitm.it[/bold] in the proxied Chrome window.\n")
+    return False
+
+
 def _normalize_target(raw: str) -> tuple[str, str]:
     """Return (bare_domain, launch_url) from user input that may include a scheme or path."""
     if raw.startswith(("http://", "https://")):
@@ -163,6 +216,9 @@ def run_recon(
             f"[red]mitmproxy exited with code {proxy_proc.returncode}[/red]"
         )
         return
+
+    if not _is_ca_trusted():
+        _install_ca_trust(stderr)
 
     try:
         chrome_proc = subprocess.Popen(
