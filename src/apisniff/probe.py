@@ -183,6 +183,20 @@ def classify_results(
             "Requests must present a browser-like TLS handshake (JA3/JA4)."
         )
 
+    if not naked.is_blocked and impersonated.is_blocked:
+        if tls_only.is_blocked:
+            return ProbeVerdict.CLIENT_DEPENDENT, (
+                f"{vendor_prefix}detecting impersonated browser TLS fingerprints. "
+                "The defense distinguishes real browsers from clients mimicking browser handshakes. "
+                "Bot-identified clients pass because they bypass browser validation."
+            )
+        return ProbeVerdict.CLIENT_DEPENDENT, (
+            f"{vendor_prefix}blocking requests that present a browser User-Agent without "
+            "completing JavaScript challenges. Bot-identified clients pass because they "
+            "don't trigger the browser validation path. "
+            "A full browser session is required for browser-level access."
+        )
+
     if any_challenge and not all_challenge:
         return ProbeVerdict.CLIENT_DEPENDENT, (
             f"{vendor_prefix}challenging selectively based on client signals. "

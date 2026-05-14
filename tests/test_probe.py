@@ -90,6 +90,28 @@ def test_classify_naked_and_tls_blocked():
     assert verdict == ProbeVerdict.CLIENT_DEPENDENT
 
 
+def test_classify_impersonated_blocked_others_pass():
+    results = {
+        "naked": _result("naked"),
+        "impersonated": _result("impersonated", status=403),
+        "tls_only": _result("tls_only"),
+    }
+    verdict, recommendation = classify_results(results)
+    assert verdict == ProbeVerdict.CLIENT_DEPENDENT
+    assert "browser user-agent" in recommendation.lower() or "javascript" in recommendation.lower()
+
+
+def test_classify_impersonated_and_tls_blocked_naked_pass():
+    results = {
+        "naked": _result("naked"),
+        "impersonated": _result("impersonated", status=403),
+        "tls_only": _result("tls_only", status=403),
+    }
+    verdict, recommendation = classify_results(results)
+    assert verdict == ProbeVerdict.CLIENT_DEPENDENT
+    assert "impersonat" in recommendation.lower() or "browser tls" in recommendation.lower()
+
+
 def test_classify_all_blocked():
     results = {
         "naked": _result("naked", status=403),
