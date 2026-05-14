@@ -48,12 +48,13 @@ def _load_session_stats(src_path: Path):
 def share_bundle(src: str, dst: str, domain: str) -> dict:
     src_path = Path(src)
     dst_path = Path(dst)
-    dst_path.mkdir(parents=True, exist_ok=True)
 
     flows_path = src_path / "flows.jsonl"
     if not flows_path.exists():
         raise FileNotFoundError(f"No flows.jsonl in {src_path}")
     flows = read_capture_jsonl(str(flows_path))
+
+    dst_path.mkdir(parents=True, exist_ok=True)
 
     api_flows = [f for f in flows if is_api_flow(f)]
     auth_patterns = detect_auth(flows)

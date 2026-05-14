@@ -18,7 +18,6 @@ app = typer.Typer(
 
 stderr = Console(stderr=True)
 
-_EXIT_OK = 0
 _EXIT_ERROR = 1
 _EXIT_BLOCKED = 2
 

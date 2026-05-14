@@ -8,6 +8,10 @@ from apisniff.models import CapturedFlow, ProbeResult, VendorMatch
 
 _SIGNATURES_PATH = Path(__file__).parent / "signatures" / "vendors.json"
 
+_COOKIE_ATTRS = frozenset({
+    "expires", "max-age", "domain", "path", "samesite", "secure", "httponly",
+})
+
 _SPECIFIC_VENDORS = frozenset({"datadome", "perimeterx", "imperva", "akamai", "cloudflare"})
 
 
@@ -33,14 +37,19 @@ def _extract_cookies(headers: dict[str, str]) -> set[str]:
                 names.add(name)
     sc_val = headers.get("set-cookie", "")
     if sc_val:
-        for line in sc_val.split("\n"):
-            line = line.strip()
-            if not line:
+        for part in sc_val.replace("\n", ", ").split(", "):
+            part = part.strip()
+            if not part or "=" not in part:
                 continue
-            first_segment = line.split(";", 1)[0]
-            name = first_segment.strip().split("=", 1)[0].strip().lower()
-            if name:
-                names.add(name)
+            candidate = part.split("=", 1)[0].strip().lower()
+            if candidate in _COOKIE_ATTRS:
+                continue
+            if ";" in candidate:
+                candidate = candidate.rsplit(";", 1)[-1].strip()
+                if not candidate or candidate in _COOKIE_ATTRS:
+                    continue
+            if candidate:
+                names.add(candidate)
     return names
 
 

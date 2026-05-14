@@ -34,6 +34,9 @@ class ApisniffAddon:
             self.drop_counts[result.category] += 1
             return
 
+        if result.flow is None:
+            return
+
         self.kept_flows += 1
         self.output_file.write(result.flow.to_jsonl() + "\n")
         self.output_file.flush()
