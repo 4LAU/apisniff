@@ -80,18 +80,29 @@ def _get_header(headers: dict[str, str], name: str) -> str:
     return ""
 
 
+_COOKIE_ATTRS = frozenset({
+    "expires", "max-age", "domain", "path", "samesite", "secure", "httponly",
+})
+
+
 def _extract_set_cookie_names(headers: dict[str, str]) -> list[str]:
     names: list[str] = []
     val = _get_header(headers, "set-cookie")
     if not val:
         return names
-    for line in val.split("\n"):
-        line = line.strip()
-        if not line:
+    for part in val.replace("\n", ", ").split(", "):
+        part = part.strip()
+        if not part or "=" not in part:
             continue
-        name = line.split(";", 1)[0].split("=", 1)[0].strip()
-        if name and name not in names:
-            names.append(name)
+        candidate = part.split("=", 1)[0].strip()
+        if candidate.lower() in _COOKIE_ATTRS:
+            continue
+        if ";" in candidate:
+            candidate = candidate.rsplit(";", 1)[-1].strip()
+            if not candidate or candidate.lower() in _COOKIE_ATTRS:
+                continue
+        if candidate and candidate not in names:
+            names.append(candidate)
     return names
 
 
@@ -206,28 +217,23 @@ def render_probe(assessment: ProbeAssessment, console: Console | None = None) ->
     for probe_name in ("naked", "impersonated", "tls_only"):
         result = assessment.results[probe_name]
         hint = _PROBE_HINTS.get(probe_name, "")
+        latency = _latency_bar(result.elapsed_ms, max_ms)
 
         if result.error:
             err_label = _error_label(result.error)
             result_str = Text(f" {err_label} ", style="bold white on red")
-            latency = _latency_bar(result.elapsed_ms, max_ms)
             size_cell = Text("—", style="dim")
         elif result.is_challenge:
             result_str = Text(f" {result.status} CHALLENGE ", style="bold black on yellow")
-            latency = _latency_bar(result.elapsed_ms, max_ms)
             bsize = len(result.body) if result.body else 0
             size_cell = Text(_format_size(bsize), style="dim")
-        elif result.is_blocked:
-            result_str = Text(f" {result.status} BLOCKED ", style="bold white on red")
-            latency = _latency_bar(result.elapsed_ms, max_ms)
-            bsize = len(result.body) if result.body else 0
-            size_style = "red" if size_mismatch and max_body > 0 and bsize < max_body * 0.25 else "dim"
-            size_cell = Text(_format_size(bsize), style=size_style)
         else:
-            result_str = Text(f" {result.status} PASS ", style="bold black on bright_green")
-            latency = _latency_bar(result.elapsed_ms, max_ms)
             bsize = len(result.body) if result.body else 0
-            size_style = "red" if size_mismatch and max_body > 0 and bsize < max_body * 0.25 else "dim"
+            size_style = "red" if size_mismatch and bsize < max_body * 0.25 else "dim"
+            if result.is_blocked:
+                result_str = Text(f" {result.status} BLOCKED ", style="bold white on red")
+            else:
+                result_str = Text(f" {result.status} PASS ", style="bold black on bright_green")
             size_cell = Text(_format_size(bsize), style=size_style)
 
         table.add_row(probe_name, hint, latency, size_cell, result_str)
