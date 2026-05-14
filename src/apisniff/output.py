@@ -62,6 +62,54 @@ def _latency_bar(ms: float, max_ms: float, width: int = 16) -> Text:
     return result
 
 
+def _format_size(nbytes: int) -> str:
+    if nbytes < 1024:
+        return f"{nbytes}B"
+    if nbytes < 10 * 1024:
+        return f"{nbytes / 1024:.1f}KB"
+    if nbytes < 1024 * 1024:
+        return f"{nbytes // 1024}KB"
+    return f"{nbytes / (1024 * 1024):.1f}MB"
+
+
+def _get_header(headers: dict[str, str], name: str) -> str:
+    name_lower = name.lower()
+    for k, v in headers.items():
+        if k.lower() == name_lower:
+            return v
+    return ""
+
+
+def _extract_set_cookie_names(headers: dict[str, str]) -> list[str]:
+    names: list[str] = []
+    val = _get_header(headers, "set-cookie")
+    if not val:
+        return names
+    for line in val.split("\n"):
+        line = line.strip()
+        if not line:
+            continue
+        name = line.split(";", 1)[0].split("=", 1)[0].strip()
+        if name and name not in names:
+            names.append(name)
+    return names
+
+
+def _error_label(error: str) -> str:
+    e = error.lower()
+    if "timeout" in e or "timed out" in e:
+        return "TIMEOUT"
+    if "reset" in e:
+        return "RESET"
+    if "refused" in e:
+        return "REFUSED"
+    if "ssl" in e or "certificate" in e or "tls" in e:
+        return "SSL ERROR"
+    if "dns" in e or "name resolution" in e or "nodename" in e:
+        return "DNS ERROR"
+    return "ERROR"
+
+
 def _confidence_badge(confidence: str) -> Text:
     levels = {"low": 1, "medium": 2, "high": 3}
     styles = {"low": "dim", "medium": "yellow", "high": "red"}
@@ -136,38 +184,53 @@ def render_probe(assessment: ProbeAssessment, console: Console | None = None) ->
         default=1.0,
     )
 
+    body_sizes: dict[str, int] = {}
+    for lbl, r in assessment.results.items():
+        if not r.error:
+            body_sizes[lbl] = len(r.body) if r.body else 0
+    max_body = max(body_sizes.values(), default=0)
+    size_mismatch = max_body > 0 and any(
+        s < max_body * 0.25 for s in body_sizes.values()
+    )
+
     table = Table(
         show_header=True, header_style="bold", expand=True,
         box=box.SIMPLE_HEAD, padding=(0, 1), show_edge=False,
     )
     table.add_column("Probe", style="cyan", min_width=14)
     table.add_column("", style="dim", ratio=1)
-    table.add_column("Status", justify="center", min_width=6)
     table.add_column("Latency", min_width=24)
-    table.add_column("Result", justify="center", min_width=10)
+    table.add_column("Size", justify="right", min_width=7)
+    table.add_column("Result", justify="center", min_width=14)
 
     for probe_name in ("naked", "impersonated", "tls_only"):
         result = assessment.results[probe_name]
         hint = _PROBE_HINTS.get(probe_name, "")
 
         if result.error:
-            status_str = "err"
-            result_str = Text(" ERROR ", style="bold white on red")
+            err_label = _error_label(result.error)
+            result_str = Text(f" {err_label} ", style="bold white on red")
             latency = Text(f"{result.elapsed_ms:.0f}ms", style="red")
+            size_cell = Text("—", style="dim")
         elif result.is_challenge:
-            status_str = str(result.status)
-            result_str = Text(" CHALLENGE ", style="bold black on yellow")
+            result_str = Text(f" {result.status} CHALLENGE ", style="bold black on yellow")
             latency = _latency_bar(result.elapsed_ms, max_ms)
+            bsize = len(result.body) if result.body else 0
+            size_cell = Text(_format_size(bsize), style="dim")
         elif result.is_blocked:
-            status_str = str(result.status)
-            result_str = Text(" BLOCKED ", style="bold white on red")
+            result_str = Text(f" {result.status} BLOCKED ", style="bold white on red")
             latency = _latency_bar(result.elapsed_ms, max_ms)
+            bsize = len(result.body) if result.body else 0
+            size_style = "red" if size_mismatch and max_body > 0 and bsize < max_body * 0.25 else "dim"
+            size_cell = Text(_format_size(bsize), style=size_style)
         else:
-            status_str = str(result.status)
-            result_str = Text(" PASS ", style="bold black on green")
+            result_str = Text(f" {result.status} PASS ", style="bold black on green")
             latency = _latency_bar(result.elapsed_ms, max_ms)
+            bsize = len(result.body) if result.body else 0
+            size_style = "red" if size_mismatch and max_body > 0 and bsize < max_body * 0.25 else "dim"
+            size_cell = Text(_format_size(bsize), style=size_style)
 
-        table.add_row(probe_name, hint, status_str, latency, result_str)
+        table.add_row(probe_name, hint, latency, size_cell, result_str)
 
     panel_parts: list[object] = [table]
 
@@ -186,6 +249,109 @@ def render_probe(assessment: ProbeAssessment, console: Console | None = None) ->
                 ", ".join(v.signals),
             )
         panel_parts.append(vendor_table)
+
+    signal_lines: list[tuple[str, str | Text]] = []
+
+    servers: list[str] = []
+    for r in assessment.results.values():
+        if r.error:
+            continue
+        s = _get_header(r.headers, "server")
+        if s and s not in servers:
+            servers.append(s)
+        powered = _get_header(r.headers, "x-powered-by")
+        if powered and powered not in servers:
+            servers.append(powered)
+    if servers:
+        signal_lines.append(("Server", " · ".join(servers)))
+
+    vias: list[str] = []
+    for r in assessment.results.values():
+        if r.error:
+            continue
+        v = _get_header(r.headers, "via")
+        if v and v not in vias:
+            vias.append(v)
+    if vias:
+        signal_lines.append(("Via", " · ".join(vias)))
+
+    all_cookies: list[str] = []
+    for r in assessment.results.values():
+        if r.error:
+            continue
+        for name in _extract_set_cookie_names(r.headers):
+            if name not in all_cookies:
+                all_cookies.append(name)
+    if all_cookies:
+        signal_lines.append(("Cookies", " · ".join(all_cookies)))
+
+    cors_per_probe: dict[str, str] = {}
+    for lbl, r in assessment.results.items():
+        if r.error:
+            continue
+        origin = _get_header(r.headers, "access-control-allow-origin")
+        if origin:
+            cors_per_probe[lbl] = origin
+    if cors_per_probe:
+        unique_origins = set(cors_per_probe.values())
+        if len(unique_origins) == 1:
+            cors_text = f"Origin: {next(iter(unique_origins))}"
+            for r in assessment.results.values():
+                methods = _get_header(r.headers, "access-control-allow-methods")
+                if methods:
+                    cors_text += f"    Methods: {methods}"
+                    break
+            signal_lines.append(("CORS", cors_text))
+        else:
+            parts = [f"{lbl}: {orig}" for lbl, orig in cors_per_probe.items()]
+            signal_lines.append(("CORS", "  ".join(parts)))
+
+    cache_vals: list[str] = []
+    vary_items: list[str] = []
+    for r in assessment.results.values():
+        if r.error:
+            continue
+        cc = _get_header(r.headers, "cache-control")
+        if cc and cc not in cache_vals:
+            cache_vals.append(cc)
+        vary = _get_header(r.headers, "vary")
+        if vary:
+            for item in vary.split(","):
+                item = item.strip()
+                if item and item not in vary_items:
+                    vary_items.append(item)
+    if cache_vals or vary_items:
+        parts = []
+        if cache_vals:
+            parts.append(" · ".join(cache_vals))
+        if vary_items:
+            parts.append(f"Vary: {', '.join(vary_items)}")
+        signal_lines.append(("Cache", "    ".join(parts)))
+
+    content_types: dict[str, str] = {}
+    for lbl, r in assessment.results.items():
+        if r.error:
+            continue
+        ct = _get_header(r.headers, "content-type")
+        if ct:
+            content_types[lbl] = ct.split(";")[0].strip()
+    if len(set(content_types.values())) > 1:
+        parts = [
+            f"{lbl}: {ct}"
+            for lbl, ct in content_types.items()
+        ]
+        signal_lines.append(("Content", "  ".join(parts)))
+
+    if signal_lines:
+        panel_parts.append(Text())
+        signal_table = Table(
+            show_header=False, box=None, padding=(0, 1), show_edge=False,
+        )
+        signal_table.add_column("Label", style="dim", min_width=8)
+        signal_table.add_column("Value")
+        for sig_label, sig_value in signal_lines:
+            signal_table.add_row(sig_label, sig_value)
+        panel_parts.append(signal_table)
 
     console.print(Panel(
         Group(*panel_parts),
