@@ -79,8 +79,17 @@ drop_path_substrings:
   - /1x1.gif
   - /tap.gif
   - /xoplatform/logger/api/logger
+  - /track/pxl
+  - /track/conv
+  - /track/cei
+  - /track/realtimeconversion
+  - /pageview
+  - /convVisitLib
 
 # Same-site noise paths.
 same_site_drop_paths:
   - pwabuilder-sw
   - /cdn-cgi/rum
+  - /logging
+  - /ee/or2/
+  - /ee/v1/interact
