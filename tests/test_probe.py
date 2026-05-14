@@ -77,7 +77,7 @@ def test_classify_naked_blocked_others_pass():
     }
     verdict, recommendation = classify_results(results)
     assert verdict == ProbeVerdict.CLIENT_DEPENDENT
-    assert "curl_cffi" in recommendation.lower() or "impersonat" in recommendation.lower()
+    assert "tls" in recommendation.lower() or "browser" in recommendation.lower()
 
 
 def test_classify_naked_and_tls_blocked():
