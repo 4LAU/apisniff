@@ -35,6 +35,7 @@ async def _probe_httpx(
     ua: str,
     headers: dict[str, str] | None = None,
     proxy: str | None = None,
+    insecure: bool = False,
 ) -> ProbeResult:
     req_headers = {"user-agent": ua}
     if headers:
@@ -44,7 +45,7 @@ async def _probe_httpx(
         async with httpx.AsyncClient(
             follow_redirects=True,
             timeout=_TIMEOUT,
-            verify=False,
+            verify=not insecure,
             proxy=proxy,
         ) as client:
             resp = await client.get(url, headers=req_headers)
@@ -76,6 +77,7 @@ async def _probe_curl_cffi(
     headers: dict[str, str] | None = None,
     proxy: str | None = None,
     impersonate: str = "chrome",
+    insecure: bool = False,
 ) -> ProbeResult:
     from curl_cffi.requests import AsyncSession
 
@@ -91,7 +93,7 @@ async def _probe_curl_cffi(
                 impersonate=impersonate,
                 timeout=_TIMEOUT,
                 allow_redirects=True,
-                verify=False,
+                verify=not insecure,
                 proxy=proxy,
             )
             elapsed = (time.monotonic() - start) * 1000
@@ -192,7 +194,8 @@ def classify_results(
         if tls_only.is_blocked:
             return ProbeVerdict.CLIENT_DEPENDENT, _rec(
                 "detecting impersonated browser TLS fingerprints. "
-                "The defense distinguishes real browsers from clients mimicking browser handshakes. "
+                "The defense distinguishes real browsers from clients mimicking "
+                "browser handshakes. "
                 "Bot-identified clients pass because they bypass browser validation."
             )
         return ProbeVerdict.CLIENT_DEPENDENT, _rec(
@@ -218,6 +221,7 @@ async def detect_graphql(
     base_url: str,
     headers: dict[str, str] | None = None,
     proxy: str | None = None,
+    insecure: bool = False,
 ) -> tuple[list[str], bool]:
     found: list[str] = []
     introspection = False
@@ -228,7 +232,7 @@ async def detect_graphql(
         try:
             async with httpx.AsyncClient(
                 timeout=_TIMEOUT,
-                verify=False,
+                verify=not insecure,
                 proxy=proxy,
             ) as client:
                 resp = await client.post(
@@ -307,10 +311,11 @@ async def fetch_graphql_schema(
     url: str,
     headers: dict[str, str] | None = None,
     proxy: str | None = None,
+    insecure: bool = False,
 ) -> dict | None:
     try:
         async with httpx.AsyncClient(
-            timeout=_TIMEOUT, verify=False, proxy=proxy,
+            timeout=_TIMEOUT, verify=not insecure, proxy=proxy,
         ) as client:
             resp = await client.post(
                 url,
@@ -336,6 +341,7 @@ async def probe_rate_limit(
     headers: dict[str, str] | None = None,
     proxy: str | None = None,
     impersonate: str = "chrome",
+    insecure: bool = False,
 ) -> RateLimitResult:
     results: list[ProbeResult] = []
     first_block_at: int | None = None
@@ -346,6 +352,7 @@ async def probe_rate_limit(
         r = await _probe_curl_cffi(
             url, f"rate_{i}", _CHROME_UA,
             headers=headers, proxy=proxy, impersonate=impersonate,
+            insecure=insecure,
         )
         results.append(r)
         if r.status in (429, 503) and first_block_at is None:
@@ -382,17 +389,24 @@ async def run_probes(
     skip_graphql: bool = False,
     impersonate: str = "chrome",
     probe_rate: bool = False,
+    insecure: bool = False,
 ) -> ProbeAssessment:
     if not url.startswith(("http://", "https://")):
         url = f"https://{url}"
 
     tasks = [
-        _probe_httpx(url, "naked", _BOT_UA, headers, proxy),
-        _probe_curl_cffi(url, "impersonated", _CHROME_UA, headers, proxy, impersonate=impersonate),
-        _probe_curl_cffi(url, "tls_only", _BOT_UA, headers, proxy, impersonate=impersonate),
+        _probe_httpx(url, "naked", _BOT_UA, headers, proxy, insecure=insecure),
+        _probe_curl_cffi(
+            url, "impersonated", _CHROME_UA, headers, proxy,
+            impersonate=impersonate, insecure=insecure,
+        ),
+        _probe_curl_cffi(
+            url, "tls_only", _BOT_UA, headers, proxy,
+            impersonate=impersonate, insecure=insecure,
+        ),
     ]
     if not skip_graphql:
-        tasks.append(detect_graphql(url, headers, proxy))
+        tasks.append(detect_graphql(url, headers, proxy, insecure=insecure))
 
     gathered = await asyncio.gather(*tasks)
 
@@ -415,7 +429,9 @@ async def run_probes(
         graphql_endpoints, graphql_introspection = gathered[3]
         if graphql_introspection and graphql_endpoints:
             schema_url = url.rstrip("/") + graphql_endpoints[0]
-            schema = await fetch_graphql_schema(schema_url, headers, proxy)
+            schema = await fetch_graphql_schema(
+                schema_url, headers, proxy, insecure=insecure,
+            )
             if schema:
                 from apisniff.bundle import CAPTURES_DIR
                 domain = urlparse(url).hostname or "unknown"
@@ -430,6 +446,7 @@ async def run_probes(
     if probe_rate:
         rate_limit = await probe_rate_limit(
             url, headers=headers, proxy=proxy, impersonate=impersonate,
+            insecure=insecure,
         )
 
     return ProbeAssessment(

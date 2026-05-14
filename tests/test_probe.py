@@ -4,7 +4,13 @@ from unittest.mock import AsyncMock, MagicMock, patch
 import pytest
 
 from apisniff.models import ProbeResult, ProbeVerdict, VendorMatch
-from apisniff.probe import _probe_curl_cffi, classify_results, fetch_graphql_schema, run_probes
+from apisniff.probe import (
+    _probe_curl_cffi,
+    _probe_httpx,
+    classify_results,
+    fetch_graphql_schema,
+    run_probes,
+)
 
 
 @pytest.mark.asyncio
@@ -32,6 +38,21 @@ async def test_fetch_graphql_schema_success():
         assert result is not None
         assert "__schema" in result["data"]
         assert len(result["data"]["__schema"]["types"]) == 3
+        assert mock_client_cls.call_args.kwargs["verify"] is True
+
+
+@pytest.mark.asyncio
+async def test_fetch_graphql_schema_insecure_disables_tls_verification():
+    with patch("apisniff.probe.httpx.AsyncClient") as mock_client_cls:
+        mock_client = AsyncMock()
+        mock_client.post.return_value = MagicMock(status_code=404)
+        mock_client.__aenter__ = AsyncMock(return_value=mock_client)
+        mock_client.__aexit__ = AsyncMock(return_value=False)
+        mock_client_cls.return_value = mock_client
+
+        await fetch_graphql_schema("https://example.com/graphql", insecure=True)
+
+        assert mock_client_cls.call_args.kwargs["verify"] is False
 
 
 def _result(label, status=200, headers=None, body=b"<html>ok</html>", elapsed_ms=100.0, error=None):
@@ -62,7 +83,13 @@ def test_classify_all_200_with_vendors():
         "impersonated": _result("impersonated"),
         "tls_only": _result("tls_only"),
     }
-    vendors = [VendorMatch(vendor="akamai", confidence="medium", signals=["header_present:akamai-grn"])]
+    vendors = [
+        VendorMatch(
+            vendor="akamai",
+            confidence="medium",
+            signals=["header_present:akamai-grn"],
+        )
+    ]
     verdict, recommendation = classify_results(results, vendors)
     assert verdict == ProbeVerdict.NO_PROTECTION
     assert "akamai" in recommendation.lower()
@@ -167,18 +194,59 @@ async def test_probe_curl_cffi_impersonate_threaded(monkeypatch):
 
 
 @pytest.mark.asyncio
+async def test_probe_httpx_verifies_tls_by_default():
+    with patch("apisniff.probe.httpx.AsyncClient") as mock_client_cls:
+        mock_client = AsyncMock()
+        mock_client.get.return_value = MagicMock(status_code=200, headers={}, content=b"ok")
+        mock_client.__aenter__ = AsyncMock(return_value=mock_client)
+        mock_client.__aexit__ = AsyncMock(return_value=False)
+        mock_client_cls.return_value = mock_client
+
+        await _probe_httpx("https://example.com", "test", "ua")
+
+        assert mock_client_cls.call_args.kwargs["verify"] is True
+
+
+@pytest.mark.asyncio
+async def test_probe_curl_cffi_insecure_disables_tls_verification(monkeypatch):
+    captured = {}
+
+    class FakeResp:
+        status_code = 200
+        headers = {}
+        content = b"ok"
+
+    class FakeSession:
+        async def __aenter__(self):
+            return self
+
+        async def __aexit__(self, *a):
+            pass
+
+        async def get(self, url, **kwargs):
+            captured["verify"] = kwargs.get("verify")
+            return FakeResp()
+
+    monkeypatch.setattr("curl_cffi.requests.AsyncSession", FakeSession)
+    await _probe_curl_cffi("https://example.com", "test", "ua", insecure=True)
+    assert captured["verify"] is False
+
+
+@pytest.mark.asyncio
 async def test_run_probes_impersonate_parameter(monkeypatch):
     """run_probes passes impersonate to curl_cffi probes."""
     calls = []
 
-    async def fake_curl(url, label, ua, headers=None, proxy=None, impersonate="chrome"):
-        calls.append({"label": label, "impersonate": impersonate})
+    async def fake_curl(
+        url, label, ua, headers=None, proxy=None, impersonate="chrome", insecure=False,
+    ):
+        calls.append({"label": label, "impersonate": impersonate, "insecure": insecure})
         return ProbeResult(
             label=label, status=200, headers={}, body=b"",
             elapsed_ms=1.0, error=None,
         )
 
-    async def fake_httpx(url, label, ua, headers=None, proxy=None):
+    async def fake_httpx(url, label, ua, headers=None, proxy=None, insecure=False):
         return ProbeResult(
             label=label, status=200, headers={}, body=b"",
             elapsed_ms=1.0, error=None,

@@ -48,7 +48,8 @@ apisniff share example.com -o ./for-teammate/
 
 ### What's excluded
 
-Raw traffic (`flows.jsonl`), cookies (`cookies.txt`), request/response headers, query parameter values. The output is intentionally non-replayable.
+Raw traffic (`flows.jsonl`), cookies (`cookies.txt`), request/response headers, query
+parameter values. The output is intentionally non-replayable.
 
 ---
 

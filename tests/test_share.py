@@ -191,7 +191,12 @@ def test_share_bundle_no_raw_secrets_in_output(tmp_path):
             "accept": "application/json",
         },
         request_body=b'{"password": "hunter2", "email": "user@private.com"}',
-        response_body=b'{"token": "eyJhbGciOiJSUzI1NiJ9.payload", "ssn": "123-45-6789"}',
+        response_body=(
+            b'{"token": "eyJhbGciOiJSUzI1NiJ9.payload", '
+            b'"ssn": "123-45-6789", '
+            b'"email": "alice@example.com", '
+            b'"session_id": "session_id_abc123"}'
+        ),
     )
     src = _write_bundle(tmp_path, [flow])
     dst = tmp_path / "shared"
@@ -207,6 +212,23 @@ def test_share_bundle_no_raw_secrets_in_output(tmp_path):
         assert "hunter2" not in content
         assert "eyJhbGciOiJSUzI1NiJ9" not in content
         assert "123-45-6789" not in content
+        assert "alice@example.com" not in content
+        assert "session_id_abc123" not in content
+
+
+def test_share_bundle_spec_has_no_examples(tmp_path):
+    """Share spec omits examples so arbitrary captured values cannot leak."""
+    flow = _flow(response_body=b'{"email": "alice@example.com", "name": "Alice"}')
+    src = _write_bundle(tmp_path, [flow])
+    dst = tmp_path / "shared"
+
+    share_bundle(str(src), str(dst), "example.com")
+
+    spec = yaml.safe_load((dst / "spec.yaml").read_text())
+    props = spec["paths"]["/api/users"]["get"]["responses"]["200"]
+    schema_props = props["content"]["application/json"]["schema"]["properties"]
+    assert "example" not in schema_props["email"]
+    assert "example" not in schema_props["name"]
 
 
 def test_share_bundle_regenerates_report(tmp_path):

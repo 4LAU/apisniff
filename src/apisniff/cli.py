@@ -54,6 +54,7 @@ def probe(
     probe_rate: bool = typer.Option(
         False, "--probe-rate", help="Send 20 requests to detect rate limiting (opt-in)",
     ),
+    insecure: bool = typer.Option(False, "--insecure", help="Skip TLS verification"),
 ) -> None:
     """Defense preflight -- what kind of surface am I dealing with?"""
     from apisniff.models import ProbeVerdict
@@ -72,6 +73,7 @@ def probe(
             skip_graphql=skip_graphql,
             impersonate=impersonate,
             probe_rate=probe_rate,
+            insecure=insecure,
         )
     )
 
