@@ -7,7 +7,6 @@ Re-run: uv run python scripts/generate_command_docs.py
 from __future__ import annotations
 
 import subprocess
-import sys
 from pathlib import Path
 
 COMMANDS = ["probe", "recon", "analyze", "replay", "spec", "share"]
