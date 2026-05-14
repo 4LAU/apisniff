@@ -24,7 +24,7 @@ apisniff probe example.com
 
 This sends three requests with different client profiles and compares the responses. You'll see a verdict (no protection, client-dependent, JS challenge, or full block) and any detected vendor products.
 
-If the target is behind a proxy or CDN, the probe will identify it. If you see "full block," you may need to adjust your approach (use `--impersonate` or `--proxy`).
+The probe will identify proxies and CDNs. If you see "full block," try `--impersonate` to switch TLS profiles or `--proxy` to route through a different IP.
 
 ## Step 2: Capture traffic
 
@@ -32,7 +32,7 @@ If the target is behind a proxy or CDN, the probe will identify it. If you see "
 apisniff recon example.com
 ```
 
-This starts a local proxy on port 8080 and opens Chrome. Browse the site normally: click through pages, submit forms, use the features you want to map. Every request is captured and classified in real-time.
+A local proxy starts on port 8080 and Chrome opens automatically. Browse the site normally: click through pages, submit forms, use the features you want to map. Every request is captured and classified in real-time.
 
 Press **Ctrl+C** when you're done browsing. apisniff will:
 - Filter out noise (ads, analytics, tracking pixels, third-party domains)
@@ -61,7 +61,7 @@ Same processing pipeline, different input source.
 apisniff spec example.com
 ```
 
-This reads the latest capture and produces an OpenAPI 3.0.3 spec on stdout. The spec includes:
+The command reads your latest capture and produces an OpenAPI 3.0.3 spec on stdout. It includes:
 - Every observed endpoint, normalized (e.g., `/users/123` → `/users/{id}`)
 - Request and response schemas inferred from captured data
 - Query parameters merged across observations
@@ -87,7 +87,7 @@ Raw capture bundles contain credentials and should never be shared. To create a 
 apisniff share example.com
 ```
 
-This produces a directory with derived artifacts only: an OpenAPI spec, endpoint inventory, session metadata, and a redacted report. No raw traffic, no cookies, no headers.
+The output is a directory with derived artifacts only: an OpenAPI spec, endpoint inventory, session metadata, and a redacted report. No raw traffic, no cookies, no headers.
 
 ## What to do with the spec
 
