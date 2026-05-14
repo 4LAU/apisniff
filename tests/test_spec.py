@@ -5,8 +5,8 @@ from apisniff.auth import AuthPattern
 from apisniff.models import CapturedFlow, normalize_path
 from apisniff.spec import (
     _infer_schema,
-    is_api_flow,
     generate_openapi,
+    is_api_flow,
 )
 
 
