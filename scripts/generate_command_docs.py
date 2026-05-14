@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """Generate docs/commands/*.md from Typer CLI introspection.
 
-Generated from apisniff CLI — do not edit manually.
+Generated from apisniff CLI. Do not edit manually.
 Re-run: uv run python scripts/generate_command_docs.py
 """
 from __future__ import annotations
@@ -13,24 +13,24 @@ COMMANDS = ["probe", "recon", "analyze", "replay", "spec", "share"]
 DOCS_DIR = Path(__file__).parent.parent / "docs" / "commands"
 
 PREAMBLE = """\
-<!-- Generated from apisniff CLI — do not edit manually. -->
+<!-- Generated from apisniff CLI. Do not edit manually. -->
 <!-- Re-run: uv run python scripts/generate_command_docs.py -->
 
 """
 
 DESCRIPTIONS = {
     "probe": (
-        "Defense preflight — assess what defenses protect a URL before you capture traffic. "
+        "Assess what defenses protect a URL before you capture traffic. "
         "Sends three parallel requests with different client profiles and classifies the "
         "differential response. Detects 25+ vendor products (Cloudflare, Akamai, DataDome, etc.)."
     ),
     "recon": (
-        "Live traffic capture — browse a site through a local mitmproxy, classify every request "
+        "Browse a site through a local mitmproxy, classify every request "
         "in real-time. Filters noise (ads, analytics, third-party), detects antibot JS, and "
         "writes classified flows to a bundle directory."
     ),
     "analyze": (
-        "Offline analysis — import a traffic capture file (HAR, Burp XML, or JSONL), run the "
+        "Import a traffic capture file (HAR, Burp XML, or JSONL), run the "
         "same classification pipeline as recon, and produce a full bundle with report."
     ),
     "replay": (
@@ -45,7 +45,7 @@ DESCRIPTIONS = {
     ),
     "share": (
         "Export a shareable summary from a capture bundle. Produces only derived artifacts "
-        "(spec, inventory, report, session metadata) — no raw traffic, no credentials, no "
+        "(spec, inventory, report, session metadata). No raw traffic, no credentials, no "
         "cookie values."
     ),
 }

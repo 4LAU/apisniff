@@ -9,12 +9,12 @@ One tool for API recon: preflight defenses, capture real traffic, extract a usab
 
 ## What you get
 
-- **Defense detection** — probe a URL in 10 seconds, classify 25+ vendor products (Cloudflare, Akamai, DataDome, PerimeterX, Imperva, Kasada, and more)
-- **Live traffic capture** — browse a site through a local proxy, filter noise automatically, keep only API calls
-- **Offline import** — bring your own HAR file or Burp Suite export
-- **OpenAPI generation** — reverse-engineer a spec from captured traffic with schema inference and example values
-- **Drift detection** — replay captured calls against the live API and see what changed
-- **Safe sharing** — export derived artifacts only, no raw traffic or credentials
+- Probe a URL in 10 seconds, classify 25+ vendor products (Cloudflare, Akamai, DataDome, PerimeterX, Imperva, Kasada, and more)
+- Browse a site through a local proxy. Noise is filtered automatically; you keep only API calls.
+- Import HAR files or Burp Suite exports for offline analysis
+- Generate an OpenAPI spec from captured traffic with schema inference and example values
+- Replay captured calls against the live API and see what changed
+- Export safely: derived artifacts only, no raw traffic, no credentials
 
 ## Install
 
@@ -51,26 +51,26 @@ apisniff share example.com
 
 | Command | Purpose | Docs |
 |---------|---------|------|
-| [`probe`](docs/commands/probe.md) | Defense preflight — assess defenses, detect vendors, check rate limits | [Reference →](docs/commands/probe.md) |
-| [`recon`](docs/commands/recon.md) | Capture + classify — browse through proxy, filter noise, generate report | [Reference →](docs/commands/recon.md) |
-| [`analyze`](docs/commands/analyze.md) | Offline analysis — import HAR, Burp XML, or JSONL captures | [Reference →](docs/commands/analyze.md) |
+| [`probe`](docs/commands/probe.md) | Defense preflight: assess defenses, detect vendors, check rate limits | [Reference →](docs/commands/probe.md) |
+| [`recon`](docs/commands/recon.md) | Capture + classify: browse through proxy, filter noise, generate report | [Reference →](docs/commands/recon.md) |
+| [`analyze`](docs/commands/analyze.md) | Offline analysis: import HAR, Burp XML, or JSONL captures | [Reference →](docs/commands/analyze.md) |
 | [`replay`](docs/commands/replay.md) | Replay captured calls and detect API drift | [Reference →](docs/commands/replay.md) |
 | [`spec`](docs/commands/spec.md) | Generate OpenAPI 3.0.3 from captured traffic | [Reference →](docs/commands/spec.md) |
-| [`share`](docs/commands/share.md) | Export shareable summary — no raw traffic, no credentials | [Reference →](docs/commands/share.md) |
+| [`share`](docs/commands/share.md) | Export shareable summary (no raw traffic, no credentials) | [Reference →](docs/commands/share.md) |
 
 Every command supports `--help` for full flag documentation. See the [CLI spec](docs/spec.md) for output format contracts and conventions.
 
 ## Guides
 
-- [Getting started](docs/guides/getting-started.md) — install to API map in 5 minutes
-- [Workflow recipes](docs/guides/workflows.md) — real tasks: map an API, check for drift, compare defenses
-- [Capture formats](docs/guides/capture-formats.md) — HAR, Burp XML, JSONL explained
+- [Getting started](docs/guides/getting-started.md): install to API map in 5 minutes
+- [Workflow recipes](docs/guides/workflows.md): map an API, check for drift, compare defenses
+- [Capture formats](docs/guides/capture-formats.md): HAR, Burp XML, JSONL explained
 
 ## Important Warnings
 
 ### Your IP address is exposed
 
-**This tool sends real HTTP requests from your IP.** Aggressive or repeated probing can get you rate-limited or blocked. `--probe-rate` fires 20 rapid requests — use deliberately. Route through `--proxy` if you don't want to expose your IP.
+**This tool sends real HTTP requests from your IP.** Aggressive or repeated probing can get you rate-limited or blocked. `--probe-rate` fires 20 rapid requests, so use it deliberately. Route through `--proxy` if you don't want to expose your IP.
 
 Results reflect your IP's reputation. Residential IPs see fewer challenges than datacenter/cloud IPs. Use `--proxy` to compare results from different vantage points.
 
@@ -82,7 +82,7 @@ Use `apisniff share` to create a safe export with only derived artifacts.
 
 ### About the mitmproxy certificate
 
-`recon` requires trusting mitmproxy's CA certificate (one-time macOS Keychain setup). The proxy runs locally on `127.0.0.1` — only traffic explicitly routed through port 8080 is intercepted. Regular browsing and apps are unaffected.
+`recon` requires trusting mitmproxy's CA certificate (one-time macOS Keychain setup). The proxy runs locally on `127.0.0.1`; only traffic explicitly routed through port 8080 is intercepted. Regular browsing and apps are unaffected.
 
 ## What to do with the spec
 

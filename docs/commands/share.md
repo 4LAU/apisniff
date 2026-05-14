@@ -1,10 +1,10 @@
-<!-- Generated from apisniff CLI — do not edit manually. -->
+<!-- Generated from apisniff CLI. Do not edit manually. -->
 <!-- Re-run: uv run python scripts/generate_command_docs.py -->
 
 
 # `apisniff share`
 
-Export a shareable summary from a capture bundle. Produces only derived artifacts (spec, inventory, report, session metadata) — no raw traffic, no credentials, no cookie values.
+Export a shareable summary from a capture bundle. Produces only derived artifacts (spec, inventory, report, session metadata). No raw traffic, no credentials, no cookie values.
 
 ## Usage
 

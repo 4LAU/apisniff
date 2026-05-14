@@ -11,7 +11,7 @@ apisniff analyze flows.jsonl
 apisniff spec example.com -i flows.jsonl
 ```
 
-JSONL files are pre-classified — they've already been through the noise filter. `analyze` skips the classification step for JSONL input.
+JSONL files are pre-classified; they've already been through the noise filter. `analyze` skips the classification step for JSONL input.
 
 ## HAR (HTTP Archive)
 

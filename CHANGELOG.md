@@ -3,13 +3,13 @@
 ## [Unreleased]
 
 ### Added
-- `replay` command — replay captured API calls against live endpoints and detect drift (match/drift/auth_expired/blocked)
-- `analyze` command — offline import and analysis for HAR, Burp Suite XML, and JSONL captures
-- `share` command — export derived artifacts (spec, inventory, report) without raw traffic or credentials
-- `--impersonate` flag on `probe` and `replay` — TLS client profile selection (chrome, safari, firefox)
-- `--probe-rate` flag — rate limit detection via 429 responses and silent throttling
-- `--infer-security-schemes` flag — promote observed auth patterns to formal OpenAPI `securitySchemes`
-- `--examples` flag — include example values from captured data with auto-redaction
+- `replay` command: replay captured API calls against live endpoints and detect drift (match/drift/auth_expired/blocked)
+- `analyze` command: offline import and analysis for HAR, Burp Suite XML, and JSONL captures
+- `share` command: export derived artifacts (spec, inventory, report) without raw traffic or credentials
+- `--impersonate` flag on `probe` and `replay` for TLS client profile selection (chrome, safari, firefox)
+- `--probe-rate` flag for rate limit detection via 429 responses and silent throttling
+- `--infer-security-schemes` flag: promote observed auth patterns to formal OpenAPI `securitySchemes`
+- `--examples` flag: include example values from captured data with auto-redaction
 - Spec aggregation: query parameters, example values, form bodies, and multi-response merging
 - Burp Suite XML import adapter
 - GraphQL introspection download with schema sidecar file
@@ -33,9 +33,9 @@
 ## [0.1.0] — 2026-05-08
 
 ### Added
-- `probe` command — parallel differential defense probing with 25 vendor signatures
-- `recon` command — mitmproxy-based traffic capture with 7-stage classification
-- `spec` command — OpenAPI 3.x generation from captured traffic (JSONL or HAR input)
+- `probe` command: parallel differential defense probing with 25 vendor signatures
+- `recon` command: mitmproxy-based traffic capture with 7-stage classification
+- `spec` command: OpenAPI 3.x generation from captured traffic (JSONL or HAR input)
 - Rich terminal rendering with screenshottable panels
 - `--json` flag on all commands
 - `--proxy` flag for routing through SOCKS5/HTTP proxies
