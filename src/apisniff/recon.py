@@ -187,7 +187,7 @@ def run_recon(
         sys.executable, "-c",
         "from mitmproxy.tools.main import mitmdump; mitmdump()",
         "--listen-port", str(port),
-        "--set", "console_eventlog_verbosity=error",
+        "--quiet",
         "-s", str(addon_path),
     ]
     if proxy:
@@ -208,7 +208,9 @@ def run_recon(
     stderr.print(f"  Bundle: {bundle_dir}")
     stderr.print("  Press Ctrl+C to stop capture.\n")
 
-    proxy_proc = subprocess.Popen(cmd, env=env)
+    proxy_proc = subprocess.Popen(
+        cmd, env=env, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
+    )
     time.sleep(1)
 
     if proxy_proc.poll() is not None:
