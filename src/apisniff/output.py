@@ -259,73 +259,72 @@ def render_probe(assessment: ProbeAssessment, console: Console | None = None) ->
     signal_lines: list[tuple[str, str | Text]] = []
 
     servers: list[str] = []
-    for r in assessment.results.values():
-        if r.error:
-            continue
-        s = _get_header(r.headers, "server")
-        if s and s not in servers:
-            servers.append(s)
-        powered = _get_header(r.headers, "x-powered-by")
-        if powered and powered not in servers:
-            servers.append(powered)
-    if servers:
-        signal_lines.append(("Server", " · ".join(servers)))
-
     vias: list[str] = []
-    for r in assessment.results.values():
-        if r.error:
-            continue
-        v = _get_header(r.headers, "via")
-        if v and v not in vias:
-            vias.append(v)
-    if vias:
-        signal_lines.append(("Via", " · ".join(vias)))
-
     all_cookies: list[str] = []
-    for r in assessment.results.values():
-        if r.error:
-            continue
-        for name in _extract_set_cookie_names(r.headers):
-            if name not in all_cookies:
-                all_cookies.append(name)
-    if all_cookies:
-        signal_lines.append(("Cookies", " · ".join(all_cookies)))
-
     cors_per_probe: dict[str, str] = {}
+    cache_vals: list[str] = []
+    vary_items: list[str] = []
+    content_types: dict[str, str] = {}
+    first_cors_methods: str = ""
+
     for lbl, r in assessment.results.items():
         if r.error:
             continue
-        origin = _get_header(r.headers, "access-control-allow-origin")
+        h = r.headers
+
+        s = _get_header(h, "server")
+        if s and s not in servers:
+            servers.append(s)
+        powered = _get_header(h, "x-powered-by")
+        if powered and powered not in servers:
+            servers.append(powered)
+
+        v = _get_header(h, "via")
+        if v and v not in vias:
+            vias.append(v)
+
+        for name in _extract_set_cookie_names(h):
+            if name not in all_cookies:
+                all_cookies.append(name)
+
+        origin = _get_header(h, "access-control-allow-origin")
         if origin:
             cors_per_probe[lbl] = origin
-    if cors_per_probe:
-        unique_origins = set(cors_per_probe.values())
-        if len(unique_origins) == 1:
-            cors_text = f"Origin: {next(iter(unique_origins))}"
-            for r in assessment.results.values():
-                methods = _get_header(r.headers, "access-control-allow-methods")
-                if methods:
-                    cors_text += f"    Methods: {methods}"
-                    break
-            signal_lines.append(("CORS", cors_text))
-        else:
-            parts = [f"{lbl}: {orig}" for lbl, orig in cors_per_probe.items()]
-            signal_lines.append(("CORS", "  ".join(parts)))
+        if not first_cors_methods:
+            methods = _get_header(h, "access-control-allow-methods")
+            if methods:
+                first_cors_methods = methods
 
-    cache_vals: list[str] = []
-    vary_items: list[str] = []
-    for r in assessment.results.values():
-        if r.error:
-            continue
-        cc = _get_header(r.headers, "cache-control")
+        cc = _get_header(h, "cache-control")
         if cc and cc not in cache_vals:
             cache_vals.append(cc)
-        vary = _get_header(r.headers, "vary")
+        vary = _get_header(h, "vary")
         if vary:
             for item in vary.split(","):
                 item = item.strip()
                 if item and item not in vary_items:
                     vary_items.append(item)
+
+        ct = _get_header(h, "content-type")
+        if ct:
+            content_types[lbl] = ct.split(";")[0].strip()
+
+    if servers:
+        signal_lines.append(("Server", " · ".join(servers)))
+    if vias:
+        signal_lines.append(("Via", " · ".join(vias)))
+    if all_cookies:
+        signal_lines.append(("Cookies", " · ".join(all_cookies)))
+    if cors_per_probe:
+        unique_origins = set(cors_per_probe.values())
+        if len(unique_origins) == 1:
+            cors_text = f"Origin: {next(iter(unique_origins))}"
+            if first_cors_methods:
+                cors_text += f"    Methods: {first_cors_methods}"
+            signal_lines.append(("CORS", cors_text))
+        else:
+            parts = [f"{lbl}: {orig}" for lbl, orig in cors_per_probe.items()]
+            signal_lines.append(("CORS", "  ".join(parts)))
     if cache_vals or vary_items:
         parts = []
         if cache_vals:
@@ -333,14 +332,6 @@ def render_probe(assessment: ProbeAssessment, console: Console | None = None) ->
         if vary_items:
             parts.append(f"Vary: {', '.join(vary_items)}")
         signal_lines.append(("Cache", "    ".join(parts)))
-
-    content_types: dict[str, str] = {}
-    for lbl, r in assessment.results.items():
-        if r.error:
-            continue
-        ct = _get_header(r.headers, "content-type")
-        if ct:
-            content_types[lbl] = ct.split(";")[0].strip()
     if len(set(content_types.values())) > 1:
         parts = [
             f"{lbl}: {ct}"
@@ -470,7 +461,7 @@ _CATEGORIES = get_args(ReplayCategory)
 def _tally_results(results: list[ReplayResult]) -> dict[str, int]:
     counts: dict[str, int] = {c: 0 for c in _CATEGORIES}
     for r in results:
-        counts[r.category] = counts.get(r.category, 0) + 1
+        counts[r.category] += 1
     return counts
 
 

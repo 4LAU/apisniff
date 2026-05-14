@@ -104,9 +104,7 @@ def _signal_matches(signal: dict, prep: _PreparedResult) -> bool:
 
 
 def _compute_confidence(high_count: int, medium_count: int, low_count: int) -> str | None:
-    if high_count > 0:
-        return "high"
-    if medium_count >= 2:
+    if high_count > 0 or medium_count >= 2:
         return "high"
     if medium_count == 1:
         return "medium"
@@ -163,8 +161,7 @@ def match_vendors(
         if vendor_name in _SPECIFIC_VENDORS:
             matched_specific.add(vendor_name)
 
-        overlaps = matched_specific & {"datadome", "akamai", "perimeterx"}
-        if vendor_name == "shape_security" and overlaps:
+        if vendor_name == "shape_security" and matched_specific & {"datadome", "akamai", "perimeterx"}:
             continue
 
         matches.append(VendorMatch(

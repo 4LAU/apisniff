@@ -36,12 +36,10 @@ def _shape(value: Any, depth: int) -> Any:
     if isinstance(value, list):
         if not value:
             return []
-        # Use first element's shape; check element type consistency
         first_shape = _shape(value[0], depth - 1)
         first_type = type(value[0]).__name__
         for item in value[1:]:
             if type(item).__name__ != first_type:
-                # Mixed types — just report "mixed"
                 return ["mixed"]
         return [first_shape]
     return type(value).__name__
@@ -101,7 +99,6 @@ def compare_shape(
         except (json.JSONDecodeError, UnicodeDecodeError):
             pass
 
-    # JSON↔non-JSON mismatch
     if orig_parsed != repl_parsed:
         return False, {"json_parse_mismatch": {"was": orig_parsed, "now": repl_parsed}}
 
@@ -129,10 +126,7 @@ def parse_cookie_file(path: str) -> list[tuple[str, str, str]]:
             parts = line.split("\t")
             if len(parts) < 7:
                 continue
-            domain, _host_only, _path, _secure, _expiry, name, value = (
-                parts[0], parts[1], parts[2], parts[3], parts[4], parts[5], parts[6]
-            )
-            results.append((domain, name, value))
+            results.append((parts[0], parts[5], parts[6]))
     return results
 
 
@@ -145,7 +139,7 @@ def cookies_for_host(
     for domain, name, value in cookies:
         if domain.startswith("."):
             # Suffix match: .example.com matches api.example.com and example.com
-            suffix = domain[1:]  # strip leading dot
+            suffix = domain[1:]
             if host == suffix or host.endswith("." + suffix):
                 matching.append(f"{name}={value}")
         else:
@@ -186,7 +180,6 @@ def _assign_category(
     if not status_match:
         return "drift", status_match
 
-    # Status matches — check body shape and size
     if not body_shape_match:
         return "drift", status_match
 
@@ -209,15 +202,12 @@ async def replay_endpoint(
     """Replay a single captured flow and return a categorized ReplayResult."""
     from curl_cffi.requests import AsyncSession
 
-    # Build request headers
     req_headers: dict[str, str] = {}
 
-    # Forward non-hop-by-hop headers from original flow
     for k, v in flow.request_headers.items():
         if k.lower() not in _HOP_BY_HOP:
             req_headers[k.lower()] = v
 
-    # Apply cookie file cookies for this host
     if cookies:
         cookie_str = cookies_for_host(cookies, flow.host)
         if cookie_str:
@@ -227,7 +217,6 @@ async def replay_endpoint(
                 existing + "; " + cookie_str if existing else cookie_str
             )
 
-    # Override with caller-supplied headers
     if headers:
         for k, v in headers.items():
             req_headers[k.lower()] = v

@@ -129,7 +129,6 @@ def _parse_multipart(body: bytes, content_type: str) -> dict | None:
     """
     if not body:
         return None
-    # Extract boundary from content-type header
     boundary = None
     for part in content_type.split(";"):
         part = part.strip()
@@ -172,7 +171,6 @@ def _merge_schemas(existing: dict, new: dict) -> dict:
 
     # If types differ, prefer the one that has more info
     if e_type != n_type:
-        # Prefer object/array over string/empty
         if n_type in ("object", "array") and e_type not in ("object", "array"):
             return new
         return existing
@@ -219,7 +217,6 @@ def generate_openapi(
     infer_schemes: bool = False,
     include_examples: bool = False,
 ) -> dict:
-    # Phase 1: Group flows by (normalized_path, method)
     groups: dict[tuple[str, str], list[CapturedFlow]] = defaultdict(list)
     for flow in flows:
         norm_path = normalize_path(flow.path)
@@ -231,7 +228,6 @@ def generate_openapi(
     for (norm_path, method), group in groups.items():
         operation: dict = {"responses": {}}
 
-        # --- Aggregate query params across ALL flows ---
         seen_params: dict[str, dict] = {}
         for flow in group:
             if "?" in flow.path:
@@ -247,7 +243,6 @@ def generate_openapi(
         if seen_params:
             operation["parameters"] = list(seen_params.values())
 
-        # --- Aggregate responses per status code ---
         response_schemas: dict[str, dict] = {}
         for flow in group:
             status_key = str(flow.response_status)

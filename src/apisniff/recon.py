@@ -196,13 +196,11 @@ def run_analyze(
     fetch_graphql: bool = False,
 ) -> None:
     """Offline analysis: load a traffic capture, classify, extract everything."""
-    # 1. Load flows
     flows, fmt = load_flows(input_file)
     if not flows:
         stderr.print("[yellow]No flows found in input file.[/yellow]")
         return
 
-    # 2. Auto-detect domain from the flows if not provided
     if domain is None:
         from apisniff.classify import extract_registered_domain
         host_counter: Counter[str] = Counter(
@@ -223,7 +221,6 @@ def run_analyze(
                 )
         domain = top_domain
 
-    # 3. Classify (HAR/Burp) or skip (JSONL)
     kept_flows: list[CapturedFlow]
     drop_counts: dict[str, int] = {}
 
@@ -244,7 +241,6 @@ def run_analyze(
         stderr.print(f"[red]Unrecognised format for {input_file}[/red]")
         return
 
-    # 4. Create bundle dir, write flows.jsonl and session.json
     if output_dir:
         bundle_dir = Path(output_dir)
     else:
