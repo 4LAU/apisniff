@@ -1,10 +1,10 @@
-<!-- Generated from apisniff CLI — do not edit manually. -->
+<!-- Generated from apisniff CLI. Do not edit manually. -->
 <!-- Re-run: uv run python scripts/generate_command_docs.py -->
 
 
 # `apisniff recon`
 
-Live traffic capture — browse a site through a local mitmproxy, classify every request in real-time. Filters noise (ads, analytics, third-party), detects antibot JS, and writes classified flows to a bundle directory.
+Browse a site through a local mitmproxy, classify every request in real-time. Filters noise (ads, analytics, third-party), detects antibot JS, and writes classified flows to a bundle directory.
 
 ## Usage
 

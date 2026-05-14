@@ -1,10 +1,10 @@
-<!-- Generated from apisniff CLI — do not edit manually. -->
+<!-- Generated from apisniff CLI. Do not edit manually. -->
 <!-- Re-run: uv run python scripts/generate_command_docs.py -->
 
 
 # `apisniff probe`
 
-Defense preflight — assess what defenses protect a URL before you capture traffic. Sends three parallel requests with different client profiles and classifies the differential response. Detects 25+ vendor products (Cloudflare, Akamai, DataDome, etc.).
+Assess what defenses protect a URL before you capture traffic. Sends three parallel requests with different client profiles and classifies the differential response. Detects 25+ vendor products (Cloudflare, Akamai, DataDome, etc.).
 
 ## Usage
 

@@ -1,4 +1,4 @@
-<!-- Generated from apisniff CLI — do not edit manually. -->
+<!-- Generated from apisniff CLI. Do not edit manually. -->
 <!-- Re-run: uv run python scripts/generate_command_docs.py -->
 
 

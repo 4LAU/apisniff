@@ -45,7 +45,7 @@ example-com_2026-05-12_14-30/
 ## Safety Model
 
 - **`recon` and `analyze` capture full HTTP traffic** including credentials. Raw bundles must never be shared.
-- **`share` produces only derived artifacts** — no raw traffic, no cookie values, no headers. Output is safe to distribute.
+- **`share` produces only derived artifacts.** No raw traffic, no cookie values, no headers. Output is safe to distribute.
 - **`replay` defaults to safe methods only** (GET, HEAD, OPTIONS). `--include-unsafe` opts in to POST/PUT/DELETE/PATCH.
 - **`--probe-rate` is opt-in** because it fires 20 rapid requests that may trigger rate limiting.
 - **`probe` sends real HTTP requests from your IP.** Results reflect your IP's reputation. Use `--proxy` to test from different vantage points.

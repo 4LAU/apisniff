@@ -32,7 +32,7 @@ If the target is behind a proxy or CDN, the probe will identify it. If you see "
 apisniff recon example.com
 ```
 
-This starts a local proxy on port 8080 and opens Chrome. Browse the site normally — click through pages, submit forms, use the features you want to map. Every request is captured and classified in real-time.
+This starts a local proxy on port 8080 and opens Chrome. Browse the site normally: click through pages, submit forms, use the features you want to map. Every request is captured and classified in real-time.
 
 Press **Ctrl+C** when you're done browsing. apisniff will:
 - Filter out noise (ads, analytics, tracking pixels, third-party domains)
@@ -87,7 +87,7 @@ Raw capture bundles contain credentials and should never be shared. To create a 
 apisniff share example.com
 ```
 
-This produces a directory with derived artifacts only — an OpenAPI spec, endpoint inventory, session metadata, and a redacted report. No raw traffic, no cookies, no headers.
+This produces a directory with derived artifacts only: an OpenAPI spec, endpoint inventory, session metadata, and a redacted report. No raw traffic, no cookies, no headers.
 
 ## What to do with the spec
 
@@ -104,7 +104,7 @@ cat spec.yaml | llm "write a Python client for this API"
 
 ## Next steps
 
-- [Workflow recipes](workflows.md) — common tasks like "check for API drift" or "map a GraphQL API"
-- [Capture formats](capture-formats.md) — details on HAR, Burp XML, and JSONL formats
-- [Command reference](../commands/) — full flag documentation for every command
-- [CLI spec](../spec.md) — output format contracts and conventions
+- [Workflow recipes](workflows.md): "check for API drift," "map a GraphQL API," and more
+- [Capture formats](capture-formats.md): HAR, Burp XML, and JSONL explained
+- [Command reference](../commands/): full flag documentation for every command
+- [CLI spec](../spec.md): output format contracts and conventions

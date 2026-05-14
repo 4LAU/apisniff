@@ -122,7 +122,7 @@ Example values are taken from captured responses. Secrets (bearer tokens, API ke
 apisniff share example.com -o ./for-teammate/
 ```
 
-The shared directory contains only derived data — an OpenAPI spec, endpoint inventory, session stats, and a report with redacted cookie values. No raw traffic. Safe to email, upload, or commit to a repo.
+The shared directory contains only derived data: an OpenAPI spec, endpoint inventory, session stats, and a report with redacted cookie values. No raw traffic. Safe to email, upload, or commit to a repo.
 
 ## Preview replay targets without sending requests
 

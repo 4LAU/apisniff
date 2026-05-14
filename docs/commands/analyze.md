@@ -1,10 +1,10 @@
-<!-- Generated from apisniff CLI — do not edit manually. -->
+<!-- Generated from apisniff CLI. Do not edit manually. -->
 <!-- Re-run: uv run python scripts/generate_command_docs.py -->
 
 
 # `apisniff analyze`
 
-Offline analysis — import a traffic capture file (HAR, Burp XML, or JSONL), run the same classification pipeline as recon, and produce a full bundle with report.
+Import a traffic capture file (HAR, Burp XML, or JSONL), run the same classification pipeline as recon, and produce a full bundle with report.
 
 ## Usage
 
