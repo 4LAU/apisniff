@@ -60,7 +60,10 @@ def share_bundle(src: str, dst: str, domain: str) -> dict:
     auth_patterns = detect_auth(flows)
     cookies = extract_cookies(flows)
 
-    spec = generate_openapi(api_flows, domain, auth_patterns=auth_patterns)
+    spec = generate_openapi(
+        api_flows, domain, auth_patterns=auth_patterns,
+        infer_schemes=True, include_examples=False,
+    )
     spec_yaml = yaml.dump(spec, sort_keys=False, default_flow_style=False)
     (dst_path / "spec.yaml").write_text(spec_yaml)
 

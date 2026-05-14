@@ -161,7 +161,10 @@ def match_vendors(
         if vendor_name in _SPECIFIC_VENDORS:
             matched_specific.add(vendor_name)
 
-        if vendor_name == "shape_security" and matched_specific & {"datadome", "akamai", "perimeterx"}:
+        if (
+            vendor_name == "shape_security"
+            and matched_specific & {"datadome", "akamai", "perimeterx"}
+        ):
             continue
 
         matches.append(VendorMatch(

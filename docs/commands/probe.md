@@ -27,6 +27,7 @@ Usage: apisniff probe [OPTIONS] URL
 │                               [default: chrome]                              │
 │ --probe-rate                  Send 20 requests to detect rate limiting       │
 │                               (opt-in)                                       │
+│ --insecure                    Skip TLS verification                          │
 │ --help                        Show this message and exit.                    │
 ╰──────────────────────────────────────────────────────────────────────────────╯
 ```

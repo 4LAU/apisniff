@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import re
 from pathlib import Path
 from typing import IO
 
@@ -44,10 +45,16 @@ def read_capture_jsonl(path: str) -> list[CapturedFlow]:
 
 def detect_input_format(head: str) -> str:
     stripped = head.strip()
-    if stripped.startswith('{"log"'):
+    if re.match(r'^\{\s*"log"\s*:', stripped):
         return "har"
-    if stripped.startswith("{") and '"method"' in stripped:
-        return "jsonl"
+    if stripped.startswith("{"):
+        first_line = stripped.splitlines()[0]
+        try:
+            first_obj = json.loads(first_line)
+        except json.JSONDecodeError:
+            first_obj = None
+        if isinstance(first_obj, dict) and "method" in first_obj:
+            return "jsonl"
     if "<?xml" in stripped and "<items" in stripped:
         return "burp"
     return "unknown"

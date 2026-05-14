@@ -68,6 +68,11 @@ def test_detect_input_format_har():
     assert detect_input_format(har) == "har"
 
 
+def test_detect_input_format_pretty_har():
+    har = json.dumps({"log": {"entries": []}}, indent=2)
+    assert detect_input_format(har) == "har"
+
+
 def test_detect_input_format_jsonl_with_log_field():
     line = '{"method": "GET", "host": "example.com", "log": "debug info"}'
     assert detect_input_format(line) == "jsonl"
@@ -121,6 +126,35 @@ def test_load_flows_har():
         assert flows[0].method == "GET"
     finally:
         Path(path).unlink()
+
+
+def test_load_flows_pretty_har():
+    har = {
+        "log": {
+            "entries": [
+                {
+                    "request": {
+                        "method": "GET",
+                        "url": "https://example.com/api/users",
+                        "headers": [],
+                    },
+                    "response": {
+                        "status": 200,
+                        "headers": [{"name": "content-type", "value": "application/json"}],
+                        "content": {"text": '{"users": []}'},
+                    },
+                }
+            ]
+        }
+    }
+    p = Path(tempfile.NamedTemporaryFile(suffix=".har", delete=False).name)
+    p.write_text(json.dumps(har, indent=2))
+    try:
+        flows, fmt = load_flows(str(p))
+        assert fmt == "har"
+        assert len(flows) == 1
+    finally:
+        p.unlink()
 
 
 def test_load_flows_jsonl():

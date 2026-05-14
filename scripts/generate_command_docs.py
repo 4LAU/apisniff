@@ -40,8 +40,8 @@ DESCRIPTIONS = {
     ),
     "spec": (
         "Generate an OpenAPI 3.0.3 specification from captured traffic. Groups requests by "
-        "normalized path, infers schemas from response bodies, merges across multiple observations, "
-        "and detects auth patterns."
+        "normalized path, infers schemas from response bodies, merges across multiple "
+        "observations, and detects auth patterns."
     ),
     "share": (
         "Export a shareable summary from a capture bundle. Produces only derived artifacts "
@@ -191,7 +191,8 @@ apisniff share example.com -o ./for-teammate/
 
 ### What's excluded
 
-Raw traffic (`flows.jsonl`), cookies (`cookies.txt`), request/response headers, query parameter values. The output is intentionally non-replayable.
+Raw traffic (`flows.jsonl`), cookies (`cookies.txt`), request/response headers, query
+parameter values. The output is intentionally non-replayable.
 """,
 }
 
@@ -227,7 +228,7 @@ def _generate_page(command: str) -> str:
     if examples:
         lines.append(examples)
 
-    lines.append(f"---\n\n[All commands](../README.md#commands) · [CLI spec](../spec.md)\n")
+    lines.append("---\n\n[All commands](../README.md#commands) · [CLI spec](../spec.md)\n")
 
     return "\n".join(lines)
 
