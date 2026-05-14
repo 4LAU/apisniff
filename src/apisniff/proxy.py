@@ -18,7 +18,7 @@ class ApisniffAddon:
     def __init__(self, target_domain: str, output_path: str) -> None:
         self.classifier = Classifier(target_domain)
         self.output_path = Path(output_path)
-        self.output_file = open(self.output_path, "a")
+        self.output_file = self.output_path.open("a")
         self.domain = target_domain
         self.started_at = time.time()
         self.total_flows = 0

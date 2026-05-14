@@ -5,10 +5,13 @@ import asyncio
 import json
 import os
 import sys
+from typing import Annotated
 
 import click
 import typer
 from rich.console import Console
+
+from apisniff import __version__
 
 app = typer.Typer(
     name="apisniff",
@@ -20,6 +23,12 @@ stderr = Console(stderr=True)
 
 _EXIT_ERROR = 1
 _EXIT_BLOCKED = 2
+
+
+def _version_callback(value: bool) -> None:
+    if value:
+        print(f"apisniff {__version__}")
+        raise typer.Exit()
 
 
 def _parse_header_args(header: list[str] | None) -> dict[str, str]:
@@ -43,18 +52,27 @@ def _parse_probe_target(target: list[str]) -> tuple[str, bool]:
     raise typer.BadParameter("Usage: apisniff probe URL")
 
 
+@app.callback()
+def main(
+    version: Annotated[
+        bool, typer.Option("--version", callback=_version_callback, is_eager=True)
+    ] = False,
+) -> None:
+    pass
+
+
 @app.command()
 def probe(
-    target: list[str] = typer.Argument(
-        help="URL to probe, or `rate URL` to check rate limiting"
-    ),
+    target: Annotated[
+        list[str], typer.Argument(help="URL to probe, or `rate URL` to check rate limiting")
+    ],
     json_output: bool = typer.Option(False, "--json", help="Output as JSON"),
     proxy: str | None = typer.Option(
         None, "--proxy", help="Route probes through proxy (SOCKS5/HTTP)"
     ),
-    header: list[str] | None = typer.Option(
-        None, "--header", "-H", help="Extra header (key:value)"
-    ),
+    header: Annotated[
+        list[str] | None, typer.Option("--header", "-H", help="Extra header (key:value)")
+    ] = None,
     cookie: str | None = typer.Option(None, "--cookie", help="Cookie header value"),
     skip_graphql: bool = typer.Option(
         False, "--skip-graphql", help="Skip GraphQL endpoint detection", hidden=True
@@ -157,9 +175,9 @@ def replay(
         10, "--timeout", help="Request timeout in seconds", hidden=True
     ),
     cookie_file: str | None = typer.Option(None, "--cookie-file", help="Netscape cookies.txt path"),
-    header: list[str] | None = typer.Option(
-        None, "--header", "-H", help="Extra header (key:value)"
-    ),
+    header: Annotated[
+        list[str] | None, typer.Option("--header", "-H", help="Extra header (key:value)")
+    ] = None,
     json_output: bool = typer.Option(False, "--json", help="Output as JSON"),
     output_file: str | None = typer.Option(
         None, "--output", "-o", help="Write JSON output to file"
@@ -201,7 +219,7 @@ def replay(
         asyncio.run(run_replay(**kwargs))
     except FileNotFoundError as e:
         stderr.print(f"[red]{e}[/red]")
-        raise SystemExit(_EXIT_ERROR)
+        raise SystemExit(_EXIT_ERROR) from None
 
 
 @app.command()

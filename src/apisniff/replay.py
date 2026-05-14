@@ -5,6 +5,7 @@ import fnmatch
 import json
 import sys
 import time
+from contextlib import suppress
 from pathlib import Path
 from typing import Any
 
@@ -369,10 +370,8 @@ async def run_replay(
 
     if not domain:
         session_path = bundle / "session.json"
-        try:
+        with suppress(FileNotFoundError, json.JSONDecodeError, KeyError):
             domain = json.loads(session_path.read_text()).get("domain")
-        except (FileNotFoundError, json.JSONDecodeError, KeyError):
-            pass
     resolved_domain = domain or "unknown"
 
     if dry_run:
