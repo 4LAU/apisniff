@@ -18,6 +18,8 @@ apisniff spec example.com -o spec.yaml
 cat spec.yaml
 ```
 
+If this is your first HTTPS capture, read the [mitmproxy certificate note](getting-started.md#https-and-the-mitmproxy-certificate) before browsing through `recon`.
+
 ## Check if an API has changed since your last capture
 
 ```bash

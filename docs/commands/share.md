@@ -53,4 +53,4 @@ parameter values. The output is intentionally non-replayable.
 
 ---
 
-[All commands](../README.md#commands) · [CLI spec](../spec.md)
+[All commands](../../README.md#commands) · [CLI spec](../spec.md)

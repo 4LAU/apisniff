@@ -10,7 +10,7 @@ One tool for API recon: preflight defenses, capture real traffic, extract a usab
 ## What you get
 
 - Probe a URL in 10 seconds, classify 25+ vendor products (Cloudflare, Akamai, DataDome, PerimeterX, Imperva, Kasada, and more)
-- Browse a site through a local proxy. Noise is filtered automatically; you keep only API calls.
+- Browse a site through a local [mitmproxy](https://github.com/mitmproxy/mitmproxy) instance. Noise is filtered automatically; you keep only API calls.
 - Import HAR files or Burp Suite exports for offline analysis
 - Generate an OpenAPI spec from captured traffic with schema inference and example values
 - Replay captured calls against the live API and see what changed
@@ -70,6 +70,8 @@ Every command supports `--help` for full flag documentation. See the [CLI spec](
 
 ## Important Warnings
 
+Only run apisniff against systems you own, administer, or have explicit permission to test. The tool is built for API discovery and debugging, but it sends real requests and can capture sensitive session data.
+
 ### Your IP address is exposed
 
 **This tool sends real HTTP requests from your IP.** Aggressive or repeated probing can get you rate-limited or blocked. `apisniff probe rate` fires 20 rapid requests, so use it deliberately. Route through `--proxy` if you don't want to expose your IP.
@@ -82,9 +84,15 @@ Results reflect your IP's reputation. Residential IPs see fewer challenges than 
 
 Use `apisniff share` to create a safe export with only derived artifacts.
 
-### About the mitmproxy certificate
+### Why recon needs the mitmproxy certificate
 
-`recon` requires trusting mitmproxy's CA certificate (one-time macOS Keychain setup). The proxy runs locally on `127.0.0.1`; only traffic explicitly routed through port 8080 is intercepted. Regular browsing and apps are unaffected.
+`apisniff recon` uses [mitmproxy](https://github.com/mitmproxy/mitmproxy), an open source SSL/TLS-capable intercepting proxy for HTTP/1, HTTP/2, and WebSockets. apisniff starts it locally, opens Chrome with that local proxy configured, then records the HTTP flows that pass through it.
+
+HTTPS is encrypted between the browser and the origin server, so a proxy cannot read request paths, JSON bodies, headers, or responses unless the browser trusts the proxy during the TLS handshake. mitmproxy solves this by creating a local certificate authority the first time it runs, stored under `~/.mitmproxy`, and generating site certificates on the fly for the domains you visit. Installing or trusting that CA certificate tells the browser: "for this local capture session, allow this proxy to inspect HTTPS traffic."
+
+Treat the certificate like sensitive local configuration. A trusted CA can decrypt proxied HTTPS traffic, so only install the mitmproxy CA on machines and browser profiles you control. apisniff uses a local proxy on `127.0.0.1` and launches Chrome with `--proxy-server=http://127.0.0.1:8080`; regular browsing and apps are unaffected unless you route them through that proxy. If Chrome shows certificate warnings, start `apisniff recon`, open `http://mitm.it` in the proxied Chrome window, and follow mitmproxy's platform-specific certificate instructions.
+
+More detail: [mitmproxy certificate docs](https://docs.mitmproxy.org/stable/concepts/certificates/) and [how mitmproxy works](https://docs.mitmproxy.org/stable/concepts/how-mitmproxy-works/).
 
 ## What to do with the spec
 
@@ -107,6 +115,8 @@ uv sync --dev
 uv run pytest tests/ -v
 uv run ruff check .
 ```
+
+See [CONTRIBUTING.md](CONTRIBUTING.md) for the local development workflow and [SECURITY.md](SECURITY.md) for vulnerability reporting.
 
 To regenerate command reference docs after changing CLI flags:
 
