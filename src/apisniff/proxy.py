@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import json
 import os
+import sys
 import time
 from collections import Counter
 from datetime import UTC, datetime
@@ -32,14 +33,25 @@ class ApisniffAddon:
 
         if result.action == "drop":
             self.drop_counts[result.category] += 1
+            self._print_status()
             return
 
         if result.flow is None:
+            self._print_status()
             return
 
         self.kept_flows += 1
         self.output_file.write(result.flow.to_jsonl() + "\n")
         self.output_file.flush()
+        self._print_status()
+
+    def _print_status(self) -> None:
+        elapsed = int(time.time() - self.started_at)
+        dropped = sum(self.drop_counts.values())
+        sys.stderr.write(
+            f"\r  Captured: {self.kept_flows}  |  Filtered: {dropped}  |  {elapsed}s"
+        )
+        sys.stderr.flush()
 
     def done(self) -> None:
         if self.output_file:
