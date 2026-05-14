@@ -49,4 +49,4 @@ apisniff probe rate example.com
 
 ---
 
-[All commands](../README.md#commands) · [CLI spec](../spec.md)
+[All commands](../../README.md#commands) · [CLI spec](../spec.md)

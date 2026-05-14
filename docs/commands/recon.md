@@ -39,6 +39,10 @@ apisniff recon example.com --proxy http://corporate-proxy:3128
 
 Browse the site in the Chrome window that opens. Press **Ctrl+C** to stop capture.
 
+For HTTPS traffic, the proxied browser must trust mitmproxy's local CA certificate.
+Start recon, open `http://mitm.it` in the launched Chrome window, and follow
+mitmproxy's platform instructions. See the README for the safety notes.
+
 ---
 
-[All commands](../README.md#commands) · [CLI spec](../spec.md)
+[All commands](../../README.md#commands) · [CLI spec](../spec.md)

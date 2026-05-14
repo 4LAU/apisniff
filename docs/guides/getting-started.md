@@ -12,7 +12,7 @@ pipx install apisniff
 uv tool install apisniff
 ```
 
-Requires Python 3.12+. The `recon` command also requires [mitmproxy](https://mitmproxy.org/) (installed automatically as a dependency).
+Requires Python 3.12+. The `recon` command also requires [mitmproxy](https://github.com/mitmproxy/mitmproxy), which is installed automatically as a dependency.
 
 ## Step 1: Probe the target
 
@@ -32,7 +32,17 @@ The probe will identify proxies and CDNs. If you see "full block," try `--proxy`
 apisniff recon example.com
 ```
 
-A local proxy starts on port 8080 and Chrome opens automatically. Browse the site normally: click through pages, submit forms, use the features you want to map. Every request is captured and classified in real-time.
+A local mitmproxy instance starts on port 8080 and Chrome opens automatically with that proxy configured. Browse the site normally: click through pages, submit forms, use the features you want to map. Every request is captured and classified in real-time.
+
+### HTTPS and the mitmproxy certificate
+
+Most API traffic is HTTPS. Because HTTPS encrypts traffic between the browser and the origin server, mitmproxy can only show apisniff the request and response details if the browser trusts mitmproxy's local certificate authority.
+
+The first time mitmproxy runs, it creates a unique CA under `~/.mitmproxy`. Trusting that CA allows mitmproxy to generate temporary certificates for the HTTPS sites you visit through the proxied browser. Without it, Chrome may show certificate warnings and apisniff may miss encrypted traffic.
+
+To install the certificate, run `apisniff recon`, then open `http://mitm.it` in the Chrome window that apisniff launched. Follow the instructions for your platform. Only do this on a machine and browser profile you control, and remove the certificate when you no longer need HTTPS interception.
+
+Read more in the [mitmproxy certificate docs](https://docs.mitmproxy.org/stable/concepts/certificates/).
 
 Press **Ctrl+C** when you're done browsing. apisniff will:
 - Filter out noise (ads, analytics, tracking pixels, third-party domains)

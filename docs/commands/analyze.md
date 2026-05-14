@@ -50,4 +50,4 @@ apisniff analyze traffic.har --fetch-graphql
 
 ---
 
-[All commands](../README.md#commands) · [CLI spec](../spec.md)
+[All commands](../../README.md#commands) · [CLI spec](../spec.md)

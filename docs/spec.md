@@ -47,6 +47,7 @@ example-com_2026-05-12_14-30/
 ## Safety Model
 
 - **`recon` and `analyze` capture full HTTP traffic** including credentials. Raw bundles must never be shared.
+- **`recon` uses mitmproxy for HTTPS capture.** The mitmproxy CA certificate lets the proxied browser trust locally generated certificates, which is what makes decrypted HTTPS inspection possible. Trust it only on machines and browser profiles you control.
 - **`share` produces only derived artifacts.** No raw traffic, no cookie values, no headers. Output is safe to distribute.
 - **`replay` defaults to safe methods only** (GET, HEAD, OPTIONS). `--include-unsafe` opts in to POST/PUT/DELETE/PATCH.
 - **`apisniff probe rate` is opt-in** because it fires 20 rapid requests that may trigger rate limiting.

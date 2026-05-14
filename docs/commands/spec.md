@@ -56,4 +56,4 @@ apisniff spec example.com -i traffic.har -f json -o spec.json
 
 ---
 
-[All commands](../README.md#commands) · [CLI spec](../spec.md)
+[All commands](../../README.md#commands) · [CLI spec](../spec.md)
