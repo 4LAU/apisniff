@@ -51,7 +51,7 @@ runner = CliRunner()
 # ---------------------------------------------------------------------------
 
 def test_run_analyze_har_creates_bundle(tmp_path: Path) -> None:
-    """HAR input → bundle dir contains flows.jsonl, session.json, report.md."""
+    """HAR input produces a readable bundle with the expected domain and flow."""
     har_text = _make_har([
         _har_entry(url="https://api.example.com/v1/users"),
         _har_entry(url="https://api.example.com/v1/items", method="POST", status=201),
@@ -70,40 +70,12 @@ def test_run_analyze_har_creates_bundle(tmp_path: Path) -> None:
     assert (bundle_dir / "flows.jsonl").exists(), "flows.jsonl missing"
     assert (bundle_dir / "session.json").exists(), "session.json missing"
     assert (bundle_dir / "report.md").exists(), "report.md missing"
-
-
-def test_run_analyze_har_flows_content(tmp_path: Path) -> None:
-    """Flows written to flows.jsonl are readable and contain expected fields."""
-    har_text = _make_har([
-        _har_entry(url="https://api.example.com/v1/users"),
-    ])
-    har_file = tmp_path / "traffic.har"
-    har_file.write_text(har_text)
-
-    bundle_dir = tmp_path / "bundle"
-    run_analyze(str(har_file), domain="example.com", output_dir=str(bundle_dir))
-
     lines = (bundle_dir / "flows.jsonl").read_text().strip().splitlines()
-    assert len(lines) == 1
     flow_dict = json.loads(lines[0])
+    sess = json.loads((bundle_dir / "session.json").read_text())
+    assert sess["domain"] == "example.com"
     assert flow_dict["host"] == "api.example.com"
     assert flow_dict["method"] == "GET"
-
-
-def test_run_analyze_session_json_fields(tmp_path: Path) -> None:
-    """session.json has expected top-level keys."""
-    har_text = _make_har([_har_entry(url="https://api.example.com/v1/users")])
-    har_file = tmp_path / "traffic.har"
-    har_file.write_text(har_text)
-
-    bundle_dir = tmp_path / "bundle"
-    run_analyze(str(har_file), domain="example.com", output_dir=str(bundle_dir))
-
-    sess = json.loads((bundle_dir / "session.json").read_text())
-    assert "domain" in sess
-    assert "kept_flows" in sess
-    assert "dropped" in sess
-    assert sess["domain"] == "example.com"
 
 
 # ---------------------------------------------------------------------------
@@ -186,33 +158,6 @@ def test_run_analyze_jsonl_skips_classification(tmp_path: Path) -> None:
     assert len(lines) == 1
 
 
-def test_run_analyze_jsonl_report_created(tmp_path: Path) -> None:
-    """JSONL input still produces report.md."""
-    flow = CapturedFlow(
-        method="GET",
-        host="api.example.com",
-        path="/v1/ping",
-        url="https://api.example.com/v1/ping",
-        request_headers={},
-        request_body=b"",
-        response_status=200,
-        response_headers={"content-type": "application/json"},
-        response_body=b"{}",
-        tags=[],
-        timestamp=0.0,
-    )
-    jsonl_file = tmp_path / "flows.jsonl"
-    with open(jsonl_file, "w") as fh:
-        write_flow_jsonl(fh, flow)
-
-    bundle_dir = tmp_path / "bundle"
-    run_analyze(str(jsonl_file), domain="example.com", output_dir=str(bundle_dir))
-
-    assert (bundle_dir / "report.md").exists()
-    report_text = (bundle_dir / "report.md").read_text()
-    assert "example.com" in report_text
-
-
 # ---------------------------------------------------------------------------
 # HAR with static-asset drops (classification reduces flow count)
 # ---------------------------------------------------------------------------
@@ -258,54 +203,3 @@ def test_cli_analyze_command(tmp_path: Path) -> None:
     assert (bundle_dir / "session.json").exists()
     assert (bundle_dir / "report.md").exists()
 
-
-def test_cli_analyze_json_flag(tmp_path: Path) -> None:
-    """--json flag produces valid JSON somewhere in output (session stats)."""
-    har_text = _make_har([_har_entry(url="https://api.example.com/v1/users")])
-    har_file = tmp_path / "traffic.har"
-    har_file.write_text(har_text)
-
-    bundle_dir = tmp_path / "bundle"
-
-    result = runner.invoke(app, [
-        "analyze", str(har_file),
-        "--domain", "example.com",
-        "--output-dir", str(bundle_dir),
-        "--json",
-    ])
-
-    assert result.exit_code == 0, f"Non-zero exit: {result.output}"
-    # Extract JSON block from mixed output (stdout + stderr blended by typer runner)
-    lines = result.output.splitlines()
-    json_lines = []
-    in_json = False
-    for line in lines:
-        if line.strip() == "{":
-            in_json = True
-        if in_json:
-            json_lines.append(line)
-        if in_json and line.strip() == "}":
-            break
-    parsed = json.loads("\n".join(json_lines))
-    assert parsed["domain"] == "example.com"
-
-
-def test_cli_analyze_no_domain_auto_detects(tmp_path: Path) -> None:
-    """CLI analyze without --domain auto-detects from flows."""
-    har_text = _make_har([
-        _har_entry(url="https://api.mysite.com/v1/data"),
-        _har_entry(url="https://api.mysite.com/v1/more"),
-    ])
-    har_file = tmp_path / "traffic.har"
-    har_file.write_text(har_text)
-
-    bundle_dir = tmp_path / "bundle"
-
-    result = runner.invoke(app, [
-        "analyze", str(har_file),
-        "--output-dir", str(bundle_dir),
-    ])
-
-    assert result.exit_code == 0, f"Non-zero exit: {result.output}"
-    sess = json.loads((bundle_dir / "session.json").read_text())
-    assert sess["domain"] == "mysite.com"

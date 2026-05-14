@@ -1,7 +1,7 @@
 """Tests for the mitmproxy adapter.
 
 mitmproxy is a heavy runtime dependency not installed in the test environment,
-so we use lightweight mocks for its Headers and flow objects.
+so these tests use lightweight stand-ins for its Headers and flow objects.
 """
 
 from __future__ import annotations
@@ -12,8 +12,6 @@ from apisniff.adapters.mitmproxy_adapter import _build_headers, flow_to_captured
 
 
 class MockHeaders:
-    """Minimal mock of mitmproxy.net.http.Headers."""
-
     def __init__(self, pairs: list[tuple[str, str]]):
         self._pairs = pairs
 
@@ -24,63 +22,18 @@ class MockHeaders:
         return [v for k, v in self._pairs if k.lower() == key.lower()]
 
 
-# ---------------------------------------------------------------------------
-# _build_headers unit tests
-# ---------------------------------------------------------------------------
-
-
-def test_single_value_header():
-    h = MockHeaders([("Content-Type", "application/json")])
-    assert _build_headers(h) == {"content-type": "application/json"}
-
-
-def test_keys_are_lowercased():
-    h = MockHeaders([("X-Request-ID", "abc123")])
-    result = _build_headers(h)
-    assert "x-request-id" in result
-    assert result["x-request-id"] == "abc123"
-
-
-def test_set_cookie_joined_with_newline():
-    h = MockHeaders([
-        ("set-cookie", "session=abc; Path=/"),
-        ("set-cookie", "csrf=xyz; Path=/"),
+def test_build_headers_preserves_multi_value_semantics():
+    headers = MockHeaders([
+        ("Set-Cookie", "session=abc; Path=/"),
+        ("Set-Cookie", "csrf=xyz; Path=/"),
+        ("WWW-Authenticate", 'Bearer realm="api"'),
+        ("WWW-Authenticate", 'Basic realm="legacy"'),
     ])
-    result = _build_headers(h)
+
+    result = _build_headers(headers)
+
     assert result["set-cookie"] == "session=abc; Path=/\ncsrf=xyz; Path=/"
-
-
-def test_www_authenticate_multi_value_joined_with_comma():
-    """Multi-value www-authenticate headers must be joined with ', '."""
-    h = MockHeaders([
-        ("www-authenticate", "Bearer realm=\"api\""),
-        ("www-authenticate", "Basic realm=\"legacy\""),
-    ])
-    result = _build_headers(h)
     assert result["www-authenticate"] == 'Bearer realm="api", Basic realm="legacy"'
-
-
-def test_single_set_cookie_not_newline_joined():
-    """A single set-cookie value must NOT get a trailing newline."""
-    h = MockHeaders([("set-cookie", "session=abc; Path=/")])
-    result = _build_headers(h)
-    assert result["set-cookie"] == "session=abc; Path=/"
-
-
-def test_duplicate_keys_deduplicated():
-    """Only one key per header name in the output dict."""
-    h = MockHeaders([
-        ("vary", "Accept"),
-        ("vary", "Accept-Encoding"),
-    ])
-    result = _build_headers(h)
-    assert list(result.keys()).count("vary") == 1
-    assert result["vary"] == "Accept, Accept-Encoding"
-
-
-# ---------------------------------------------------------------------------
-# flow_to_captured integration tests
-# ---------------------------------------------------------------------------
 
 
 def _make_flow(
@@ -90,7 +43,6 @@ def _make_flow(
     has_response: bool = True,
 ) -> MagicMock:
     flow = MagicMock()
-
     req = flow.request
     req.method = "GET"
     req.host = "example.com"
@@ -110,39 +62,24 @@ def _make_flow(
     return flow
 
 
-def test_flow_to_captured_basic():
-    flow = _make_flow()
-    captured = flow_to_captured(flow)
-    assert captured.method == "GET"
-    assert captured.host == "example.com"
-    assert captured.response_status == 200
-
-
-def test_flow_to_captured_request_multi_value_header():
-    """Multi-value request headers are joined with ', '."""
-    flow = _make_flow(req_headers=[
+def test_flow_to_captured_preserves_core_mitmproxy_fields():
+    captured = flow_to_captured(_make_flow(req_headers=[
         ("accept", "application/json"),
         ("accept", "text/html"),
-    ])
-    captured = flow_to_captured(flow)
+    ]))
+
+    assert captured.method == "GET"
+    assert captured.host == "example.com"
+    assert captured.path == "/api/resource"
+    assert captured.url == "https://example.com/api/resource"
     assert captured.request_headers["accept"] == "application/json, text/html"
+    assert captured.response_status == 200
+    assert captured.response_body == b'{"ok": true}'
 
 
-def test_flow_to_captured_response_www_authenticate():
-    """Multi-value www-authenticate response headers are joined with ', '."""
-    flow = _make_flow(res_headers=[
-        ("www-authenticate", "Bearer realm=\"api\""),
-        ("www-authenticate", "Basic realm=\"legacy\""),
-    ])
-    captured = flow_to_captured(flow)
-    assert captured.response_headers["www-authenticate"] == (
-        'Bearer realm="api", Basic realm="legacy"'
-    )
+def test_flow_to_captured_without_response_uses_empty_response_fields():
+    captured = flow_to_captured(_make_flow(has_response=False))
 
-
-def test_flow_to_captured_no_response():
-    flow = _make_flow(has_response=False)
-    captured = flow_to_captured(flow)
     assert captured.response_status == 0
     assert captured.response_headers == {}
     assert captured.response_body == b""

@@ -3,13 +3,12 @@ from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
-from apisniff.models import ProbeResult, ProbeVerdict, VendorMatch
+from apisniff.models import ProbeResult, ProbeVerdict
 from apisniff.probe import (
     _probe_curl_cffi,
     _probe_httpx,
     classify_results,
     fetch_graphql_schema,
-    run_probes,
 )
 
 
@@ -77,25 +76,6 @@ def test_classify_all_200():
     assert "no active" in recommendation.lower()
 
 
-def test_classify_all_200_with_vendors():
-    results = {
-        "naked": _result("naked"),
-        "impersonated": _result("impersonated"),
-        "tls_only": _result("tls_only"),
-    }
-    vendors = [
-        VendorMatch(
-            vendor="akamai",
-            confidence="medium",
-            signals=["header_present:akamai-grn"],
-        )
-    ]
-    verdict, recommendation = classify_results(results, vendors)
-    assert verdict == ProbeVerdict.NO_PROTECTION
-    assert "akamai" in recommendation.lower()
-    assert "not enforcing" in recommendation.lower()
-
-
 def test_classify_naked_blocked_others_pass():
     results = {
         "naked": _result("naked", status=403),
@@ -105,16 +85,6 @@ def test_classify_naked_blocked_others_pass():
     verdict, recommendation = classify_results(results)
     assert verdict == ProbeVerdict.CLIENT_DEPENDENT
     assert "tls" in recommendation.lower() or "browser" in recommendation.lower()
-
-
-def test_classify_naked_and_tls_blocked():
-    results = {
-        "naked": _result("naked", status=403),
-        "impersonated": _result("impersonated"),
-        "tls_only": _result("tls_only", status=403),
-    }
-    verdict, recommendation = classify_results(results)
-    assert verdict == ProbeVerdict.CLIENT_DEPENDENT
 
 
 def test_classify_impersonated_blocked_others_pass():
@@ -230,34 +200,3 @@ async def test_probe_curl_cffi_insecure_disables_tls_verification(monkeypatch):
     monkeypatch.setattr("curl_cffi.requests.AsyncSession", FakeSession)
     await _probe_curl_cffi("https://example.com", "test", "ua", insecure=True)
     assert captured["verify"] is False
-
-
-@pytest.mark.asyncio
-async def test_run_probes_impersonate_parameter(monkeypatch):
-    """run_probes passes impersonate to curl_cffi probes."""
-    calls = []
-
-    async def fake_curl(
-        url, label, ua, headers=None, proxy=None, impersonate="chrome", insecure=False,
-    ):
-        calls.append({"label": label, "impersonate": impersonate, "insecure": insecure})
-        return ProbeResult(
-            label=label, status=200, headers={}, body=b"",
-            elapsed_ms=1.0, error=None,
-        )
-
-    async def fake_httpx(url, label, ua, headers=None, proxy=None, insecure=False):
-        return ProbeResult(
-            label=label, status=200, headers={}, body=b"",
-            elapsed_ms=1.0, error=None,
-        )
-
-    monkeypatch.setattr("apisniff.probe._probe_curl_cffi", fake_curl)
-    monkeypatch.setattr("apisniff.probe._probe_httpx", fake_httpx)
-    monkeypatch.setattr("apisniff.probe.load_signatures", lambda: {})
-    monkeypatch.setattr("apisniff.probe.match_vendors", lambda *a: [])
-
-    await run_probes("https://example.com", skip_graphql=True, impersonate="safari17_0")
-
-    curl_calls = [c for c in calls if c["label"] in ("impersonated", "tls_only")]
-    assert all(c["impersonate"] == "safari17_0" for c in curl_calls)

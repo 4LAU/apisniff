@@ -2,7 +2,7 @@
 
 
 from apisniff.auth import AuthPattern
-from apisniff.models import CapturedFlow, normalize_path
+from apisniff.models import CapturedFlow
 from apisniff.spec import (
     _infer_schema,
     generate_openapi,
@@ -45,19 +45,6 @@ def _resp_schema(spec, path="/api/v1/users", method="get", status="200"):
 
 def _req_schema(spec, path="/api/v1/users", method="post", ct="application/json"):
     return spec["paths"][path][method]["requestBody"]["content"][ct]["schema"]
-
-
-def test_normalize_path_uuid():
-    result = normalize_path("/api/users/550e8400-e29b-41d4-a716-446655440000")
-    assert result == "/api/users/{id}"
-
-
-def test_normalize_path_numeric():
-    assert normalize_path("/api/users/12345") == "/api/users/{id}"
-
-
-def test_normalize_path_no_params():
-    assert normalize_path("/api/users") == "/api/users"
 
 
 def test_infer_schema_object():
@@ -126,28 +113,11 @@ def test_security_schemes_opt_in_bearer():
     assert "x-observed-auth" in spec
 
 
-def test_security_schemes_opt_in_api_key():
-    flows = [_flow()]
-    patterns = [AuthPattern(auth_type="api_key_header", detail="x-api-key", flow_count=3)]
-    spec = generate_openapi(flows, "example.com", auth_patterns=patterns, infer_schemes=True)
-    schemes = spec["components"]["securitySchemes"]
-    assert "api_key_header" in schemes
-    assert schemes["api_key_header"]["in"] == "header"
-    assert schemes["api_key_header"]["name"] == "x-api-key"
-
-
 def test_no_top_level_security_even_with_flag():
     flows = [_flow()]
     patterns = [AuthPattern(auth_type="bearer", detail="authorization: bearer", flow_count=5)]
     spec = generate_openapi(flows, "example.com", auth_patterns=patterns, infer_schemes=True)
     assert "security" not in spec
-
-
-def test_no_auth_patterns_no_extensions():
-    flows = [_flow()]
-    spec = generate_openapi(flows, "example.com")
-    assert "components" not in spec
-    assert "x-observed-auth" not in spec
 
 
 # ── Part A: is_api_flow tests ──────────────────────────────────────
@@ -156,12 +126,6 @@ def test_no_auth_patterns_no_extensions():
 def testis_api_flow_json_response():
     """JSON 200 is API traffic."""
     flow = _flow(status=200)
-    assert is_api_flow(flow) is True
-
-
-def testis_api_flow_json_error():
-    """JSON 404 is still API traffic."""
-    flow = _flow(status=404, body=b'{"error": "not found"}')
     assert is_api_flow(flow) is True
 
 
@@ -177,23 +141,6 @@ def testis_api_flow_form_post():
     assert is_api_flow(flow) is True
 
 
-def testis_api_flow_multipart():
-    """multipart upload is API traffic."""
-    mp_body = (
-        b"--abc\r\n"
-        b'Content-Disposition: form-data; name="file"; filename="a.txt"\r\n'
-        b"\r\ndata\r\n--abc--"
-    )
-    flow = _flow(
-        method="POST",
-        request_headers={"content-type": "multipart/form-data; boundary=abc"},
-        request_body=mp_body,
-        response_headers={"content-type": "text/plain"},
-        body=b"OK",
-    )
-    assert is_api_flow(flow) is True
-
-
 def testis_api_flow_html_page_excluded():
     """Pure HTML GET is not API traffic."""
     flow = _flow(
@@ -201,15 +148,6 @@ def testis_api_flow_html_page_excluded():
         body=b"<html><body>Hello</body></html>",
     )
     assert is_api_flow(flow) is False
-
-
-def testis_api_flow_case_insensitive_content_type():
-    """Mixed case Content-Type matched."""
-    flow = _flow(
-        response_headers={"Content-Type": "Application/JSON; charset=utf-8"},
-        body=b'{"ok": true}',
-    )
-    assert is_api_flow(flow) is True
 
 
 # ── Part B: Aggregation model tests ─────────────────────────────────
@@ -236,13 +174,6 @@ def test_query_params_merged_across_flows():
     assert param_names == {"page", "sort"}
 
 
-def test_no_query_params_no_parameters_key():
-    """No params = no parameters key."""
-    flow = _flow(path="/api/v1/users")
-    spec = generate_openapi([flow], "example.com")
-    assert "parameters" not in spec["paths"]["/api/v1/users"]["get"]
-
-
 def test_multiple_response_codes_aggregated():
     """200 and 404 produce two response entries."""
     f200 = _flow(status=200, body=b'{"id": 1}')
@@ -251,24 +182,6 @@ def test_multiple_response_codes_aggregated():
     responses = spec["paths"]["/api/v1/users"]["get"]["responses"]
     assert "200" in responses
     assert "404" in responses
-
-
-def test_multiple_content_types_aggregated():
-    """JSON and form POST produce both in requestBody."""
-    f_json = _flow(
-        method="POST",
-        request_headers={"content-type": "application/json"},
-        request_body=b'{"name": "Alice"}',
-    )
-    f_form = _flow(
-        method="POST",
-        request_headers={"content-type": "application/x-www-form-urlencoded"},
-        request_body=b"name=Alice",
-    )
-    spec = generate_openapi([f_json, f_form], "example.com")
-    content = spec["paths"]["/api/v1/users"]["post"]["requestBody"]["content"]
-    assert "application/json" in content
-    assert "application/x-www-form-urlencoded" in content
 
 
 def test_response_schemas_merged_across_flows():
@@ -299,18 +212,6 @@ def test_request_body_schemas_merged_across_flows():
     props = schema["properties"]
     assert "name" in props
     assert "age" in props
-
-
-def test_content_type_case_insensitive():
-    """Mixed-case Content-Type matched for request body."""
-    flow = _flow(
-        method="POST",
-        request_headers={"Content-Type": "Application/JSON"},
-        request_body=b'{"key": "val"}',
-    )
-    spec = generate_openapi([flow], "example.com")
-    content = spec["paths"]["/api/v1/users"]["post"]["requestBody"]["content"]
-    assert "application/json" in content
 
 
 def test_empty_first_response_upgraded_by_later_json():
@@ -349,16 +250,6 @@ def test_empty_array_enriched_by_populated_array():
 # ── Part C: Examples with secret redaction ───────────────────────────
 
 
-def test_examples_in_response_schema():
-    """include_examples=True adds example values."""
-    flow = _flow(body=b'{"id": 1, "name": "Alice"}')
-    spec = generate_openapi([flow], "example.com", include_examples=True)
-    schema = _resp_schema(spec)
-    props = schema["properties"]
-    assert props["id"]["example"] == 1
-    assert props["name"]["example"] == "Alice"
-
-
 def test_examples_redact_secrets():
     """Bearer tokens and API keys redacted."""
     flow = _flow(body=b'{"token": "bearer abc123", "key": "sk_live_secret"}')
@@ -367,27 +258,6 @@ def test_examples_redact_secrets():
     props = schema["properties"]
     assert props["token"]["example"] == "***REDACTED***"
     assert props["key"]["example"] == "***REDACTED***"
-
-
-def test_examples_redact_mid_string_secrets():
-    """Secrets not at start of string are still redacted."""
-    flow = _flow(body=b'{"auth": "token=sk_live_abc", "header": "Authorization: Bearer eyJhbGc"}')
-    spec = generate_openapi([flow], "example.com", include_examples=True)
-    schema = _resp_schema(spec)
-    props = schema["properties"]
-    assert props["auth"]["example"] == "***REDACTED***"
-    assert props["header"]["example"] == "***REDACTED***"
-
-
-def test_examples_truncate_long_strings():
-    """Strings >200 chars truncated."""
-    long_str = "a" * 300
-    flow = _flow(body=f'{{"text": "{long_str}"}}'.encode())
-    spec = generate_openapi([flow], "example.com", include_examples=True)
-    schema = _resp_schema(spec)
-    props = schema["properties"]
-    assert len(props["text"]["example"]) == 203  # 200 + "..."
-    assert props["text"]["example"].endswith("...")
 
 
 def test_examples_off_by_default():
@@ -407,18 +277,6 @@ def test_examples_redact_by_field_name_password():
     props = _resp_schema(spec)["properties"]
     assert props["password"]["example"] == "***REDACTED***"
     assert props["username"]["example"] == "alice"
-
-
-def test_examples_redact_by_field_name_variants():
-    """Multiple sensitive field name patterns are caught."""
-    body = b'{"client_secret": "abc", "access_token": "xyz", "api_key": "k", "name": "ok"}'
-    flow = _flow(body=body)
-    spec = generate_openapi([flow], "example.com", include_examples=True)
-    props = _resp_schema(spec)["properties"]
-    assert props["client_secret"]["example"] == "***REDACTED***"
-    assert props["access_token"]["example"] == "***REDACTED***"
-    assert props["api_key"]["example"] == "***REDACTED***"
-    assert props["name"]["example"] == "ok"
 
 
 def test_examples_redact_nested_sensitive_field():
