@@ -56,7 +56,7 @@ apisniff replay example.com -H "Authorization:Bearer your-token"
 apisniff analyze traffic.har
 ```
 
-This runs the full classification pipeline and produces a bundle with report.
+Same classification pipeline as recon, same bundle output with report.
 
 ## Analyze a Burp Suite capture
 
@@ -87,7 +87,7 @@ Many sites apply stricter defenses to datacenter/cloud IPs than residential ones
 apisniff probe example.com --probe-rate
 ```
 
-This fires 20 requests in sequence and reports:
+Fires 20 requests in sequence and reports:
 - Whether 429 (rate limit) responses appear, and after how many requests
 - Median response time and whether it increases (silent throttling)
 
