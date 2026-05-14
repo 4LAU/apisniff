@@ -180,7 +180,7 @@ def render_probe(assessment: ProbeAssessment, console: Console | None = None) ->
     console.print()
 
     max_ms = max(
-        (r.elapsed_ms for r in assessment.results.values() if not r.error),
+        (r.elapsed_ms for r in assessment.results.values()),
         default=1.0,
     )
 
@@ -210,7 +210,7 @@ def render_probe(assessment: ProbeAssessment, console: Console | None = None) ->
         if result.error:
             err_label = _error_label(result.error)
             result_str = Text(f" {err_label} ", style="bold white on red")
-            latency = Text(f"{result.elapsed_ms:.0f}ms", style="red")
+            latency = _latency_bar(result.elapsed_ms, max_ms)
             size_cell = Text("—", style="dim")
         elif result.is_challenge:
             result_str = Text(f" {result.status} CHALLENGE ", style="bold black on yellow")
@@ -224,7 +224,7 @@ def render_probe(assessment: ProbeAssessment, console: Console | None = None) ->
             size_style = "red" if size_mismatch and max_body > 0 and bsize < max_body * 0.25 else "dim"
             size_cell = Text(_format_size(bsize), style=size_style)
         else:
-            result_str = Text(f" {result.status} PASS ", style="bold black on green")
+            result_str = Text(f" {result.status} PASS ", style="bold black on bright_green")
             latency = _latency_bar(result.elapsed_ms, max_ms)
             bsize = len(result.body) if result.body else 0
             size_style = "red" if size_mismatch and max_body > 0 and bsize < max_body * 0.25 else "dim"
