@@ -68,10 +68,7 @@ apisniff probe example.com --proxy socks5://127.0.0.1:1080
 apisniff probe api.example.com -H "Authorization:Bearer tok123"
 
 # Detect rate limiting (fires 20 rapid requests)
-apisniff probe example.com --probe-rate
-
-# Use a specific TLS profile
-apisniff probe example.com --impersonate safari17_0
+apisniff probe rate example.com
 ```
 """,
     "recon": """\
@@ -109,7 +106,7 @@ apisniff analyze traffic.har --domain api.example.com
 # Write results to a specific directory
 apisniff analyze traffic.har --output-dir ./my-analysis/
 
-# Also fetch GraphQL schema from detected endpoints
+# Fetch GraphQL schemas from detected endpoints
 apisniff analyze traffic.har --fetch-graphql
 ```
 """,
@@ -155,14 +152,11 @@ apisniff spec example.com -f json
 # Write to file
 apisniff spec example.com -o spec.yaml
 
-# Include example values from captured data (secrets auto-redacted)
-apisniff spec example.com --examples
+# Omit example values from captured data
+apisniff spec example.com --no-examples
 
-# Promote detected auth to formal securitySchemes
-apisniff spec example.com --infer-security-schemes
-
-# From a HAR file, JSON format, with examples
-apisniff spec example.com -i traffic.har -f json --examples -o spec.json
+# From a HAR file, JSON format
+apisniff spec example.com -i traffic.har -f json -o spec.json
 ```
 """,
     "share": """\
@@ -207,7 +201,7 @@ def _capture_help(command: str) -> str:
         raise RuntimeError(
             f"Failed to capture help for '{command}': {result.stderr}"
         )
-    return result.stdout
+    return "\n".join(line.rstrip() for line in result.stdout.splitlines())
 
 
 def _generate_page(command: str) -> str:

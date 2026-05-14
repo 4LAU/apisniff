@@ -75,8 +75,8 @@ apisniff probe example.com --json > home.json
 # From a datacenter IP (via proxy)
 apisniff probe example.com --proxy socks5://datacenter:1080 --json > dc.json
 
-# From a different TLS profile
-apisniff probe example.com --impersonate safari17_0 --json > safari.json
+# Run an explicit rate-limit check
+apisniff probe rate example.com --json > rate.json
 ```
 
 Many sites apply stricter defenses to datacenter/cloud IPs than residential ones.
@@ -84,7 +84,7 @@ Many sites apply stricter defenses to datacenter/cloud IPs than residential ones
 ## Test rate limiting
 
 ```bash
-apisniff probe example.com --probe-rate
+apisniff probe rate example.com
 ```
 
 Fires 20 requests in sequence and reports:
@@ -108,13 +108,13 @@ If the endpoint requires auth, pass headers:
 apisniff probe api.example.com -H "Authorization:Bearer tok" --cookie "session=abc"
 ```
 
-## Generate a spec with examples
+## Generate a spec
 
 ```bash
-apisniff spec example.com --examples -o spec.yaml
+apisniff spec example.com -o spec.yaml
 ```
 
-Example values are taken from captured responses. Secrets (bearer tokens, API keys, JWTs) are automatically redacted to `***REDACTED***`. Strings longer than 200 characters are truncated.
+Example values are included by default from captured responses. Secrets (bearer tokens, API keys, JWTs) are automatically redacted to `***REDACTED***`. Strings longer than 200 characters are truncated. Use `--no-examples` when you want schemas only.
 
 ## Share results with a teammate
 

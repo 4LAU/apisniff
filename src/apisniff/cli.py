@@ -33,9 +33,21 @@ def _parse_header_args(header: list[str] | None) -> dict[str, str]:
     return result
 
 
+def _parse_probe_target(target: list[str]) -> tuple[str, bool]:
+    if len(target) == 2 and target[0] == "rate":
+        return target[1], True
+    if target and target[0] == "rate":
+        raise typer.BadParameter("Usage: apisniff probe rate URL")
+    if len(target) == 1:
+        return target[0], False
+    raise typer.BadParameter("Usage: apisniff probe URL")
+
+
 @app.command()
 def probe(
-    url: str = typer.Argument(help="URL to probe (e.g. redfin.com)"),
+    target: list[str] = typer.Argument(
+        help="URL to probe, or `rate URL` to check rate limiting"
+    ),
     json_output: bool = typer.Option(False, "--json", help="Output as JSON"),
     proxy: str | None = typer.Option(
         None, "--proxy", help="Route probes through proxy (SOCKS5/HTTP)"
@@ -45,14 +57,17 @@ def probe(
     ),
     cookie: str | None = typer.Option(None, "--cookie", help="Cookie header value"),
     skip_graphql: bool = typer.Option(
-        False, "--skip-graphql", help="Skip GraphQL endpoint detection"
+        False, "--skip-graphql", help="Skip GraphQL endpoint detection", hidden=True
     ),
     impersonate: str = typer.Option(
         "chrome", "--impersonate",
         help="TLS profile: chrome, chrome131, chrome120, safari17_0, firefox133",
+        hidden=True,
     ),
     probe_rate: bool = typer.Option(
-        False, "--probe-rate", help="Send 20 requests to detect rate limiting (opt-in)",
+        False, "--probe-rate",
+        help="Send 20 requests to detect rate limiting",
+        hidden=True,
     ),
     insecure: bool = typer.Option(False, "--insecure", help="Skip TLS verification"),
 ) -> None:
@@ -65,6 +80,8 @@ def probe(
     if cookie:
         extra_headers["cookie"] = cookie
 
+    url, target_probe_rate = _parse_probe_target(target)
+
     assessment = asyncio.run(
         run_probes(
             url,
@@ -72,7 +89,7 @@ def probe(
             proxy=proxy,
             skip_graphql=skip_graphql,
             impersonate=impersonate,
-            probe_rate=probe_rate,
+            probe_rate=probe_rate or target_probe_rate,
             insecure=insecure,
         )
     )
@@ -112,6 +129,9 @@ def analyze(
     fetch_graphql: bool = typer.Option(
         False, "--fetch-graphql", help="Fetch GraphQL schema from detected endpoints"
     ),
+    no_fetch_graphql: bool = typer.Option(
+        False, "--no-fetch-graphql", help="Skip GraphQL schema fetching", hidden=True
+    ),
 ) -> None:
     """Offline analysis -- import traffic capture, classify, extract everything."""
     if not os.path.isfile(input_file):
@@ -125,7 +145,7 @@ def analyze(
         domain=domain,
         json_output=json_output,
         output_dir=output_dir,
-        fetch_graphql=fetch_graphql,
+        fetch_graphql=fetch_graphql and not no_fetch_graphql,
     )
 
 
@@ -133,7 +153,9 @@ def analyze(
 def replay(
     bundle: str = typer.Argument(help="Bundle directory path or domain name"),
     filter_pattern: str | None = typer.Option(None, "--filter", help="Glob filter for paths"),
-    timeout: int = typer.Option(10, "--timeout", help="Request timeout in seconds"),
+    timeout: int = typer.Option(
+        10, "--timeout", help="Request timeout in seconds", hidden=True
+    ),
     cookie_file: str | None = typer.Option(None, "--cookie-file", help="Netscape cookies.txt path"),
     header: list[str] | None = typer.Option(
         None, "--header", "-H", help="Extra header (key:value)"
@@ -150,6 +172,7 @@ def replay(
     impersonate: str = typer.Option(
         "chrome", "--impersonate",
         help="TLS profile: chrome, chrome131, chrome120, safari17_0, firefox133",
+        hidden=True,
     ),
 ) -> None:
     """Replay captured API calls and detect drift."""
@@ -195,9 +218,19 @@ def spec(
     infer_schemes: bool = typer.Option(
         False, "--infer-security-schemes",
         help="Promote observed auth to securitySchemes (default: extensions only)",
+        hidden=True,
     ),
-    include_examples: bool = typer.Option(
+    no_infer_schemes: bool = typer.Option(
+        False, "--no-infer-security-schemes",
+        help="Keep observed auth in extensions only",
+        hidden=True,
+    ),
+    examples: bool = typer.Option(
         False, "--examples", help="Include sample response values in generated spec",
+        hidden=True,
+    ),
+    no_examples: bool = typer.Option(
+        False, "--no-examples", help="Omit sample response values from generated spec"
     ),
 ) -> None:
     """Extract API structure -- generate OpenAPI from captured traffic."""
@@ -205,8 +238,8 @@ def spec(
 
     run_spec(
         domain, input_file=input_file, output_format=output_format,
-        output_file=output_file, infer_schemes=infer_schemes,
-        include_examples=include_examples,
+        output_file=output_file, infer_schemes=infer_schemes or not no_infer_schemes,
+        include_examples=examples or not no_examples,
     )
 
 

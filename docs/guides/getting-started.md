@@ -24,7 +24,7 @@ apisniff probe example.com
 
 This sends three requests with different client profiles and compares the responses. You'll see a verdict (no protection, client-dependent, JS challenge, or full block) and any detected vendor products.
 
-The probe will identify proxies and CDNs. If you see "full block," try `--impersonate` to switch TLS profiles or `--proxy` to route through a different IP.
+The probe will identify proxies and CDNs. If you see "full block," try `--proxy` to route through a different IP.
 
 ## Step 2: Capture traffic
 
@@ -64,8 +64,9 @@ apisniff spec example.com
 The command reads your latest capture and produces an OpenAPI 3.0.3 spec on stdout. It includes:
 - Every observed endpoint, normalized (e.g., `/users/123` → `/users/{id}`)
 - Request and response schemas inferred from captured data
+- Redacted example values
 - Query parameters merged across observations
-- Detected authentication patterns
+- Detected authentication patterns and security schemes
 
 Save it to a file:
 
@@ -73,10 +74,10 @@ Save it to a file:
 apisniff spec example.com -o spec.yaml
 ```
 
-Include example values from the captured data (secrets are auto-redacted):
+If you want schemas only, omit examples:
 
 ```bash
-apisniff spec example.com --examples -o spec.yaml
+apisniff spec example.com --no-examples -o spec.yaml
 ```
 
 ## Step 4: Share results

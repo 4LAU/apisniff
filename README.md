@@ -70,7 +70,7 @@ Every command supports `--help` for full flag documentation. See the [CLI spec](
 
 ### Your IP address is exposed
 
-**This tool sends real HTTP requests from your IP.** Aggressive or repeated probing can get you rate-limited or blocked. `--probe-rate` fires 20 rapid requests, so use it deliberately. Route through `--proxy` if you don't want to expose your IP.
+**This tool sends real HTTP requests from your IP.** Aggressive or repeated probing can get you rate-limited or blocked. `apisniff probe rate` fires 20 rapid requests, so use it deliberately. Route through `--proxy` if you don't want to expose your IP.
 
 Results reflect your IP's reputation. Residential IPs see fewer challenges than datacenter/cloud IPs. Use `--proxy` to compare results from different vantage points.
 

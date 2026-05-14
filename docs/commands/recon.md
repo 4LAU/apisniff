@@ -9,10 +9,10 @@ Browse a site through a local mitmproxy, classify every request in real-time. Fi
 ## Usage
 
 ```
-Usage: apisniff recon [OPTIONS] DOMAIN                                         
-                                                                                
- Capture + classify -- browse a site through the proxy, classify everything.    
-                                                                                
+Usage: apisniff recon [OPTIONS] DOMAIN
+
+ Capture + classify -- browse a site through the proxy, classify everything.
+
 ╭─ Arguments ──────────────────────────────────────────────────────────────────╮
 │ *    domain      TEXT  Domain to capture traffic from [required]             │
 ╰──────────────────────────────────────────────────────────────────────────────╯
