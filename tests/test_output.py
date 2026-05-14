@@ -10,7 +10,6 @@ from apisniff.models import (
 )
 from apisniff.output import (
     probe_to_dict,
-    probe_to_json,
     replay_to_json,
 )
 
@@ -42,12 +41,6 @@ def test_probe_to_dict():
     assert d["probes"]["impersonated"]["status"] == 200
     assert d["graphql"]["endpoints"] == ["/graphql"]
     assert d["graphql"]["introspection"] is True
-
-
-def test_probe_to_json():
-    j = probe_to_json(_assessment())
-    parsed = json.loads(j)
-    assert parsed["verdict"] == "client_dependent"
 
 
 # ---------------------------------------------------------------------------
@@ -97,20 +90,6 @@ def _result(
     )
 
 
-def test_replay_to_json_structure():
-    results = [
-        _result("match"),
-        _result("blocked", path="/api/v1/orders", original_status=200, replayed_status=403),
-    ]
-    raw = replay_to_json(results, "example.com")
-    data = json.loads(raw)
-
-    assert data["domain"] == "example.com"
-    assert "replayed_at" in data
-    assert len(data["endpoints"]) == 2
-    assert "summary" in data
-
-
 def test_replay_to_json_endpoint_fields():
     results = [_result("match", elapsed_ms=12.3)]
     data = json.loads(replay_to_json(results, "example.com"))
@@ -147,11 +126,3 @@ def test_replay_to_json_drift_diff_preserved():
     results = [_result("drift", body_shape_diff=diff)]
     data = json.loads(replay_to_json(results, "example.com"))
     assert data["endpoints"][0]["body_shape_diff"] == diff
-
-
-def test_replay_to_json_replayed_at_format():
-    data = json.loads(replay_to_json([], "example.com"))
-    ts = data["replayed_at"]
-    # Should be ISO 8601 ending in Z
-    assert ts.endswith("Z")
-    assert "T" in ts

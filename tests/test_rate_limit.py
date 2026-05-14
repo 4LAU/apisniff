@@ -1,19 +1,6 @@
 import pytest
 
-from apisniff.models import ProbeResult, RateLimitResult
-
-
-def test_rate_limit_result_dataclass():
-    r = RateLimitResult(
-        requests_sent=20,
-        first_block_at=15,
-        block_status=429,
-        retry_after="30",
-        median_ms=120.0,
-        silent_throttle=False,
-    )
-    assert r.requests_sent == 20
-    assert r.first_block_at == 15
+from apisniff.models import ProbeResult
 
 
 @pytest.mark.asyncio

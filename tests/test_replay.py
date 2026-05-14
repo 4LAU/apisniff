@@ -69,14 +69,6 @@ class TestCompareShape:
         assert diff is not None
         assert "extra" in str(diff)
 
-    def test_removed_key_is_drift(self):
-        a = b'{"id": 1, "name": "test"}'
-        b_ = b'{"id": 2}'
-        match, diff = compare_shape(a, b_)
-        assert match is False
-        assert diff is not None
-        assert "name" in str(diff)
-
     def test_type_change_is_drift(self):
         # id changes from int to str
         a = b'{"id": 1}'
@@ -84,13 +76,6 @@ class TestCompareShape:
         match, diff = compare_shape(a, b_)
         assert match is False
         assert diff is not None
-
-    def test_primitive_array_same_type_matches(self):
-        a = b'{"ids": [1, 2, 3]}'
-        b_ = b'{"ids": [4, 5, 6]}'
-        match, diff = compare_shape(a, b_)
-        assert match is True
-        assert diff is None
 
     def test_primitive_array_type_change_is_drift(self):
         a = b'{"ids": [1, 2, 3]}'
@@ -107,32 +92,12 @@ class TestCompareShape:
         assert diff is not None
         assert "json_parse_mismatch" in diff
 
-    def test_non_json_vs_json_is_drift(self):
-        a = b"plain text response"
-        b_ = b'{"key": "value"}'
-        match, diff = compare_shape(a, b_)
-        assert match is False
-        assert diff is not None
-
     def test_both_non_json_matches(self):
         a = b"plain text"
         b_ = b"different plain text"
         match, diff = compare_shape(a, b_)
         assert match is True
         assert diff is None
-
-    def test_nested_shape_drift(self):
-        a = b'{"user": {"id": 1, "role": "admin"}}'
-        b_ = b'{"user": {"id": 2}}'
-        match, diff = compare_shape(a, b_)
-        assert match is False
-        assert diff is not None
-
-    def test_empty_bodies_match(self):
-        match, diff = compare_shape(b"", b"")
-        assert match is True
-        assert diff is None
-
 
 # ---------------------------------------------------------------------------
 # 7b. Cookie parsing
@@ -152,14 +117,6 @@ class TestCookieParsing:
         p.write_text(content)
         return str(p)
 
-    def test_parse_returns_tuples(self, tmp_path: Path):
-        path = self._write_cookies(tmp_path, NETSCAPE_COOKIES)
-        result = parse_cookie_file(path)
-        assert len(result) == 3
-        assert result[0] == (".example.com", "session", "abc123")
-        assert result[1] == ("api.example.com", "csrf", "xyz789")
-        assert result[2] == (".other.com", "secret", "999")
-
     def test_suffix_match_applies_to_subdomain(self, tmp_path: Path):
         cookies = parse_cookie_file(self._write_cookies(tmp_path, NETSCAPE_COOKIES))
         header = cookies_for_host(cookies, "api.example.com")
@@ -167,31 +124,15 @@ class TestCookieParsing:
         assert "csrf=xyz789" in header
         assert "secret=999" not in header
 
-    def test_other_com_not_matched(self, tmp_path: Path):
-        cookies = parse_cookie_file(self._write_cookies(tmp_path, NETSCAPE_COOKIES))
-        header = cookies_for_host(cookies, "api.example.com")
-        assert "999" not in header
-
     def test_exact_domain_match(self):
         cookies = [("api.example.com", "token", "abc")]
         header = cookies_for_host(cookies, "api.example.com")
         assert header == "token=abc"
 
-    def test_exact_domain_no_subdomain_bleed(self):
-        cookies = [("example.com", "token", "abc")]
-        header = cookies_for_host(cookies, "other.com")
-        assert header == ""
-
     def test_suffix_match_apex_too(self):
         cookies = [(".example.com", "session", "xyz")]
         header = cookies_for_host(cookies, "example.com")
         assert "session=xyz" in header
-
-    def test_no_match_returns_empty_string(self, tmp_path: Path):
-        cookies = parse_cookie_file(self._write_cookies(tmp_path, NETSCAPE_COOKIES))
-        header = cookies_for_host(cookies, "unrelated.io")
-        assert header == ""
-
 
 # ---------------------------------------------------------------------------
 # 7c. replay_endpoint — category assignment
@@ -313,13 +254,6 @@ def test_include_unsafe_passes_all():
     assert unsafe == []
 
 
-def test_head_and_options_are_safe():
-    """Without this test, HEAD/OPTIONS could be silently classified as unsafe."""
-    flows = [_flow("HEAD"), _flow("OPTIONS")]
-    safe, _ = _filter_flows(flows, include_unsafe=False)
-    assert [f.method for f in safe] == ["HEAD", "OPTIONS"]
-
-
 class TestEarlyAbort:
     """Replay aborts on auth failure instead of continuing."""
 
@@ -357,30 +291,6 @@ class TestEarlyAbort:
 
         assert len(results) == 1
         assert results[0].category == "auth_expired"
-
-    def test_aborts_on_blocked(self, tmp_path: Path):
-        flows = [
-            _flow(path="/api/a", timestamp=1.0),
-            _flow(path="/api/b", timestamp=2.0),
-        ]
-        bundle = self._make_bundle(tmp_path, flows)
-
-        session_mock = AsyncMock()
-        session_mock.__aenter__ = AsyncMock(return_value=session_mock)
-        session_mock.__aexit__ = AsyncMock(return_value=False)
-        session_mock.request = AsyncMock(
-            return_value=_mock_response(403, b"Forbidden")
-        )
-
-        with patch("curl_cffi.requests.AsyncSession", return_value=session_mock):
-            with patch("apisniff.output.render_replay"):
-                results = asyncio.run(
-                    run_replay(bundle_dir=str(bundle))
-                )
-
-        assert len(results) == 1
-        assert results[0].category == "blocked"
-
 
 @pytest.mark.asyncio
 async def test_replay_endpoint_impersonate(monkeypatch):

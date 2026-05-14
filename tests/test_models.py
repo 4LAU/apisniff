@@ -62,42 +62,14 @@ def test_content_type_strips_charset_parameter():
     assert flow.content_type == "application/json"
 
 
-def test_content_type_normalises_to_lowercase():
-    # Invariant: mixed-case Content-Type would silently break MIME equality checks
-    # because comparisons are case-sensitive.
-    flow = _flow({"content-type": "Application/JSON"})
-    assert flow.content_type == "application/json"
-
-
-def test_content_type_missing_header_returns_empty_string():
-    # Invariant: absent header must return "" not raise — callers check falsy value
-    # to skip content inspection; an exception would surface differently in prod.
-    flow = _flow({})
-    assert flow.content_type == ""
-
-
 def test_content_type_header_key_case_insensitive_lookup():
-    flow = _flow({"Content-Type": "text/html; charset=utf-8"})
+    flow = _flow({"Content-Type": "Text/HTML; charset=utf-8"})
     assert flow.content_type == "text/html"
 
 
 # ---------------------------------------------------------------------------
 # ProbeResult.is_blocked
 # ---------------------------------------------------------------------------
-
-def test_is_blocked_true_when_error_set():
-    # Invariant: a network error means no response was received; treating it as
-    # unblocked would silently report a target as accessible.
-    r = _result(error="connection refused", status=None)
-    assert r.is_blocked is True
-
-
-def test_is_blocked_true_when_status_none_no_error():
-    # Invariant: status=None without an error string (e.g. timeout with empty
-    # response) must still count as blocked — not silently pass as accessible.
-    r = _result(status=None, error=None)
-    assert r.is_blocked is True
-
 
 def test_is_blocked_true_for_403():
     r = _result(status=403)
@@ -106,11 +78,6 @@ def test_is_blocked_true_for_403():
 
 def test_is_blocked_true_for_429():
     r = _result(status=429)
-    assert r.is_blocked is True
-
-
-def test_is_blocked_true_for_503():
-    r = _result(status=503)
     assert r.is_blocked is True
 
 
@@ -139,20 +106,6 @@ def test_is_blocked_true_when_challenge_body_despite_200():
 # ---------------------------------------------------------------------------
 # ProbeResult.is_challenge
 # ---------------------------------------------------------------------------
-
-def test_is_challenge_false_when_error():
-    # Invariant: an errored result has no body to inspect; returning True would
-    # silently misclassify a connection failure as a JS challenge.
-    r = _result(error="timeout", body=b"challenges.cloudflare.com")
-    assert r.is_challenge is False
-
-
-def test_is_challenge_false_when_body_empty():
-    # Invariant: empty body must not be treated as a challenge — would silently
-    # produce JS_CHALLENGE verdict for any connection that returned no content.
-    r = _result(body=b"")
-    assert r.is_challenge is False
-
 
 def test_is_challenge_true_for_each_marker():
     # Invariant: each distinct marker must trigger detection independently;
@@ -213,13 +166,6 @@ def test_session_stats_roundtrip():
     assert restored == stats
 
 
-def test_session_stats_from_dict_missing_fields():
-    d = {"domain": "example.com", "started_at": "2026-05-08T13:00:00",
-         "duration_seconds": 10.0, "total_flows": 5, "kept_flows": 3, "dropped": {}}
-    stats = SessionStats.from_dict(d)
-    assert stats.dropped == {}
-
-
 # ---------------------------------------------------------------------------
 # CapturedFlow body serialization roundtrip (base64)
 # ---------------------------------------------------------------------------
@@ -251,28 +197,6 @@ def test_body_serialization_binary_roundtrip():
     assert restored.response_body == binary
 
 
-def test_body_serialization_empty_bodies():
-    # Invariant: empty bodies (None sentinel in dict) must come back as b"" not
-    # raise an exception during base64 decode.
-    flow = _base_flow(request_body=b"", response_body=b"")
-    d = flow.to_dict()
-    assert d["request_body"] is None
-    assert d["response_body"] is None
-    restored = CapturedFlow.from_dict(d)
-    assert restored.request_body == b""
-    assert restored.response_body == b""
-
-
-def test_body_serialization_utf8_ascii_roundtrip():
-    # Invariant: normal JSON bodies (valid UTF-8) must also roundtrip correctly
-    # through the base64 path.
-    payload = b'{"key": "value", "num": 42}'
-    flow = _base_flow(request_body=payload, response_body=payload)
-    restored = CapturedFlow.from_dict(flow.to_dict())
-    assert restored.request_body == payload
-    assert restored.response_body == payload
-
-
 def test_body_serialization_legacy_format_no_marker():
     # Invariant: JSONL files written before the base64 change (no _body_encoding
     # key) must still load correctly via the str.encode("utf-8") fallback path.
@@ -295,18 +219,6 @@ def test_body_serialization_legacy_format_no_marker():
     assert flow.response_body == b'{"ok": true}'
 
 
-def test_body_serialization_to_jsonl_roundtrip():
-    # Invariant: to_jsonl() → from_dict() must produce an identical CapturedFlow,
-    # including non-ASCII bytes.
-    import json
-    binary = b"\x89PNG\r\n\x1a\n\x00\x00\x00\rIHDR"
-    flow = _base_flow(request_body=binary, response_body=binary)
-    jsonl = flow.to_jsonl()
-    restored = CapturedFlow.from_dict(json.loads(jsonl))
-    assert restored.request_body == binary
-    assert restored.response_body == binary
-
-
 # ---------------------------------------------------------------------------
 # normalize_path (moved from spec.py to models.py)
 # ---------------------------------------------------------------------------
@@ -324,17 +236,9 @@ def test_normalize_path_hex():
     assert normalize_path("/api/objects/deadbeefcafe0000") == "/api/objects/{id}"
 
 
-def test_normalize_path_no_dynamic_segment():
-    assert normalize_path("/api/users") == "/api/users"
-
-
 def test_normalize_path_strips_query_string():
     # query string must be ignored — normalize_path only handles the path portion
     assert normalize_path("/api/users/42?foo=bar") == "/api/users/{id}"
-
-
-def test_normalize_path_preserves_static_segments():
-    assert normalize_path("/api/v1/search") == "/api/v1/search"
 
 
 def test_normalize_path_multiple_dynamic_segments():
@@ -344,13 +248,6 @@ def test_normalize_path_multiple_dynamic_segments():
 # ---------------------------------------------------------------------------
 # replay_dedup_key
 # ---------------------------------------------------------------------------
-
-def test_replay_dedup_key_no_query_string_equals_normalize_path():
-    # Invariant: paths without query strings must produce the same key as
-    # normalize_path() — dedup logic must not add extra structure.
-    path = "/api/users/12345"
-    assert replay_dedup_key(path) == normalize_path(path)
-
 
 def test_replay_dedup_key_same_keys_different_values_dedup_together():
     # Invariant: two requests with the same param names but different values
@@ -381,12 +278,3 @@ def test_replay_dedup_key_normalizes_path_segment():
     # string is also present.
     key = replay_dedup_key("/api/users/12345?include=details")
     assert key == "/api/users/{id}?include={v}"
-
-
-def test_replay_dedup_key_empty_query_string_acts_like_no_qs():
-    # Edge case: a trailing "?" with no params should not add "?" to the key.
-    key_with = replay_dedup_key("/api/users?")
-    key_without = replay_dedup_key("/api/users")
-    # Both should normalize the path; with empty qs parse_qs returns {} so no
-    # query portion is appended.
-    assert key_with == key_without

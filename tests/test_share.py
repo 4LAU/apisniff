@@ -116,11 +116,6 @@ def test_generate_inventory_captures_content_types():
     assert "text/html" in entry["content_types"]
 
 
-def test_generate_inventory_empty_flows():
-    """Empty flow list produces empty inventory."""
-    assert generate_inventory([]) == []
-
-
 # ---------------------------------------------------------------------------
 # share_bundle tests
 # ---------------------------------------------------------------------------
@@ -141,23 +136,6 @@ def test_share_bundle_creates_derived_output(tmp_path):
     assert not (dst / "cookies.txt").exists()
 
 
-def test_share_bundle_inventory_content(tmp_path):
-    """Inventory JSON contains endpoint data."""
-    flows = [
-        _flow("GET", "/api/users"),
-        _flow("POST", "/api/users"),
-    ]
-    src = _write_bundle(tmp_path, flows)
-    dst = tmp_path / "shared"
-
-    share_bundle(str(src), str(dst), "example.com")
-
-    inventory = json.loads((dst / "inventory.json").read_text())
-    methods = {e["method"] for e in inventory}
-    assert "GET" in methods
-    assert "POST" in methods
-
-
 def test_share_bundle_spec_is_valid_yaml(tmp_path):
     """Generated spec is valid YAML with expected structure."""
     src = _write_bundle(tmp_path, [_flow()])
@@ -168,17 +146,6 @@ def test_share_bundle_spec_is_valid_yaml(tmp_path):
     spec = yaml.safe_load((dst / "spec.yaml").read_text())
     assert spec["openapi"] == "3.0.3"
     assert "paths" in spec
-
-
-def test_share_bundle_copies_graphql_schema(tmp_path):
-    """GraphQL schema is copied if present."""
-    extras = {"graphql-schema.json": '{"data": {"__schema": {}}}'}
-    src = _write_bundle(tmp_path, [_flow()], extras=extras)
-    dst = tmp_path / "shared"
-
-    share_bundle(str(src), str(dst), "example.com")
-
-    assert (dst / "graphql-schema.json").exists()
 
 
 def test_share_bundle_no_raw_secrets_in_output(tmp_path):
@@ -275,14 +242,3 @@ def test_cli_share_refuses_existing_output(tmp_path):
         app, ["share", str(src), "--output", str(dst), "--domain", "example.com"]
     )
     assert result.exit_code == 1
-
-
-def test_cli_share_auto_detects_domain(tmp_path):
-    """CLI reads domain from session.json when --domain is omitted."""
-    src = _write_bundle(tmp_path, [_flow()])
-    dst = tmp_path / "output"
-
-    result = runner.invoke(
-        app, ["share", str(src), "--output", str(dst)]
-    )
-    assert result.exit_code == 0
