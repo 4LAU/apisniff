@@ -32,17 +32,17 @@ The probe will identify proxies and CDNs. If you see "full block," try `--proxy`
 apisniff recon example.com
 ```
 
-A local mitmproxy instance starts on port 8080 and Chrome opens automatically with that proxy configured. Browse the site normally: click through pages, submit forms, use the features you want to map. Every request is captured and classified in real-time.
+A local mitmproxy instance starts on port 8080 and Chrome opens automatically with that proxy configured. This is the same authorized inspection pattern penetration testers and developers use when they need to understand an app's HTTPS traffic. Browse the site normally: click through pages, submit forms, use the features you want to map. Every request is captured and classified in real-time.
 
 ### HTTPS and the mitmproxy certificate
 
 Most API traffic is HTTPS. Because HTTPS encrypts traffic between the browser and the origin server, mitmproxy can only show apisniff the request and response details if the browser trusts mitmproxy's local certificate authority.
 
-The first time mitmproxy runs, it creates a unique CA under `~/.mitmproxy`. Trusting that CA allows mitmproxy to generate temporary certificates for the HTTPS sites you visit through the proxied browser. Without it, Chrome may show certificate warnings and apisniff may miss encrypted traffic.
+The first time mitmproxy runs, it creates a unique CA under `~/.mitmproxy`. Trusting that CA allows mitmproxy to generate temporary certificates for the HTTPS sites you visit through the proxied browser. The certificate does not make all network traffic visible by itself; the client also has to trust the CA and send traffic through the proxy. Without it, Chrome may show certificate warnings and apisniff may miss encrypted traffic.
 
 To install the certificate, run `apisniff recon`, then open `http://mitm.it` in the Chrome window that apisniff launched. Follow the instructions for your platform. Only do this on a machine and browser profile you control, and remove the certificate when you no longer need HTTPS interception.
 
-Read more in the [mitmproxy certificate docs](https://docs.mitmproxy.org/stable/concepts/certificates/).
+Read more in the [mitmproxy certificate docs](https://docs.mitmproxy.org/stable/concepts/certificates/). For questions about mitmproxy itself, see the [mitmproxy GitHub repository](https://github.com/mitmproxy/mitmproxy).
 
 Press **Ctrl+C** when you're done browsing. apisniff will:
 - Filter out noise (ads, analytics, tracking pixels, third-party domains)
