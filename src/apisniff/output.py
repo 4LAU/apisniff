@@ -4,7 +4,9 @@ import json
 from datetime import UTC, datetime
 from typing import get_args
 
-from rich.console import Console
+from rich import box
+from rich.align import Align
+from rich.console import Console, Group
 from rich.panel import Panel
 from rich.table import Table
 from rich.text import Text
@@ -24,6 +26,53 @@ _VERDICT_STYLES = {
     ProbeVerdict.JS_CHALLENGE: ("red", "JS Challenge"),
     ProbeVerdict.FULL_BLOCK: ("red bold", "Full Block"),
 }
+
+_VERDICT_ICONS = {
+    ProbeVerdict.NO_PROTECTION: "●",
+    ProbeVerdict.CLIENT_DEPENDENT: "◐",
+    ProbeVerdict.JS_CHALLENGE: "▲",
+    ProbeVerdict.FULL_BLOCK: "■",
+}
+
+_PROBE_HINTS = {
+    "naked": "raw client, bot UA",
+    "impersonated": "Chrome TLS + Chrome UA",
+    "tls_only": "Chrome TLS, bot UA",
+}
+
+
+def _latency_bar(ms: float, max_ms: float, width: int = 16) -> Text:
+    if max_ms <= 0:
+        return Text(f"{ms:.0f}ms")
+    ratio = ms / max_ms
+    filled = max(1, round(ratio * width))
+    empty = width - filled
+
+    if ms < 200:
+        bar_style = "green"
+    elif ms < 500:
+        bar_style = "yellow"
+    else:
+        bar_style = "red"
+
+    result = Text()
+    result.append("█" * filled, style=bar_style)
+    result.append("░" * empty, style="bright_black")
+    result.append(f" {ms:.0f}ms", style=bar_style)
+    return result
+
+
+def _confidence_badge(confidence: str) -> Text:
+    levels = {"low": 1, "medium": 2, "high": 3}
+    styles = {"low": "dim", "medium": "yellow", "high": "red"}
+    level = levels.get(confidence, 0)
+    bar_style = styles.get(confidence, "")
+
+    result = Text()
+    result.append("█" * level, style=bar_style)
+    result.append("░" * (3 - level), style="bright_black")
+    result.append(f" {confidence.upper()}", style=f"bold {bar_style}")
+    return result
 
 
 def probe_to_dict(assessment: ProbeAssessment) -> dict:
@@ -74,68 +123,83 @@ def render_probe(assessment: ProbeAssessment, console: Console | None = None) ->
     console = console or Console(stderr=True)
 
     style, label = _VERDICT_STYLES[assessment.verdict]
+    icon = _VERDICT_ICONS[assessment.verdict]
 
-    table = Table(show_header=True, header_style="bold", expand=True)
-    table.add_column("Probe", style="cyan")
-    table.add_column("Status", justify="center")
-    table.add_column("Time", justify="right")
-    table.add_column("Result", justify="center")
+    if assessment.verdict == ProbeVerdict.NO_PROTECTION and assessment.vendors:
+        label = "Passthrough"
 
-    for probe_label in ("naked", "impersonated", "tls_only"):
-        result = assessment.results[probe_label]
-        if result.error:
-            status_str = "error"
-            result_str = Text("ERROR", style="red")
-        elif result.is_challenge:
-            status_str = str(result.status)
-            result_str = Text("CHALLENGE", style="yellow")
-        elif result.is_blocked:
-            status_str = str(result.status)
-            result_str = Text("BLOCKED", style="red")
-        else:
-            status_str = str(result.status)
-            result_str = Text("PASS", style="green")
-
-        table.add_row(
-            probe_label,
-            status_str,
-            f"{result.elapsed_ms:.0f}ms",
-            result_str,
-        )
-
+    # --- Probe data (probes + vendors in one panel) ---
     console.print()
-    console.print(
-        Panel(
-            table,
-            title=f"[bold]apisniff probe[/bold] — {assessment.url}",
-            subtitle=Text(label, style=style),
-            expand=True,
-        )
+
+    max_ms = max(
+        (r.elapsed_ms for r in assessment.results.values() if not r.error),
+        default=1.0,
     )
 
+    table = Table(
+        show_header=True, header_style="bold", expand=True,
+        box=box.SIMPLE_HEAD, padding=(0, 1), show_edge=False,
+    )
+    table.add_column("Probe", style="cyan", min_width=14)
+    table.add_column("", style="dim", ratio=1)
+    table.add_column("Status", justify="center", min_width=6)
+    table.add_column("Latency", min_width=24)
+    table.add_column("Result", justify="center", min_width=10)
+
+    for probe_name in ("naked", "impersonated", "tls_only"):
+        result = assessment.results[probe_name]
+        hint = _PROBE_HINTS.get(probe_name, "")
+
+        if result.error:
+            status_str = "err"
+            result_str = Text(" ERROR ", style="bold white on red")
+            latency = Text(f"{result.elapsed_ms:.0f}ms", style="red")
+        elif result.is_challenge:
+            status_str = str(result.status)
+            result_str = Text(" CHALLENGE ", style="bold black on yellow")
+            latency = _latency_bar(result.elapsed_ms, max_ms)
+        elif result.is_blocked:
+            status_str = str(result.status)
+            result_str = Text(" BLOCKED ", style="bold white on red")
+            latency = _latency_bar(result.elapsed_ms, max_ms)
+        else:
+            status_str = str(result.status)
+            result_str = Text(" PASS ", style="bold black on green")
+            latency = _latency_bar(result.elapsed_ms, max_ms)
+
+        table.add_row(probe_name, hint, status_str, latency, result_str)
+
+    panel_parts: list[object] = [table]
+
     if assessment.vendors:
-        vendor_table = Table(show_header=True, header_style="bold", expand=True)
-        vendor_table.add_column("Vendor", style="cyan")
-        vendor_table.add_column("Confidence", justify="center")
-        vendor_table.add_column("Signals")
-
+        panel_parts.append(Text())
         for v in assessment.vendors:
-            conf_style = {"high": "red", "medium": "yellow", "low": "dim"}.get(v.confidence, "")
-            vendor_table.add_row(
-                v.vendor.replace("_", " ").title(),
-                Text(v.confidence.upper(), style=conf_style),
-                ", ".join(v.signals),
+            vendor_line = Text("  ")
+            vendor_line.append(
+                v.vendor.replace("_", " ").title(), style="cyan"
             )
+            vendor_line.append("  ")
+            vendor_line.append_text(_confidence_badge(v.confidence))
+            vendor_line.append("  ")
+            vendor_line.append(", ".join(v.signals), style="dim")
+            panel_parts.append(vendor_line)
 
-        console.print(Panel(vendor_table, title="Detected Vendors", expand=True))
+    console.print(Panel(
+        Group(*panel_parts),
+        title=f"[bold]apisniff probe[/bold]  [dim]{assessment.url}[/dim]",
+        box=box.ROUNDED,
+        expand=True,
+        padding=(1, 1),
+    ))
 
+    # --- GraphQL (compact, no panel) ---
     if assessment.graphql_endpoints:
         if assessment.graphql_introspection:
             gql_status = "[green]introspection enabled[/green]"
         else:
             gql_status = "[yellow]introspection disabled[/yellow]"
         for ep in assessment.graphql_endpoints:
-            console.print(f"  GraphQL endpoint: [cyan]{ep}[/cyan] — {gql_status}")
+            console.print(f"  GraphQL  [cyan]{ep}[/cyan]  {gql_status}")
         if assessment.graphql_schema_path:
             try:
                 from pathlib import Path
@@ -145,30 +209,58 @@ def render_probe(assessment: ProbeAssessment, console: Console | None = None) ->
                     len(t.get("fields", []) or []) for t in types
                 )
                 console.print(
-                    f"  GraphQL schema: [bold]{len(types)}[/bold] types, "
-                    f"[bold]{total_fields}[/bold] fields → {assessment.graphql_schema_path}"
+                    f"  GraphQL  [bold]{len(types)}[/bold] types, "
+                    f"[bold]{total_fields}[/bold] fields"
                 )
             except (FileNotFoundError, json.JSONDecodeError, KeyError):
-                console.print(f"  GraphQL schema: {assessment.graphql_schema_path}")
+                pass
 
+    # --- Rate limiting (compact, no panel) ---
     if assessment.rate_limit:
         rl = assessment.rate_limit
-        console.print("  Rate Limit Probe:")
         if rl.first_block_at is not None:
-            console.print(f"    Blocked at request {rl.first_block_at} (HTTP {rl.block_status})")
+            console.print(
+                f"  Rate limit  blocked at request [bold red]{rl.first_block_at}[/bold red]"
+                f" [dim](HTTP {rl.block_status})[/dim]"
+            )
             if rl.retry_after:
-                console.print(f"    Retry-After: {rl.retry_after}s")
+                console.print(f"  [dim]Retry-After: {rl.retry_after}s[/dim]")
         elif rl.silent_throttle:
-            msg = "Possible silent throttle (response times >2x in second half)"
-            console.print(f"    [yellow]{msg}[/yellow]")
+            console.print(
+                "  Rate limit  [yellow]possible silent throttle[/yellow]"
+                " [dim](response times >2x in second half)[/dim]"
+            )
         else:
             console.print(
-                f"    No rate limiting observed in {rl.requests_sent} sequential requests"
+                f"  Rate limit  [green]none detected[/green]"
+                f" [dim]in {rl.requests_sent} requests[/dim]"
             )
-        console.print(f"    Median response: {rl.median_ms:.0f}ms over {rl.requests_sent} requests")
+        console.print(
+            f"  [dim]Median: {rl.median_ms:.0f}ms"
+            f" over {rl.requests_sent} requests[/dim]"
+        )
 
+    # --- Verdict (dominant element) ---
     console.print()
-    console.print(f"  [bold]Recommendation:[/bold] {assessment.recommendation}")
+    verdict_text = Text()
+    verdict_text.append(f" {icon} ", style=f"bold {style}")
+    verdict_text.append(label, style=f"bold {style}")
+    if assessment.vendors:
+        vendor_names = ", ".join(
+            v.vendor.replace("_", " ").title() for v in assessment.vendors
+        )
+        verdict_text.append(f"  {vendor_names}", style="dim")
+    console.print(Align.center(verdict_text))
+    console.print()
+
+    # --- Recommendation (the payoff) ---
+    console.print(Panel(
+        Text(assessment.recommendation),
+        border_style=style,
+        box=box.ROUNDED,
+        padding=(0, 1),
+        expand=True,
+    ))
     console.print()
 
 
@@ -229,53 +321,89 @@ def render_replay(
     console.print()
     counts = _tally_results(results)
 
+    domain = results[0].original_flow.host if results else ""
+
+    table = Table(
+        show_header=True, header_style="bold", expand=True,
+        box=box.SIMPLE_HEAD, padding=(0, 1), show_edge=False,
+    )
+    table.add_column("", min_width=1)
+    table.add_column("Method", style="bold", min_width=6)
+    table.add_column("Path", ratio=1)
+    table.add_column("Status", justify="center", min_width=10)
+    table.add_column("Result", min_width=14)
+    table.add_column("Time", justify="right", style="dim", min_width=7)
+
     for r in results:
         cat = r.category
         sym = _REPLAY_SYMBOL.get(cat, "?")
-        style = _REPLAY_STYLE.get(cat, "")
+        cat_style = _REPLAY_STYLE.get(cat, "")
         label = _CATEGORY_LABEL.get(cat, cat)
 
         orig_status = r.original_flow.response_status
         rep_status = r.replayed_status if r.replayed_status is not None else "err"
-        method = r.original_flow.method.upper()
-        path = r.original_flow.path
 
-        line = (
-            f"  {sym} {method:<4} {path:<30} "
-            f"{orig_status}→{rep_status}  {label}  {r.elapsed_ms:.0f}ms"
-        )
-        console.print(Text(line, style=style))
-
+        path_cell = Text(r.original_flow.path, style="cyan")
         if cat == "drift" and r.body_shape_diff:
             for key, change in r.body_shape_diff.items():
                 if isinstance(change, dict):
+                    path_cell.append("\n")
                     if change.get("was") is None:
-                        console.print(Text(f"    + {key}", style="green"))
+                        path_cell.append(f"  + {key}", style="green")
                     elif change.get("now") is None:
-                        console.print(Text(f"    - {key}", style="red"))
+                        path_cell.append(f"  - {key}", style="red")
                     else:
-                        console.print(
-                            Text(f"    ~ {key}", style="yellow")
-                        )
+                        path_cell.append(f"  ~ {key}", style="yellow")
 
-    if abort:
-        console.print()
-        console.print(
-            Text(
-                f"  Aborted: {abort.reason} — "
-                f"{abort.remaining} endpoint"
-                f"{'s' if abort.remaining != 1 else ''} not tested",
-                style="red bold",
-            )
+        status_cell = Text()
+        status_cell.append(str(orig_status), style="dim")
+        status_cell.append(" → ", style="dim")
+        status_cell.append(str(rep_status), style=cat_style)
+
+        table.add_row(
+            Text(sym, style=cat_style),
+            r.original_flow.method.upper(),
+            path_cell,
+            status_cell,
+            Text(label, style=cat_style),
+            f"{r.elapsed_ms:.0f}ms",
         )
 
-    summary_parts = []
+    panel_parts: list[object] = [table]
+
+    if abort:
+        panel_parts.append(Text())
+        panel_parts.append(Text(
+            f"  Aborted: {abort.reason}, "
+            f"{abort.remaining} endpoint"
+            f"{'s' if abort.remaining != 1 else ''} not tested",
+            style="red bold",
+        ))
+
+    console.print(Panel(
+        Group(*panel_parts),
+        title=f"[bold]apisniff replay[/bold]  [dim]{domain}[/dim]",
+        box=box.ROUNDED,
+        expand=True,
+        padding=(1, 1),
+    ))
+
+    summary_parts: list[tuple[str, str]] = []
     for cat in _CATEGORIES:
         n = counts.get(cat, 0)
         if n:
-            summary_parts.append(f"{n} {cat.replace('_', ' ')}")
+            summary_parts.append((
+                f"{n} {cat.replace('_', ' ')}",
+                _REPLAY_STYLE.get(cat, ""),
+            ))
     console.print()
-    console.print(f"  Summary: {', '.join(summary_parts)}")
+    summary = Text()
+    for idx, (text, cat_style) in enumerate(summary_parts):
+        if idx > 0:
+            summary.append("  ·  ", style="dim")
+        summary.append(text, style=f"bold {cat_style}")
+    console.print(Align.center(summary))
+    console.print()
 
 
 def render_dry_run(
@@ -285,30 +413,63 @@ def render_dry_run(
     console: Console,
 ) -> None:
     console.print()
+
+    table = Table(
+        show_header=True, header_style="bold", expand=True,
+        box=box.SIMPLE_HEAD, padding=(0, 1), show_edge=False,
+    )
+    table.add_column("Method", style="bold", min_width=6)
+    table.add_column("Path", style="cyan", ratio=1)
+    table.add_column("Captured", style="dim")
+    table.add_column("Auth", style="dim")
+
     for flow in safe:
         ts = (
             datetime.fromtimestamp(flow.timestamp, tz=UTC).strftime("%Y-%m-%dT%H:%M")
             if flow.timestamp else "unknown"
         )
-        auth = _auth_label(flow.request_headers)
-        console.print(f"  {flow.method.upper():<6} {flow.path:<30} captured {ts}  auth:{auth}")
+        table.add_row(flow.method.upper(), flow.path, ts, _auth_label(flow.request_headers))
+
+    panel_parts: list[object] = [table]
 
     if unsafe:
-        console.print()
-        console.print("  Skipped (unsafe — use --include-unsafe):")
+        panel_parts.append(Text())
+        panel_parts.append(Text(
+            "  Skipped (unsafe, use --include-unsafe):", style="dim",
+        ))
         for flow in unsafe:
             ts = (
                 datetime.fromtimestamp(flow.timestamp, tz=UTC).strftime("%Y-%m-%dT%H:%M")
                 if flow.timestamp else "unknown"
             )
-            auth = _auth_label(flow.request_headers)
-            console.print(f"  {flow.method.upper():<6} {flow.path:<30} captured {ts}  auth:{auth}")
+            line = Text("  ")
+            line.append(flow.method.upper(), style="dim bold")
+            line.append(f"  {flow.path}", style="dim")
+            line.append(f"  {ts}", style="dim")
+            line.append(f"  {_auth_label(flow.request_headers)}", style="dim")
+            panel_parts.append(line)
+
+    console.print(Panel(
+        Group(*panel_parts),
+        title=f"[bold]apisniff replay[/bold] --dry-run  [dim]{domain}[/dim]",
+        box=box.ROUNDED,
+        expand=True,
+        padding=(1, 1),
+    ))
 
     console.print()
-    console.print(
-        f"  {len(safe)} safe endpoint{'s' if len(safe) != 1 else ''} would be replayed."
-        f" {len(unsafe)} unsafe skipped."
+    summary = Text()
+    summary.append(f"{len(safe)} safe", style="bold green")
+    summary.append(
+        f" endpoint{'s' if len(safe) != 1 else ''}",
+        style="dim",
     )
+    if unsafe:
+        summary.append("  ·  ", style="dim")
+        summary.append(f"{len(unsafe)} unsafe", style="bold red")
+        summary.append(" skipped", style="dim")
+    console.print(Align.center(summary))
+    console.print()
 
 
 def replay_to_json(
