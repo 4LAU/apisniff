@@ -4,7 +4,7 @@ build-backend = "hatchling.build"
 
 [project]
 name = "apisniff"
-version = "0.1.0"
+version = "0.1.1"
 description = "One tool for API recon: preflight defenses, capture real traffic, extract a usable spec."
 readme = "README.md"
 license = "MIT"
