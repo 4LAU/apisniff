@@ -9,3 +9,6 @@ build/
 .worktrees/
 .ignore-dump/
 .env*
+.plans/
+.claude/
+testing-policy.md
