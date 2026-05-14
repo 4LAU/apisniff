@@ -203,6 +203,10 @@ def _capture_help(command: str) -> str:
         capture_output=True,
         text=True,
     )
+    if result.returncode != 0:
+        raise RuntimeError(
+            f"Failed to capture help for '{command}': {result.stderr}"
+        )
     return result.stdout
 
 
