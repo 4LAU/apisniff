@@ -44,10 +44,7 @@ def _host_from_url(url: str) -> str:
 
 def _matches_domain_list(domain: str, domain_list: list[str]) -> bool:
     d = domain.lower()
-    for entry in domain_list:
-        if d == entry or d.endswith("." + entry):
-            return True
-    return False
+    return any(d == entry or d.endswith("." + entry) for entry in domain_list)
 
 
 class Classifier:
@@ -86,14 +83,14 @@ class Classifier:
         self._learn_csp(flow)
 
         # 3. Path telemetry
-        if allowlist_type not in ("domain", "path"):
-            if any(s in path_only for s in self._drop_path_substrings):
-                return ClassifyResult(action="drop", category="path_telemetry", flow=None)
+        if allowlist_type not in ("domain", "path") and any(
+            s in path_only for s in self._drop_path_substrings
+        ):
+            return ClassifyResult(action="drop", category="path_telemetry", flow=None)
 
         # 4. Third-party
-        if not allowlist_type:
-            if self._is_third_party(flow):
-                return ClassifyResult(action="drop", category="third_party", flow=None)
+        if not allowlist_type and self._is_third_party(flow):
+            return ClassifyResult(action="drop", category="third_party", flow=None)
 
         # 5. Static assets
         if allowlist_type not in ("domain", "path"):
@@ -109,9 +106,10 @@ class Classifier:
                     return ClassifyResult(action="drop", category="static_asset", flow=None)
 
         # 6. Same-site noise
-        if allowlist_type not in ("domain", "path"):
-            if any(p in path_only for p in self._same_site_drop_paths):
-                return ClassifyResult(action="drop", category="same_site_noise", flow=None)
+        if allowlist_type not in ("domain", "path") and any(
+            p in path_only for p in self._same_site_drop_paths
+        ):
+            return ClassifyResult(action="drop", category="same_site_noise", flow=None)
 
         kept = replace(flow, tags=tags)
         return ClassifyResult(action="keep", category="", flow=kept)
@@ -156,9 +154,12 @@ class Classifier:
                 if not host or "." not in host:
                     continue
                 rd = extract_registered_domain(host)
-                if rd and rd != self._target_rd:
-                    if not _matches_domain_list(host, self._noise_domains):
-                        self._related_domains.add(rd)
+                if (
+                    rd
+                    and rd != self._target_rd
+                    and not _matches_domain_list(host, self._noise_domains)
+                ):
+                    self._related_domains.add(rd)
 
     def _scan_antibot_markers(self, body: bytes) -> list[str]:
         if not body:

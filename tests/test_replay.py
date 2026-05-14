@@ -271,11 +271,13 @@ class TestEarlyAbort:
             return_value=_mock_response(403, b"Forbidden")
         )
 
-        with patch("curl_cffi.requests.AsyncSession", return_value=session_mock):
-            with patch("apisniff.output.render_replay"):
-                results = asyncio.run(
-                    run_replay(bundle_dir=str(bundle))
-                )
+        with (
+            patch("curl_cffi.requests.AsyncSession", return_value=session_mock),
+            patch("apisniff.output.render_replay"),
+        ):
+            results = asyncio.run(
+                run_replay(bundle_dir=str(bundle))
+            )
 
         assert len(results) == 1
         assert results[0].category == "auth_expired"
