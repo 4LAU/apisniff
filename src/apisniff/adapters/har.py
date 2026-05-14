@@ -25,10 +25,7 @@ def _parse_timestamp(entry: dict) -> float:
     if not raw:
         return 0.0
     try:
-        normalized = raw.rstrip("Z")
-        if raw.endswith("Z"):
-            normalized += "+00:00"
-        return datetime.fromisoformat(normalized).timestamp()
+        return datetime.fromisoformat(raw).timestamp()
     except (ValueError, AttributeError):
         return 0.0
 

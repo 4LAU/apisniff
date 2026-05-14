@@ -3,7 +3,7 @@ from __future__ import annotations
 from collections import Counter
 from dataclasses import dataclass
 from typing import Literal
-from urllib.parse import parse_qs, urlparse
+from urllib.parse import parse_qs
 
 from apisniff.models import CapturedFlow
 
@@ -29,7 +29,8 @@ def detect_auth(flows: list[CapturedFlow]) -> list[AuthPattern]:
 
     for flow in flows:
         headers = flow.request_headers
-        path = flow.path.split("?")[0].rstrip("/")
+        path_part, _, qs_raw = flow.path.partition("?")
+        path = path_part.rstrip("/")
 
         auth_header = headers.get("authorization", "").lower()
         if auth_header.startswith("bearer "):
@@ -41,8 +42,7 @@ def detect_auth(flows: list[CapturedFlow]) -> list[AuthPattern]:
             if hdr in headers:
                 counts[("api_key_header", hdr)] += 1
 
-        parsed = urlparse(flow.url)
-        qs = parse_qs(parsed.query)
+        qs = parse_qs(qs_raw)
         for param in _API_KEY_QUERY_PARAMS:
             if param in qs:
                 counts[("api_key_query", param)] += 1

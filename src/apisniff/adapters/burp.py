@@ -41,12 +41,10 @@ def _split_http_message(raw: bytes) -> tuple[dict[str, str], bytes]:
 
     The first line (request line or status line) is discarded.
     """
-    sep = b"\r\n\r\n"
-    idx = raw.find(sep)
+    idx = raw.find(b"\r\n\r\n")
     if idx != -1:
         header_bytes = raw[:idx]
-        body = raw[idx + len(sep):]
-        line_sep = "\r\n"
+        body = raw[idx + 4:]
     else:
         idx = raw.find(b"\n\n")
         if idx != -1:
@@ -55,10 +53,10 @@ def _split_http_message(raw: bytes) -> tuple[dict[str, str], bytes]:
         else:
             header_bytes = raw
             body = b""
-        line_sep = "\n"
 
-    lines = header_bytes.decode("utf-8", errors="replace").split(line_sep)
-    header_lines = line_sep.join(lines[1:])
+    text = header_bytes.decode("utf-8", errors="replace").replace("\r\n", "\n")
+    lines = text.split("\n")
+    header_lines = "\n".join(lines[1:])
     return _parse_raw_headers(header_lines), body
 
 
