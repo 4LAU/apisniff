@@ -16,6 +16,19 @@ _NUMERIC_RE = re.compile(r"^\d+$")
 _HEX_RE = re.compile(r"^[0-9a-f]{16,}$", re.I)
 
 
+COOKIE_ATTRS = frozenset({
+    "expires", "max-age", "domain", "path", "samesite", "secure", "httponly",
+})
+
+
+def get_header(headers: dict[str, str], name: str) -> str:
+    lower = name.lower()
+    for k, v in headers.items():
+        if k.lower() == lower:
+            return v
+    return ""
+
+
 def normalize_path(path: str) -> str:
     parts = path.split("?")[0].split("/")
     normalized = []
@@ -136,13 +149,9 @@ class CapturedFlow:
 
     @property
     def content_type(self) -> str:
-        # Fast path: mitmproxy adapter lowercases keys; fall back for HAR/other sources
-        ct = self.response_headers.get("content-type", "")
-        if not ct:
-            for k, v in self.response_headers.items():
-                if k.lower() == "content-type":
-                    ct = v
-                    break
+        ct = self.response_headers.get("content-type") or get_header(
+            self.response_headers, "content-type"
+        )
         return ct.split(";")[0].strip().lower()
 
 

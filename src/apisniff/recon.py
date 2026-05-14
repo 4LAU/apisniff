@@ -8,6 +8,7 @@ import subprocess
 import sys
 import time
 from collections import Counter
+from dataclasses import dataclass
 from datetime import UTC, datetime
 from pathlib import Path
 
@@ -26,6 +27,16 @@ from apisniff.models import CapturedFlow, SessionStats
 stderr = Console(stderr=True)
 
 
+@dataclass
+class _BundleResult:
+    report_md: str
+    vendors: list
+    auth_patterns: list
+    cookies: list
+    cookies_path: Path | None
+    graphql_schema_path: Path | None
+
+
 def _post_process_bundle(
     domain: str,
     flows: list[CapturedFlow],
@@ -33,24 +44,21 @@ def _post_process_bundle(
     session_stats: SessionStats | None,
     *,
     fetch_graphql: bool = True,
-) -> str:
-    """Auth, cookies, GraphQL, vendors, report. Returns report markdown."""
+) -> _BundleResult:
+    """Auth, cookies, GraphQL, vendors, report. Returns structured result."""
     import asyncio
 
     from apisniff.auth import cookies_to_cookiejar, detect_auth, extract_cookies
     auth_patterns = detect_auth(flows)
     cookies = extract_cookies(flows)
 
+    cookies_path: Path | None = None
     cookies_txt = cookies_to_cookiejar(cookies)
     if cookies_txt:
         cookies_path = bundle_dir / "cookies.txt"
         cookies_path.write_text(cookies_txt)
-        stderr.print(f"  Cookies: {cookies_path}")
-        stderr.print(
-            "  [yellow]cookies.txt contains session credentials"
-            " — do not share or commit to git[/yellow]"
-        )
 
+    graphql_schema_path: Path | None = None
     if fetch_graphql:
         from apisniff.probe import fetch_graphql_schema
         gql_flows = [f for f in flows if "graphql" in f.path.lower()]
@@ -67,9 +75,8 @@ def _post_process_bundle(
                 fetch_graphql_schema(schema_url, headers=gql_headers or None)
             )
             if schema:
-                schema_path = bundle_dir / "graphql-schema.json"
-                schema_path.write_text(json.dumps(schema, indent=2))
-                stderr.print(f"  GraphQL schema: {schema_path}")
+                graphql_schema_path = bundle_dir / "graphql-schema.json"
+                graphql_schema_path.write_text(json.dumps(schema, indent=2))
                 break
 
     from apisniff.vendors import flows_to_probe_results, load_signatures, match_vendors
@@ -82,7 +89,15 @@ def _post_process_bundle(
     )
     report_path = bundle_dir / "report.md"
     report_path.write_text(report)
-    return report
+
+    return _BundleResult(
+        report_md=report,
+        vendors=vendors,
+        auth_patterns=auth_patterns,
+        cookies=cookies,
+        cookies_path=cookies_path,
+        graphql_schema_path=graphql_schema_path,
+    )
 
 
 def run_recon(
@@ -181,11 +196,20 @@ def run_recon(
         stderr.print(f"\n  No flows captured → {bundle_dir}\n")
         return
 
-    report = _post_process_bundle(domain, flows, bundle_dir, session_stats)
-    from rich.markdown import Markdown
-    stderr.print(Markdown(report))
-    stderr.print(f"\n  Report: {bundle_dir / 'report.md'}")
-    stderr.print(f"  Captured [bold]{len(flows)}[/bold] classified flows → {bundle_dir}\n")
+    result = _post_process_bundle(domain, flows, bundle_dir, session_stats)
+    from apisniff.output import render_recon
+    render_recon(
+        domain=domain,
+        session_stats=session_stats,
+        flows=flows,
+        vendors=result.vendors,
+        auth_patterns=result.auth_patterns,
+        cookies=result.cookies,
+        bundle_dir=bundle_dir,
+        cookies_path=result.cookies_path,
+        graphql_schema_path=result.graphql_schema_path,
+        console=stderr,
+    )
 
 
 def run_analyze(
@@ -278,16 +302,27 @@ def run_analyze(
             for flow in kept_flows:
                 fh.write(flow.to_jsonl() + "\n")
 
-    report = _post_process_bundle(
+    result = _post_process_bundle(
         domain, kept_flows, bundle_dir, session_stats,
         fetch_graphql=fetch_graphql,
     )
 
     if json_output:
         sys.stdout.write(json.dumps(session_stats.to_dict(), indent=2) + "\n")
+        stderr.print(f"\n  Report: {bundle_dir / 'report.md'}")
+        stderr.print(f"  Analyzed [bold]{len(kept_flows)}[/bold] flows → {bundle_dir}\n")
     else:
-        from rich.markdown import Markdown
-        stderr.print(Markdown(report))
-
-    stderr.print(f"\n  Report: {bundle_dir / 'report.md'}")
-    stderr.print(f"  Analyzed [bold]{len(kept_flows)}[/bold] flows → {bundle_dir}\n")
+        from apisniff.output import render_recon
+        render_recon(
+            domain=domain,
+            session_stats=session_stats,
+            flows=kept_flows,
+            vendors=result.vendors,
+            auth_patterns=result.auth_patterns,
+            cookies=result.cookies,
+            bundle_dir=bundle_dir,
+            cookies_path=result.cookies_path,
+            graphql_schema_path=result.graphql_schema_path,
+            command="analyze",
+            console=stderr,
+        )
