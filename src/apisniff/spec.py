@@ -22,6 +22,10 @@ _MULTIPART_FILENAME_RE = re.compile(r'filename="[^"]*"')
 _SECRET_RE = re.compile(
     r"(?i)(bearer |basic |eyj|sk_|pk_|api_|ghp_|gho_|ghs_|glpat-|xox[bpsar]-|AKIA)"
 )
+_SENSITIVE_FIELD_RE = re.compile(
+    r"(?i)(password|passwd|secret|token|credential|api_?key|private_?key"
+    r"|access_?token|refresh_?token|client_?secret|auth|ssn|social_?security)"
+)
 _MAX_EXAMPLE_LEN = 200
 _FILE_SENTINEL = "__file__"
 
@@ -56,28 +60,29 @@ def _redact_if_secret(value: str) -> str:
     return value
 
 
-def _infer_schema(value, *, include_examples: bool = False) -> dict:
+def _infer_schema(value, *, include_examples: bool = False, field_name: str = "") -> dict:
     if value is None:
         return {"type": "string", "nullable": True}
+    sensitive = bool(field_name and _SENSITIVE_FIELD_RE.search(field_name))
     if isinstance(value, bool):
         schema: dict = {"type": "boolean"}
         if include_examples:
-            schema["example"] = value
+            schema["example"] = "***REDACTED***" if sensitive else value
         return schema
     if isinstance(value, int):
         schema = {"type": "integer"}
         if include_examples:
-            schema["example"] = value
+            schema["example"] = "***REDACTED***" if sensitive else value
         return schema
     if isinstance(value, float):
         schema = {"type": "number"}
         if include_examples:
-            schema["example"] = value
+            schema["example"] = "***REDACTED***" if sensitive else value
         return schema
     if isinstance(value, str):
         schema = {"type": "string"}
         if include_examples:
-            redacted = _redact_if_secret(value)
+            redacted = "***REDACTED***" if sensitive else _redact_if_secret(value)
             if len(redacted) > _MAX_EXAMPLE_LEN:
                 redacted = redacted[:_MAX_EXAMPLE_LEN] + "..."
             schema["example"] = redacted
@@ -85,12 +90,12 @@ def _infer_schema(value, *, include_examples: bool = False) -> dict:
     if isinstance(value, list):
         if not value:
             return {"type": "array", "items": {}}
-        items = _infer_schema(value[0], include_examples=include_examples)
+        items = _infer_schema(value[0], include_examples=include_examples, field_name=field_name)
         return {"type": "array", "items": items}
     if isinstance(value, dict):
         properties = {}
         for k, v in value.items():
-            properties[k] = _infer_schema(v, include_examples=include_examples)
+            properties[k] = _infer_schema(v, include_examples=include_examples, field_name=k)
         return {"type": "object", "properties": properties}
     return {"type": "string"}
 
@@ -294,7 +299,9 @@ def generate_openapi(
                             if v == _FILE_SENTINEL:
                                 props[k] = {"type": "string", "format": "binary"}
                             else:
-                                props[k] = _infer_schema(v, include_examples=include_examples)
+                                props[k] = _infer_schema(
+                                    v, include_examples=include_examples, field_name=k,
+                                )
                         new_schema = {"type": "object", "properties": props}
                         _upsert_request_schema(request_content, "multipart/form-data", new_schema)
 

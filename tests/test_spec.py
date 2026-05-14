@@ -400,6 +400,36 @@ def test_examples_off_by_default():
     assert "example" not in props["name"]
 
 
+def test_examples_redact_by_field_name_password():
+    """Values under sensitive field names are redacted regardless of content."""
+    flow = _flow(body=b'{"password": "hunter2", "username": "alice"}')
+    spec = generate_openapi([flow], "example.com", include_examples=True)
+    props = _resp_schema(spec)["properties"]
+    assert props["password"]["example"] == "***REDACTED***"
+    assert props["username"]["example"] == "alice"
+
+
+def test_examples_redact_by_field_name_variants():
+    """Multiple sensitive field name patterns are caught."""
+    body = b'{"client_secret": "abc", "access_token": "xyz", "api_key": "k", "name": "ok"}'
+    flow = _flow(body=body)
+    spec = generate_openapi([flow], "example.com", include_examples=True)
+    props = _resp_schema(spec)["properties"]
+    assert props["client_secret"]["example"] == "***REDACTED***"
+    assert props["access_token"]["example"] == "***REDACTED***"
+    assert props["api_key"]["example"] == "***REDACTED***"
+    assert props["name"]["example"] == "ok"
+
+
+def test_examples_redact_nested_sensitive_field():
+    """Sensitive field names redacted inside nested objects."""
+    flow = _flow(body=b'{"user": {"name": "alice", "credential": "s3cr3t"}}')
+    spec = generate_openapi([flow], "example.com", include_examples=True)
+    nested = _resp_schema(spec)["properties"]["user"]["properties"]
+    assert nested["name"]["example"] == "alice"
+    assert nested["credential"]["example"] == "***REDACTED***"
+
+
 # ── Part D: Form body parsing tests ─────────────────────────────────
 
 
@@ -443,3 +473,23 @@ def test_multipart_form_data_request_body():
     schema = content["multipart/form-data"]["schema"]
     assert "description" in schema["properties"]
     assert schema["properties"]["file"]["format"] == "binary"
+
+
+def test_multipart_sensitive_field_redacted():
+    """Multipart field with sensitive name gets example redacted."""
+    body = (
+        b"--bound\r\n"
+        b'Content-Disposition: form-data; name="password"\r\n\r\n'
+        b"hunter2\r\n"
+        b"--bound--"
+    )
+    flow = _flow(
+        method="POST",
+        path="/api/v1/login",
+        request_headers={"content-type": "multipart/form-data; boundary=bound"},
+        request_body=body,
+    )
+    spec = generate_openapi([flow], "example.com", include_examples=True)
+    schema = spec["paths"]["/api/v1/login"]["post"]["requestBody"]["content"]
+    props = schema["multipart/form-data"]["schema"]["properties"]
+    assert props["password"]["example"] == "***REDACTED***"
