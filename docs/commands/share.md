@@ -9,10 +9,10 @@ Export a shareable summary from a capture bundle. Produces only derived artifact
 ## Usage
 
 ```
-Usage: apisniff share [OPTIONS] BUNDLE                                         
-                                                                                
- Export a shareable summary — no raw traffic, no credentials.                   
-                                                                                
+Usage: apisniff share [OPTIONS] BUNDLE
+
+ Export a shareable summary — no raw traffic, no credentials.
+
 ╭─ Arguments ──────────────────────────────────────────────────────────────────╮
 │ *    bundle      TEXT  Bundle directory path or domain name [required]       │
 ╰──────────────────────────────────────────────────────────────────────────────╯

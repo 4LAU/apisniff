@@ -9,27 +9,23 @@ Replay captured API calls against the live site and detect drift. Compares respo
 ## Usage
 
 ```
-Usage: apisniff replay [OPTIONS] BUNDLE                                        
-                                                                                
- Replay captured API calls and detect drift.                                    
-                                                                                
+Usage: apisniff replay [OPTIONS] BUNDLE
+
+ Replay captured API calls and detect drift.
+
 ╭─ Arguments ──────────────────────────────────────────────────────────────────╮
 │ *    bundle      TEXT  Bundle directory path or domain name [required]       │
 ╰──────────────────────────────────────────────────────────────────────────────╯
 ╭─ Options ────────────────────────────────────────────────────────────────────╮
-│ --filter                  TEXT     Glob filter for paths                     │
-│ --timeout                 INTEGER  Request timeout in seconds [default: 10]  │
-│ --cookie-file             TEXT     Netscape cookies.txt path                 │
-│ --header          -H      TEXT     Extra header (key:value)                  │
-│ --json                             Output as JSON                            │
-│ --output          -o      TEXT     Write JSON output to file                 │
-│ --dry-run                          List endpoints without replaying          │
-│ --include-unsafe                   Include non-GET/HEAD/OPTIONS methods      │
-│ --insecure                         Skip TLS verification                     │
-│ --impersonate             TEXT     TLS profile: chrome, chrome131,           │
-│                                    chrome120, safari17_0, firefox133         │
-│                                    [default: chrome]                         │
-│ --help                             Show this message and exit.               │
+│ --filter                  TEXT  Glob filter for paths                        │
+│ --cookie-file             TEXT  Netscape cookies.txt path                    │
+│ --header          -H      TEXT  Extra header (key:value)                     │
+│ --json                          Output as JSON                               │
+│ --output          -o      TEXT  Write JSON output to file                    │
+│ --dry-run                       List endpoints without replaying             │
+│ --include-unsafe                Include non-GET/HEAD/OPTIONS methods         │
+│ --insecure                      Skip TLS verification                        │
+│ --help                          Show this message and exit.                  │
 ╰──────────────────────────────────────────────────────────────────────────────╯
 ```
 

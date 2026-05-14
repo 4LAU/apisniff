@@ -9,10 +9,10 @@ Import a traffic capture file (HAR, Burp XML, or JSONL), run the same classifica
 ## Usage
 
 ```
-Usage: apisniff analyze [OPTIONS] INPUT_FILE                                   
-                                                                                
- Offline analysis -- import traffic capture, classify, extract everything.      
-                                                                                
+Usage: apisniff analyze [OPTIONS] INPUT_FILE
+
+ Offline analysis -- import traffic capture, classify, extract everything.
+
 ╭─ Arguments ──────────────────────────────────────────────────────────────────╮
 │ *    input_file      TEXT  Input file (HAR, Burp XML, or JSONL) [required]   │
 ╰──────────────────────────────────────────────────────────────────────────────╯
@@ -44,7 +44,7 @@ apisniff analyze traffic.har --domain api.example.com
 # Write results to a specific directory
 apisniff analyze traffic.har --output-dir ./my-analysis/
 
-# Also fetch GraphQL schema from detected endpoints
+# Fetch GraphQL schemas from detected endpoints
 apisniff analyze traffic.har --fetch-graphql
 ```
 
