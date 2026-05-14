@@ -2,7 +2,7 @@
 
 One tool for API recon: preflight defenses, capture real traffic, extract a usable spec.
 
-[![CI](https://github.com/aaronlau/apisniff/actions/workflows/ci.yml/badge.svg)](https://github.com/aaronlau/apisniff/actions)
+[![CI](https://github.com/4LAU/apisniff/actions/workflows/ci.yml/badge.svg)](https://github.com/4LAU/apisniff/actions)
 [![PyPI](https://img.shields.io/pypi/v/apisniff)](https://pypi.org/project/apisniff/)
 [![Python](https://img.shields.io/pypi/pyversions/apisniff)](https://pypi.org/project/apisniff/)
 [![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
@@ -99,7 +99,7 @@ cat spec.yaml | llm "write a Python client for this API"
 ## Development
 
 ```bash
-git clone https://github.com/aaronlau/apisniff.git
+git clone https://github.com/4LAU/apisniff.git
 cd apisniff
 uv sync --dev
 uv run pytest tests/ -v
