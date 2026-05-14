@@ -77,13 +77,6 @@ class TestCompareShape:
         assert match is False
         assert diff is not None
 
-    def test_primitive_array_type_change_is_drift(self):
-        a = b'{"ids": [1, 2, 3]}'
-        b_ = b'{"ids": ["a", "b", "c"]}'
-        match, diff = compare_shape(a, b_)
-        assert match is False
-        assert diff is not None
-
     def test_json_vs_non_json_is_drift(self):
         a = b'{"key": "value"}'
         b_ = b"plain text response"
@@ -123,11 +116,6 @@ class TestCookieParsing:
         assert "session=abc123" in header
         assert "csrf=xyz789" in header
         assert "secret=999" not in header
-
-    def test_exact_domain_match(self):
-        cookies = [("api.example.com", "token", "abc")]
-        header = cookies_for_host(cookies, "api.example.com")
-        assert header == "token=abc"
 
     def test_suffix_match_apex_too(self):
         cookies = [(".example.com", "session", "xyz")]

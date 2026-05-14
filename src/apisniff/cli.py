@@ -215,19 +215,9 @@ def spec(
         click_type=click.Choice(["yaml", "json"]),
     ),
     output_file: str | None = typer.Option(None, "--output", "-o", help="Output file path"),
-    infer_schemes: bool = typer.Option(
-        False, "--infer-security-schemes",
-        help="Promote observed auth to securitySchemes (default: extensions only)",
-        hidden=True,
-    ),
     no_infer_schemes: bool = typer.Option(
         False, "--no-infer-security-schemes",
         help="Keep observed auth in extensions only",
-        hidden=True,
-    ),
-    examples: bool = typer.Option(
-        False, "--examples", help="Include sample response values in generated spec",
-        hidden=True,
     ),
     no_examples: bool = typer.Option(
         False, "--no-examples", help="Omit sample response values from generated spec"
@@ -238,8 +228,8 @@ def spec(
 
     run_spec(
         domain, input_file=input_file, output_format=output_format,
-        output_file=output_file, infer_schemes=infer_schemes or not no_infer_schemes,
-        include_examples=examples or not no_examples,
+        output_file=output_file, infer_schemes=not no_infer_schemes,
+        include_examples=not no_examples,
     )
 
 

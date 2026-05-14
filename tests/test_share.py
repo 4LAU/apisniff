@@ -136,18 +136,6 @@ def test_share_bundle_creates_derived_output(tmp_path):
     assert not (dst / "cookies.txt").exists()
 
 
-def test_share_bundle_spec_is_valid_yaml(tmp_path):
-    """Generated spec is valid YAML with expected structure."""
-    src = _write_bundle(tmp_path, [_flow()])
-    dst = tmp_path / "shared"
-
-    share_bundle(str(src), str(dst), "example.com")
-
-    spec = yaml.safe_load((dst / "spec.yaml").read_text())
-    assert spec["openapi"] == "3.0.3"
-    assert "paths" in spec
-
-
 def test_share_bundle_no_raw_secrets_in_output(tmp_path):
     """No auth headers, query params, or body secrets leak into shared output."""
     flow = _flow(

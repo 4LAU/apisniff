@@ -23,8 +23,9 @@ _SECRET_RE = re.compile(
     r"(?i)(bearer |basic |eyj|sk_|pk_|api_|ghp_|gho_|ghs_|glpat-|xox[bpsar]-|AKIA)"
 )
 _SENSITIVE_FIELD_RE = re.compile(
-    r"(?i)(password|passwd|secret|token|credential|api_?key|private_?key"
-    r"|access_?token|refresh_?token|client_?secret|auth_key|auth_token|ssn|social_?security)"
+    r"(?i)(password|passwd|(^|_)secret(_|$)|credential|api_?key|private_?key"
+    r"|access_?token|refresh_?token|client_?secret|\bauth\b|auth_"
+    r"|(^|_)token(_|$)|ssn|social_?security)"
 )
 _MAX_EXAMPLE_LEN = 200
 _FILE_SENTINEL = "__file__"

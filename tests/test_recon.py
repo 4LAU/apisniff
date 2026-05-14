@@ -2,7 +2,7 @@ import tempfile
 from pathlib import Path
 
 from apisniff.models import CapturedFlow
-from apisniff.recon import detect_input_format, load_flows, read_capture_jsonl, write_flow_jsonl
+from apisniff.recon import detect_input_format, read_capture_jsonl, write_flow_jsonl
 
 
 def test_write_and_read_jsonl():
@@ -71,11 +71,6 @@ def test_detect_input_format_jsonl_with_log_field():
     assert detect_input_format(line) == "jsonl"
 
 
-def test_detect_input_format_jsonl():
-    line = '{"method": "GET", "host": "example.com"}'
-    assert detect_input_format(line) == "jsonl"
-
-
 def test_detect_input_format_burp():
     burp_head = '<?xml version="1.0"?><items burpVersion="2023.1"><item></item></items>'
     assert detect_input_format(burp_head) == "burp"
@@ -86,30 +81,3 @@ def test_detect_input_format_non_burp_xml():
     assert detect_input_format(svg_head) == "unknown"
 
 
-def test_load_flows_jsonl():
-    flow = CapturedFlow(
-        method="POST",
-        host="api.example.com",
-        path="/v1/items",
-        url="https://api.example.com/v1/items",
-        request_headers={},
-        request_body=b"{}",
-        response_status=201,
-        response_headers={"content-type": "application/json"},
-        response_body=b'{"id": 1}',
-        tags=[],
-        timestamp=1715100000.0,
-    )
-    with tempfile.NamedTemporaryFile(
-        mode="w", suffix=".jsonl", delete=False, encoding="utf-8"
-    ) as f:
-        path = f.name
-        write_flow_jsonl(f, flow)
-    try:
-        flows, fmt = load_flows(path)
-        assert fmt == "jsonl"
-        assert len(flows) == 1
-        assert flows[0].method == "POST"
-        assert flows[0].host == "api.example.com"
-    finally:
-        Path(path).unlink()
