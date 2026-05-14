@@ -7,136 +7,109 @@ One tool for API recon: preflight defenses, capture real traffic, extract a usab
 [![Python](https://img.shields.io/pypi/pyversions/apisniff)](https://pypi.org/project/apisniff/)
 [![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
 
+## What you get
+
+- **Defense detection** — probe a URL in 10 seconds, classify 25+ vendor products (Cloudflare, Akamai, DataDome, PerimeterX, Imperva, Kasada, and more)
+- **Live traffic capture** — browse a site through a local proxy, filter noise automatically, keep only API calls
+- **Offline import** — bring your own HAR file or Burp Suite export
+- **OpenAPI generation** — reverse-engineer a spec from captured traffic with schema inference and example values
+- **Drift detection** — replay captured calls against the live API and see what changed
+- **Safe sharing** — export derived artifacts only, no raw traffic or credentials
+
 ## Install
 
 ```bash
 pip install apisniff
 # or
 pipx install apisniff
+# or
+uv tool install apisniff
+```
+
+Requires Python 3.12+.
+
+## Quick Start
+
+```bash
+# Check what defenses a site has
+apisniff probe example.com
+
+# Capture live traffic (opens Chrome + proxy)
+apisniff recon example.com
+
+# Generate an API spec from the capture
+apisniff spec example.com -o spec.yaml
+
+# Replay captured calls to detect drift
+apisniff replay example.com
+
+# Export a safe, shareable summary
+apisniff share example.com
 ```
 
 ## Commands
 
-### `probe` — Defense preflight
+| Command | Purpose | Docs |
+|---------|---------|------|
+| [`probe`](docs/commands/probe.md) | Defense preflight — assess defenses, detect vendors, check rate limits | [Reference →](docs/commands/probe.md) |
+| [`recon`](docs/commands/recon.md) | Capture + classify — browse through proxy, filter noise, generate report | [Reference →](docs/commands/recon.md) |
+| [`analyze`](docs/commands/analyze.md) | Offline analysis — import HAR, Burp XML, or JSONL captures | [Reference →](docs/commands/analyze.md) |
+| [`replay`](docs/commands/replay.md) | Replay captured calls and detect API drift | [Reference →](docs/commands/replay.md) |
+| [`spec`](docs/commands/spec.md) | Generate OpenAPI 3.0.3 from captured traffic | [Reference →](docs/commands/spec.md) |
+| [`share`](docs/commands/share.md) | Export shareable summary — no raw traffic, no credentials | [Reference →](docs/commands/share.md) |
 
-What kind of surface am I dealing with? 10 seconds, zero configuration.
+Every command supports `--help` for full flag documentation. See the [CLI spec](docs/spec.md) for output format contracts and conventions.
 
-```bash
-apisniff probe redfin.com
-```
+## Guides
 
-Sends three parallel HTTP requests with different client profiles (bare Python, Chrome TLS impersonation, Chrome TLS + bot UA) and classifies defenses from the differential response. Detects 25 vendors including Cloudflare, Akamai, DataDome, PerimeterX, Imperva, Kasada, and more.
-
-```bash
-# JSON output for scripting
-apisniff probe redfin.com --json
-
-# Route through a proxy
-apisniff probe redfin.com --proxy socks5://127.0.0.1:1080
-
-# Include auth headers
-apisniff probe api.example.com --header "Authorization:Bearer token123"
-
-# Skip GraphQL detection
-apisniff probe example.com --skip-graphql
-```
-
-### `recon` — Capture + classify
-
-Browse a site through a local proxy. The tool classifies every request in real-time.
-
-```bash
-apisniff recon example.com
-```
-
-Launches mitmproxy on `127.0.0.1:8080` and opens Chrome with an isolated profile pointed at the proxy. Browse the site normally — the tool filters noise (ads, analytics, telemetry, third-party domains), detects antibot JS, and writes classified flows to a JSONL file. Press Ctrl+C to stop.
-
-### `spec` — Extract API structure
-
-Generate an OpenAPI 3.x spec from captured traffic.
-
-```bash
-# From latest capture
-apisniff spec example.com
-
-# From a specific file
-apisniff spec example.com --input capture.jsonl
-
-# From a HAR file
-apisniff spec example.com --input traffic.har --format json
-
-# Write to file
-apisniff spec example.com --output spec.yaml
-```
-
-### `share` — Export shareable summary
-
-Create a directory of derived artifacts that can be safely shared. Contains an OpenAPI spec, endpoint inventory, session metadata, and redacted report — no raw traffic.
-
-```bash
-# Share the latest capture for a domain
-apisniff share example.com
-
-# Share a specific bundle
-apisniff share ~/apisniff-captures/example-com_2026-05-12_14-30
-
-# Specify output location
-apisniff share example.com --output ./for-teammate/
-```
-
-Output files:
-- `spec.yaml` — OpenAPI 3.0.3 spec generated from captured traffic
-- `inventory.json` — endpoint summary (method, path, status codes, content types, counts)
-- `session.json` — capture metadata (domain, duration, flow counts)
-- `report.md` — recon report (vendors, auth patterns, cookie names — no values)
-- `graphql-schema.json` — GraphQL introspection result (if captured)
+- [Getting started](docs/guides/getting-started.md) — install to API map in 5 minutes
+- [Workflow recipes](docs/guides/workflows.md) — real tasks: map an API, check for drift, compare defenses
+- [Capture formats](docs/guides/capture-formats.md) — HAR, Burp XML, JSONL explained
 
 ## Important Warnings
 
 ### Your IP address is exposed
 
-**This tool sends real HTTP requests from your IP address to the target site.** Aggressive or repeated probing can get your IP rate-limited or blocked by the target. `--probe-rate` is opt-in because it fires 20 rapid requests — use it deliberately. If you don't want to expose your home or office IP, route through a proxy with `--proxy`.
+**This tool sends real HTTP requests from your IP.** Aggressive or repeated probing can get you rate-limited or blocked. `--probe-rate` fires 20 rapid requests — use deliberately. Route through `--proxy` if you don't want to expose your IP.
 
-Results also reflect your current IP's reputation. Residential IPs typically see fewer challenges than datacenter/cloud IPs. Running from AWS/GCP/VPS will trigger stricter defenses. Use `--proxy` to test from different IP types and compare results.
+Results reflect your IP's reputation. Residential IPs see fewer challenges than datacenter/cloud IPs. Use `--proxy` to compare results from different vantage points.
 
 ### Capture files contain sensitive data
 
-The `recon` and `analyze` commands capture **full HTTP traffic** including cookies, auth tokens, API keys, session data, and form submissions. Raw capture bundles are stored locally in `~/apisniff-captures/` with owner-only permissions. **Raw bundles are private by design** — they are never safe to share, commit to git, or upload.
+`recon` and `analyze` capture **full HTTP traffic** including cookies, auth tokens, API keys, and form submissions. Raw bundles are stored locally with owner-only permissions and are **never safe to share, commit, or upload**.
 
-To create a shareable summary, use the `share` command:
-
-```bash
-# Export derived artifacts from the latest capture
-apisniff share example.com
-
-# From a specific bundle directory
-apisniff share ~/apisniff-captures/example-com_2026-05-12_14-30
-
-# Specify output location
-apisniff share example.com --output ./to-share/
-```
-
-The shared output contains only derived artifacts — an OpenAPI spec, endpoint inventory, session metadata, and a redacted report. **No raw request/response bodies, no headers, no cookies, no query parameter values.** The output is intentionally non-replayable.
+Use `apisniff share` to create a safe export with only derived artifacts.
 
 ### About the mitmproxy certificate
 
-The `recon` command requires trusting mitmproxy's CA certificate (one-time setup via macOS Keychain). This certificate allows the local proxy to inspect HTTPS traffic. It is safe because:
-
-- **The proxy is entirely local.** It runs on `127.0.0.1:8080` on your machine. Only traffic from applications explicitly pointed at port 8080 goes through the proxy. Regular browsing, apps, and system traffic are completely unaffected.
-- **The certificate is inert when the proxy is off.** With the proxy stopped, the certificate does nothing.
-- **mitmproxy is an industry-standard tool.** 43,000+ GitHub stars, maintained since 2012, used by security professionals and development teams worldwide for traffic analysis and testing.
+`recon` requires trusting mitmproxy's CA certificate (one-time macOS Keychain setup). The proxy runs locally on `127.0.0.1` — only traffic explicitly routed through port 8080 is intercepted. Regular browsing and apps are unaffected.
 
 ## What to do with the spec
 
 ```bash
-# Generate a Python client
+# Generate a client library
 openapi-generator generate -i spec.yaml -g python -o client/
 
-# Import into Postman
-# File → Import → select spec.yaml
+# Import into Postman: File → Import → select spec.yaml
 
 # Feed to an LLM
 cat spec.yaml | llm "write a Python client for this API"
+```
+
+## Development
+
+```bash
+git clone https://github.com/aaronlau/apisniff.git
+cd apisniff
+uv sync --dev
+uv run pytest tests/ -v
+uv run ruff check .
+```
+
+To regenerate command reference docs after changing CLI flags:
+
+```bash
+uv run python scripts/generate_command_docs.py
 ```
 
 ## License
