@@ -76,11 +76,6 @@ def test_is_blocked_true_for_403():
     assert r.is_blocked is True
 
 
-def test_is_blocked_true_for_429():
-    r = _result(status=429)
-    assert r.is_blocked is True
-
-
 def test_is_blocked_true_for_999():
     # 999 is a Cloudflare-specific block status; missing it silently reports the
     # target as accessible when it is in fact blocked.

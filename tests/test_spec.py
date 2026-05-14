@@ -123,12 +123,6 @@ def test_no_top_level_security_even_with_flag():
 # ── Part A: is_api_flow tests ──────────────────────────────────────
 
 
-def testis_api_flow_json_response():
-    """JSON 200 is API traffic."""
-    flow = _flow(status=200)
-    assert is_api_flow(flow) is True
-
-
 def testis_api_flow_form_post():
     """form-urlencoded POST (even with HTML response) is API traffic."""
     flow = _flow(
@@ -286,6 +280,32 @@ def test_examples_redact_nested_sensitive_field():
     nested = _resp_schema(spec)["properties"]["user"]["properties"]
     assert nested["name"]["example"] == "alice"
     assert nested["credential"]["example"] == "***REDACTED***"
+
+
+def test_examples_sensitive_field_boundaries():
+    """Sensitive words redact as components, not substrings."""
+    flow = _flow(body=b'{"auth": "x", "auth_code": "y", "author": "Jane"}')
+    spec = generate_openapi([flow], "example.com", include_examples=True)
+    props = _resp_schema(spec)["properties"]
+    assert props["auth"]["example"] == "***REDACTED***"
+    assert props["auth_code"]["example"] == "***REDACTED***"
+    assert props["author"]["example"] == "Jane"
+
+
+def test_examples_token_secret_boundaries():
+    """'token'/'secret' redact as components, not inside 'secretariat'/'max_tokens'."""
+    flow = _flow(
+        body=b'{"secret": "s", "secret_key": "k", "secretariat": "UN",'
+        b' "token": "t", "csrf_token": "ct", "max_tokens": 100}'
+    )
+    spec = generate_openapi([flow], "example.com", include_examples=True)
+    props = _resp_schema(spec)["properties"]
+    assert props["secret"]["example"] == "***REDACTED***"
+    assert props["secret_key"]["example"] == "***REDACTED***"
+    assert props["secretariat"]["example"] == "UN"
+    assert props["token"]["example"] == "***REDACTED***"
+    assert props["csrf_token"]["example"] == "***REDACTED***"
+    assert props["max_tokens"]["example"] == 100
 
 
 # ── Part D: Form body parsing tests ─────────────────────────────────

@@ -17,14 +17,18 @@ Usage: apisniff spec [OPTIONS] DOMAIN
 │ *    domain      TEXT  Domain to generate spec for [required]                │
 ╰──────────────────────────────────────────────────────────────────────────────╯
 ╭─ Options ────────────────────────────────────────────────────────────────────╮
-│ --input        -i      TEXT         Input file (JSONL, HAR, or mitmproxy     │
-│                                     flow)                                    │
-│ --format       -f      [yaml|json]  Output format: yaml or json              │
-│                                     [default: yaml]                          │
-│ --output       -o      TEXT         Output file path                         │
-│ --no-examples                       Omit sample response values from         │
-│                                     generated spec                           │
-│ --help                              Show this message and exit.              │
+│ --input                      -i      TEXT         Input file (JSONL, HAR, or │
+│                                                   mitmproxy flow)            │
+│ --format                     -f      [yaml|json]  Output format: yaml or     │
+│                                                   json                       │
+│                                                   [default: yaml]            │
+│ --output                     -o      TEXT         Output file path           │
+│ --no-infer-security-schemes                       Keep observed auth in      │
+│                                                   extensions only            │
+│ --no-examples                                     Omit sample response       │
+│                                                   values from generated spec │
+│ --help                                            Show this message and      │
+│                                                   exit.                      │
 ╰──────────────────────────────────────────────────────────────────────────────╯
 ```
 
