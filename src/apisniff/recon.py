@@ -11,6 +11,7 @@ from collections import Counter
 from dataclasses import dataclass
 from datetime import UTC, datetime
 from pathlib import Path
+from urllib.parse import urlparse
 
 from rich.console import Console
 
@@ -100,12 +101,22 @@ def _post_process_bundle(
     )
 
 
+def _normalize_target(raw: str) -> tuple[str, str]:
+    """Return (bare_domain, launch_url) from user input that may include a scheme or path."""
+    if raw.startswith(("http://", "https://")):
+        parsed = urlparse(raw)
+        domain = parsed.netloc or parsed.path.split("/")[0]
+        return domain, raw
+    return raw, f"https://{raw}"
+
+
 def run_recon(
     domain: str,
     port: int = 8080,
     proxy: str | None = None,
     json_output: bool = False,
 ) -> None:
+    domain, launch_url = _normalize_target(domain)
     CAPTURES_DIR.mkdir(parents=True, exist_ok=True)
     CAPTURES_DIR.chmod(0o700)
     ts = datetime.now(UTC).strftime("%Y-%m-%d_%H-%M")
@@ -136,7 +147,7 @@ def run_recon(
         f"--user-data-dir={chrome_profile}",
         "--no-first-run",
         "--no-default-browser-check",
-        f"https://{domain}",
+        launch_url,
     ]
 
     stderr.print(f"\n[bold]apisniff recon[/bold] — {domain}")

@@ -1,8 +1,15 @@
 import tempfile
 from pathlib import Path
 
+import pytest
+
 from apisniff.models import CapturedFlow
-from apisniff.recon import detect_input_format, read_capture_jsonl, write_flow_jsonl
+from apisniff.recon import (
+    _normalize_target,
+    detect_input_format,
+    read_capture_jsonl,
+    write_flow_jsonl,
+)
 
 
 def test_write_and_read_jsonl():
@@ -79,5 +86,17 @@ def test_detect_input_format_burp():
 def test_detect_input_format_non_burp_xml():
     svg_head = '<?xml version="1.0"?><svg xmlns="http://www.w3.org/2000/svg"></svg>'
     assert detect_input_format(svg_head) == "unknown"
+
+
+@pytest.mark.parametrize("raw, expected_domain, expected_url", [
+    ("example.com", "example.com", "https://example.com"),
+    ("https://example.com/path", "example.com", "https://example.com/path"),
+    ("http://example.com/path", "example.com", "http://example.com/path"),
+    ("https://www.t-mobile.com/guest-pay", "www.t-mobile.com", "https://www.t-mobile.com/guest-pay"),
+])
+def test_normalize_target(raw, expected_domain, expected_url):
+    domain, url = _normalize_target(raw)
+    assert domain == expected_domain
+    assert url == expected_url
 
 
