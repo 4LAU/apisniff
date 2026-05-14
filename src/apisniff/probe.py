@@ -14,6 +14,7 @@ from apisniff.models import (
     ProbeResult,
     ProbeVerdict,
     RateLimitResult,
+    VendorMatch,
 )
 from apisniff.vendors import load_signatures, match_vendors
 
@@ -116,6 +117,7 @@ async def _probe_curl_cffi(
 
 def classify_results(
     results: dict[str, ProbeResult],
+    vendors: list[VendorMatch] | None = None,
 ) -> tuple[ProbeVerdict, str]:
     naked = results["naked"]
     impersonated = results["impersonated"]
@@ -128,6 +130,16 @@ def classify_results(
     all_challenge = naked.is_challenge and impersonated.is_challenge and tls_only.is_challenge
 
     if all_pass:
+        if vendors:
+            names = ", ".join(
+                v.vendor.replace("_", " ").title() for v in vendors
+            )
+            return (
+                ProbeVerdict.NO_PROTECTION,
+                f"{names} detected but not enforcing. "
+                "Raw HTTP requests sufficient, but WAF rules may activate "
+                "on unusual patterns or higher volume.",
+            )
         return (
             ProbeVerdict.NO_PROTECTION,
             "No active defenses detected. Raw HTTP requests sufficient.",
@@ -356,10 +368,10 @@ async def run_probes(
         "tls_only": tls_only,
     }
 
-    verdict, recommendation = classify_results(results)
-
     sigs = load_signatures()
     vendors = match_vendors(list(results.values()), sigs)
+
+    verdict, recommendation = classify_results(results, vendors)
 
     graphql_endpoints: list[str] = []
     graphql_introspection = False

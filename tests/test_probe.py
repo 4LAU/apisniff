@@ -3,7 +3,7 @@ from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
-from apisniff.models import ProbeResult, ProbeVerdict
+from apisniff.models import ProbeResult, ProbeVerdict, VendorMatch
 from apisniff.probe import _probe_curl_cffi, classify_results, fetch_graphql_schema, run_probes
 
 
@@ -53,7 +53,20 @@ def test_classify_all_200():
     }
     verdict, recommendation = classify_results(results)
     assert verdict == ProbeVerdict.NO_PROTECTION
-    assert "raw HTTP" in recommendation.lower() or "no active" in recommendation.lower()
+    assert "no active" in recommendation.lower()
+
+
+def test_classify_all_200_with_vendors():
+    results = {
+        "naked": _result("naked"),
+        "impersonated": _result("impersonated"),
+        "tls_only": _result("tls_only"),
+    }
+    vendors = [VendorMatch(vendor="akamai", confidence="medium", signals=["header_present:akamai-grn"])]
+    verdict, recommendation = classify_results(results, vendors)
+    assert verdict == ProbeVerdict.NO_PROTECTION
+    assert "akamai" in recommendation.lower()
+    assert "not enforcing" in recommendation.lower()
 
 
 def test_classify_naked_blocked_others_pass():
