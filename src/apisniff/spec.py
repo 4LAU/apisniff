@@ -13,7 +13,7 @@ from rich.console import Console
 
 from apisniff.auth import AuthPattern, detect_auth
 from apisniff.bundle import load_flows, read_capture_jsonl
-from apisniff.models import CapturedFlow, normalize_path
+from apisniff.models import CapturedFlow, get_header, normalize_path
 
 stderr = Console(stderr=True)
 
@@ -24,7 +24,7 @@ _SECRET_RE = re.compile(
 )
 _SENSITIVE_FIELD_RE = re.compile(
     r"(?i)(password|passwd|secret|token|credential|api_?key|private_?key"
-    r"|access_?token|refresh_?token|client_?secret|auth|ssn|social_?security)"
+    r"|access_?token|refresh_?token|client_?secret|auth_key|auth_token|ssn|social_?security)"
 )
 _MAX_EXAMPLE_LEN = 200
 _FILE_SENTINEL = "__file__"
@@ -36,20 +36,11 @@ _API_CONTENT_TYPES = frozenset({
 })
 
 
-def _get_header_ci(headers: dict[str, str], name: str) -> str:
-    """Case-insensitive header lookup. Returns '' if not found."""
-    lower = name.lower()
-    for k, v in headers.items():
-        if k.lower() == lower:
-            return v
-    return ""
-
-
 def is_api_flow(flow: CapturedFlow) -> bool:
     """Return True if flow is API traffic worth including in a spec."""
     if "json" in flow.content_type:
         return True
-    req_ct = _get_header_ci(flow.request_headers, "content-type").split(";")[0].strip().lower()
+    req_ct = get_header(flow.request_headers, "content-type").split(";")[0].strip().lower()
     return req_ct in _API_CONTENT_TYPES
 
 
@@ -275,7 +266,7 @@ def generate_openapi(
             for flow in group:
                 if not flow.request_body:
                     continue
-                req_ct_raw = _get_header_ci(flow.request_headers, "content-type")
+                req_ct_raw = get_header(flow.request_headers, "content-type")
                 req_ct = req_ct_raw.split(";")[0].strip().lower()
 
                 if req_ct == "application/json":

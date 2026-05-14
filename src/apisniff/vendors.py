@@ -4,13 +4,9 @@ import json
 import re
 from pathlib import Path
 
-from apisniff.models import CapturedFlow, ProbeResult, VendorMatch
+from apisniff.models import COOKIE_ATTRS, CapturedFlow, ProbeResult, VendorMatch
 
 _SIGNATURES_PATH = Path(__file__).parent / "signatures" / "vendors.json"
-
-_COOKIE_ATTRS = frozenset({
-    "expires", "max-age", "domain", "path", "samesite", "secure", "httponly",
-})
 
 _SPECIFIC_VENDORS = frozenset({"datadome", "perimeterx", "imperva", "akamai", "cloudflare"})
 
@@ -42,11 +38,11 @@ def _extract_cookies(headers: dict[str, str]) -> set[str]:
             if not part or "=" not in part:
                 continue
             candidate = part.split("=", 1)[0].strip().lower()
-            if candidate in _COOKIE_ATTRS:
+            if candidate in COOKIE_ATTRS:
                 continue
             if ";" in candidate:
                 candidate = candidate.rsplit(";", 1)[-1].strip()
-                if not candidate or candidate in _COOKIE_ATTRS:
+                if not candidate or candidate in COOKIE_ATTRS:
                     continue
             if candidate:
                 names.add(candidate)
