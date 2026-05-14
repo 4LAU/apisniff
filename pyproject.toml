@@ -37,8 +37,8 @@ dependencies = [
 apisniff = "apisniff.cli:app"
 
 [project.urls]
-Homepage = "https://github.com/aaronlau/apisniff"
-Issues = "https://github.com/aaronlau/apisniff/issues"
+Homepage = "https://github.com/4LAU/apisniff"
+Issues = "https://github.com/4LAU/apisniff/issues"
 
 [dependency-groups]
 dev = [
