@@ -19,6 +19,8 @@ One tool for API recon: preflight defenses, capture real traffic, extract a usab
 ## Install
 
 ```bash
+brew tap 4LAU/tap && brew install apisniff
+# or
 pip install apisniff
 # or
 pipx install apisniff
