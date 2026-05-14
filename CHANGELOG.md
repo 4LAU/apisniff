@@ -1,5 +1,35 @@
 # Changelog
 
+## [Unreleased]
+
+### Added
+- `replay` command — replay captured API calls against live endpoints and detect drift (match/drift/auth_expired/blocked)
+- `analyze` command — offline import and analysis for HAR, Burp Suite XML, and JSONL captures
+- `share` command — export derived artifacts (spec, inventory, report) without raw traffic or credentials
+- `--impersonate` flag on `probe` and `replay` — TLS client profile selection (chrome, safari, firefox)
+- `--probe-rate` flag — rate limit detection via 429 responses and silent throttling
+- `--infer-security-schemes` flag — promote observed auth patterns to formal OpenAPI `securitySchemes`
+- `--examples` flag — include example values from captured data with auto-redaction
+- Spec aggregation: query parameters, example values, form bodies, and multi-response merging
+- Burp Suite XML import adapter
+- GraphQL introspection download with schema sidecar file
+- Auth fingerprinting and RFC 6265 cookie-jar export
+- Recon session report with flow stats, detected vendors, auth patterns, cookies, and endpoint inventory
+- Bundle directory permissions restricted to owner-only (0o700)
+- Documentation: CLI specification, auto-generated command reference, getting started guide, workflow recipes, and capture formats guide
+
+### Changed
+- stdout/stderr discipline: human-readable output goes to stderr, machine-readable data to stdout
+- Classifier now returns a structured `ClassifyResult` with drop categories
+- Bundle I/O extracted from `recon.py` into a dedicated `bundle` module
+- Domain extraction replaced with `tldextract`
+
+### Fixed
+- Cookie values redacted in reports and `share` output (names and domains only)
+- HAR adapter: base64-encoded bodies, timestamps, query strings, and multi-value headers
+- Classifier query-string false positives
+- Set-Cookie attribute pollution and multi-value header collapse
+
 ## [0.1.0] — 2026-05-08
 
 ### Added
