@@ -228,6 +228,8 @@ def _parse_multipart(body: bytes, content_type: str) -> dict | None:
         part = part.strip()
         if part.lower().startswith("boundary="):
             boundary = part[len("boundary="):]
+            if boundary.startswith('"') and boundary.endswith('"'):
+                boundary = boundary[1:-1]
             break
     if not boundary:
         return None
@@ -248,7 +250,7 @@ def _parse_multipart(body: bytes, content_type: str) -> dict | None:
             header_body = segment.split("\r\n\r\n", 1)
             if len(header_body) < 2:
                 header_body = segment.split("\n\n", 1)
-            val = header_body[1].strip().rstrip("-") if len(header_body) >= 2 else ""
+            val = header_body[1].strip() if len(header_body) >= 2 else ""
             result[field_name] = val
     return result if result else None
 
@@ -278,6 +280,8 @@ def _merge_schemas(existing: dict, new: dict) -> dict:
 
     if e_type == "object":
         result = dict(existing)
+        if existing.get("nullable") or new.get("nullable"):
+            result["nullable"] = True
         if "additionalProperties" in existing or "additionalProperties" in new:
             result["additionalProperties"] = _merge_additional_properties(
                 existing.get("additionalProperties", {}),
@@ -300,15 +304,19 @@ def _merge_schemas(existing: dict, new: dict) -> dict:
         e_items = existing.get("items", {})
         n_items = new.get("items", {})
         result = dict(existing)
+        if existing.get("nullable") or new.get("nullable"):
+            result["nullable"] = True
         if not e_items and n_items:
             result["items"] = n_items
             return result
         if e_items and n_items:
             result["items"] = _merge_schemas(e_items, n_items)
             return result
-        return existing
+        return result
 
     result = dict(existing)
+    if existing.get("nullable") or new.get("nullable"):
+        result["nullable"] = True
     _merge_examples(existing, new, result)
     if existing.get("x-apisniff-truncated") or new.get("x-apisniff-truncated"):
         result["x-apisniff-truncated"] = True

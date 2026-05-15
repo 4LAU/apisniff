@@ -599,6 +599,18 @@ def test_generated_spec_order_is_deterministic_for_flow_order():
     assert spec_a == spec_b
 
 
+def test_generated_spec_nullable_fields_deterministic_for_flow_order():
+    f1 = _flow(body=b'{"name": null, "id": 1}')
+    f2 = _flow(body=b'{"name": "Alice", "id": 2}')
+
+    spec_a = generate_openapi([f1, f2], "example.com")
+    spec_b = generate_openapi([f2, f1], "example.com")
+
+    assert spec_a == spec_b
+    schema = _resp_schema(spec_a)
+    assert schema["properties"]["name"]["nullable"] is True
+
+
 def test_generated_spec_with_examples_is_deterministic_for_flow_order():
     flows = [
         _flow(body=b'{"id": 2, "name": "Bob"}'),
