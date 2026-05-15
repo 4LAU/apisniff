@@ -92,6 +92,14 @@ HTTPS is encrypted between the browser and the origin server, so a proxy cannot 
 
 Treat the certificate like sensitive local configuration. A trusted CA can decrypt HTTPS traffic from clients that trust it and send traffic through the proxy, so only install the mitmproxy CA on machines and browser profiles you control. apisniff uses a local proxy on `127.0.0.1` and launches Chrome with `--proxy-server=http://127.0.0.1:8080`; regular browsing and apps are unaffected unless you route them through that proxy. If Chrome shows certificate warnings, start `apisniff recon`, open `http://mitm.it` in the proxied Chrome window, and follow mitmproxy's platform-specific certificate instructions.
 
+### What recon can see
+
+`apisniff recon` only records traffic from clients that are explicitly sent through its local proxy. By default, that means the Chrome window apisniff launches with `--proxy-server=http://127.0.0.1:8080`.
+
+Other apps, other browser windows, background services, and normal device traffic are not routed through apisniff unless you configure them to use that same local proxy. apisniff does not turn on device-wide network capture, install a VPN, or monitor traffic outside the local proxy session.
+
+By default, `recon` starts mitmproxy on local port `8080`; use `--port` to choose a different port. Press **Ctrl+C** to end the session. apisniff sends SIGINT to both mitmproxy and the Chrome instance it launched, then releases the local proxy port. If you see a port-in-use error, a previous `recon` session is probably still running.
+
 More detail: [mitmproxy certificate docs](https://docs.mitmproxy.org/stable/concepts/certificates/) and [how mitmproxy works](https://docs.mitmproxy.org/stable/concepts/how-mitmproxy-works/). For questions about mitmproxy itself, see the [mitmproxy GitHub repository](https://github.com/mitmproxy/mitmproxy).
 
 ## What to do with the spec
