@@ -1,8 +1,9 @@
 from __future__ import annotations
 
 import base64
-import xml.etree.ElementTree as ET
 from urllib.parse import urlparse
+
+import defusedxml.ElementTree as ET
 
 from apisniff.adapters import join_header_values
 from apisniff.models import CapturedFlow
@@ -62,9 +63,7 @@ def _split_http_message(raw: bytes) -> tuple[dict[str, str], bytes]:
 
 def burp_to_flows(xml_text: str) -> list[CapturedFlow]:
     """Parse a Burp Suite XML export and return a list of CapturedFlow objects."""
-    if "<!DOCTYPE" in xml_text or "<!ENTITY" in xml_text:
-        raise ValueError("XML contains DTD/entity declarations — refusing to parse (XXE risk)")
-    root = ET.fromstring(xml_text)  # noqa: S314 — DTD blocked above
+    root = ET.fromstring(xml_text)
     flows: list[CapturedFlow] = []
 
     for item in root.iter("item"):

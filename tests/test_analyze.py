@@ -8,6 +8,7 @@ from pathlib import Path
 import pytest
 from typer.testing import CliRunner
 
+from apisniff.bundle import MAX_IMPORT_BYTES
 from apisniff.cli import app
 from apisniff.models import CapturedFlow
 from apisniff.recon import run_analyze, write_flow_jsonl
@@ -203,3 +204,14 @@ def test_cli_analyze_command(tmp_path: Path) -> None:
     assert (bundle_dir / "session.json").exists()
     assert (bundle_dir / "report.md").exists()
 
+
+def test_cli_analyze_oversized_input_exits_without_traceback(tmp_path: Path) -> None:
+    har_file = tmp_path / "large.har"
+    with har_file.open("wb") as f:
+        f.truncate(MAX_IMPORT_BYTES + 1)
+
+    result = runner.invoke(app, ["analyze", str(har_file), "--domain", "example.com"])
+
+    assert result.exit_code == 1
+    assert "Input file is too large" in result.output
+    assert "Traceback" not in result.output

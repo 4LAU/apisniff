@@ -1,9 +1,12 @@
 # tests/test_cli.py
+from pathlib import Path
+
 import pytest
 import typer
 from typer.testing import CliRunner
 
 from apisniff import __version__
+from apisniff.bundle import MAX_IMPORT_BYTES
 from apisniff.cli import _parse_header_args, _parse_probe_target, app
 
 runner = CliRunner()
@@ -45,3 +48,15 @@ def test_parse_probe_target_rate_probe():
 def test_parse_probe_target_rate_requires_url():
     with pytest.raises(typer.BadParameter, match="apisniff probe rate URL"):
         _parse_probe_target(["rate"])
+
+
+def test_spec_oversized_input_exits_without_traceback(tmp_path: Path):
+    input_file = tmp_path / "large.har"
+    with input_file.open("wb") as f:
+        f.truncate(MAX_IMPORT_BYTES + 1)
+
+    result = runner.invoke(app, ["spec", "example.com", "--input", str(input_file)])
+
+    assert result.exit_code == 1
+    assert "Input file is too large" in result.output
+    assert "Traceback" not in result.output

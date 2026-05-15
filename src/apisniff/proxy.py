@@ -19,7 +19,9 @@ class ApisniffAddon:
     def __init__(self, target_domain: str, output_path: str) -> None:
         self.classifier = Classifier(target_domain)
         self.output_path = Path(output_path)
-        self.output_file = self.output_path.open("a")
+        fd = os.open(self.output_path, os.O_WRONLY | os.O_CREAT | os.O_APPEND, 0o600)
+        self.output_file = os.fdopen(fd, "a")
+        self.output_path.chmod(0o600)
         self.domain = target_domain
         self.started_at = time.time()
         self.total_flows = 0
@@ -72,7 +74,7 @@ class ApisniffAddon:
 
 addons = [
     ApisniffAddon(
-        target_domain=os.environ.get("APISNIFF_TARGET", ""),
-        output_path=os.environ.get("APISNIFF_OUTPUT", "/tmp/apisniff.jsonl"),
+        target_domain=os.environ["APISNIFF_TARGET"],
+        output_path=os.environ["APISNIFF_OUTPUT"],
     )
 ]

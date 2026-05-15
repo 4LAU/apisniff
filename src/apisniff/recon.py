@@ -3,9 +3,11 @@ from __future__ import annotations
 
 import json
 import os
+import shutil
 import signal
 import subprocess
 import sys
+import tempfile
 import time
 from collections import Counter
 from dataclasses import dataclass
@@ -193,16 +195,6 @@ def run_recon(
     if proxy:
         cmd.extend(["--mode", f"upstream:{proxy}"])
 
-    chrome_profile = Path(f"/tmp/apisniff-chrome-{port}")
-    chrome_cmd = [
-        "/Applications/Google Chrome.app/Contents/MacOS/Google Chrome",
-        f"--proxy-server=http://127.0.0.1:{port}",
-        f"--user-data-dir={chrome_profile}",
-        "--no-first-run",
-        "--no-default-browser-check",
-        launch_url,
-    ]
-
     stderr.print(f"\n[bold]apisniff recon[/bold] — {domain}")
     stderr.print(f"  Proxy: 127.0.0.1:{port}")
     stderr.print(f"  Bundle: {bundle_dir}")
@@ -211,44 +203,68 @@ def run_recon(
     proxy_proc = subprocess.Popen(
         cmd, env=env, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
     )
-    time.sleep(1)
-
-    if proxy_proc.poll() is not None:
-        stderr.print(
-            f"[red]mitmproxy exited with code {proxy_proc.returncode}[/red]"
-        )
-        return
-
-    if not _is_ca_trusted():
-        _install_ca_trust(stderr)
-
+    chrome_profile = None
+    chrome_proc = None
     try:
-        chrome_proc = subprocess.Popen(
-            chrome_cmd,
-            stdout=subprocess.DEVNULL,
-            stderr=subprocess.DEVNULL,
-        )
-    except FileNotFoundError:
-        stderr.print("[yellow]Chrome not found — open a browser manually[/yellow]")
-        stderr.print(f"  Set proxy to http://127.0.0.1:{port}")
-        chrome_proc = None
+        time.sleep(1)
 
-    try:
-        proxy_proc.wait()
-    except KeyboardInterrupt:
-        stderr.print("\n[yellow]Stopping capture...[/yellow]")
-        proxy_proc.send_signal(signal.SIGINT)
-        if chrome_proc:
-            chrome_proc.terminate()
+        if proxy_proc.poll() is not None:
+            stderr.print(
+                f"[red]mitmproxy exited with code {proxy_proc.returncode}[/red]"
+            )
+            return
+
+        if not _is_ca_trusted():
+            _install_ca_trust(stderr)
+
+        chrome_profile = Path(tempfile.mkdtemp(prefix="apisniff-chrome-"))
+        chrome_cmd = [
+            "/Applications/Google Chrome.app/Contents/MacOS/Google Chrome",
+            f"--proxy-server=http://127.0.0.1:{port}",
+            f"--user-data-dir={chrome_profile}",
+            "--no-first-run",
+            "--no-default-browser-check",
+            launch_url,
+        ]
+
         try:
-            proxy_proc.wait(timeout=5)
-        except subprocess.TimeoutExpired:
-            proxy_proc.kill()
+            chrome_proc = subprocess.Popen(
+                chrome_cmd,
+                stdout=subprocess.DEVNULL,
+                stderr=subprocess.DEVNULL,
+            )
+        except FileNotFoundError:
+            stderr.print("[yellow]Chrome not found — open a browser manually[/yellow]")
+            stderr.print(f"  Set proxy to http://127.0.0.1:{port}")
+
+        try:
+            proxy_proc.wait()
+        except KeyboardInterrupt:
+            stderr.print("\n[yellow]Stopping capture...[/yellow]")
+            proxy_proc.send_signal(signal.SIGINT)
+            try:
+                proxy_proc.wait(timeout=5)
+            except subprocess.TimeoutExpired:
+                proxy_proc.kill()
+                proxy_proc.wait()
+    finally:
+        if proxy_proc.poll() is None:
+            proxy_proc.send_signal(signal.SIGINT)
+            try:
+                proxy_proc.wait(timeout=5)
+            except subprocess.TimeoutExpired:
+                proxy_proc.kill()
+                proxy_proc.wait()
         if chrome_proc:
+            if chrome_proc.poll() is None:
+                chrome_proc.terminate()
             try:
                 chrome_proc.wait(timeout=5)
             except subprocess.TimeoutExpired:
                 chrome_proc.kill()
+                chrome_proc.wait()
+        if chrome_profile is not None:
+            shutil.rmtree(chrome_profile, ignore_errors=True)
 
     flows = read_capture_jsonl(str(output_path)) if output_path.exists() else []
 
@@ -289,7 +305,11 @@ def run_analyze(
     fetch_graphql: bool = False,
 ) -> None:
     """Offline analysis: load a traffic capture, classify, extract everything."""
-    flows, fmt = load_flows(input_file)
+    try:
+        flows, fmt = load_flows(input_file)
+    except ValueError as e:
+        stderr.print(f"[red]{e}[/red]")
+        raise SystemExit(1) from None
     if not flows:
         stderr.print("[yellow]No flows found in input file.[/yellow]")
         return
