@@ -25,8 +25,9 @@ Usage: apisniff spec [OPTIONS] DOMAIN
 │ --output                     -o      TEXT         Output file path           │
 │ --no-infer-security-schemes                       Keep observed auth in      │
 │                                                   extensions only            │
-│ --no-examples                                     Omit sample response       │
-│                                                   values from generated spec │
+│ --examples                                        Include sample values from │
+│                                                   captured traffic in        │
+│                                                   generated spec             │
 │ --help                                            Show this message and      │
 │                                                   exit.                      │
 ╰──────────────────────────────────────────────────────────────────────────────╯

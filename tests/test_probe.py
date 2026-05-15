@@ -1,9 +1,11 @@
 # tests/test_probe.py
+import json
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
-from apisniff.models import ProbeResult, ProbeVerdict
+from apisniff.models import ProbeAssessment, ProbeResult, ProbeVerdict, VendorMatch
+from apisniff.output import probe_to_dict, probe_to_json
 from apisniff.probe import (
     _probe_curl_cffi,
     _probe_httpx,
@@ -62,6 +64,103 @@ def _result(label, status=200, headers=None, body=b"<html>ok</html>", elapsed_ms
         body=body,
         elapsed_ms=elapsed_ms,
         error=error,
+    )
+
+
+def _probe_assessment(
+    verdict=ProbeVerdict.NO_PROTECTION,
+    vendors=None,
+    results=None,
+) -> ProbeAssessment:
+    return ProbeAssessment(
+        url="https://example.com/path",
+        verdict=verdict,
+        recommendation="Use the recommended client.",
+        results=results or {
+            "naked": _result("naked"),
+            "impersonated": _result("impersonated"),
+            "tls_only": _result("tls_only"),
+        },
+        vendors=vendors or [],
+    )
+
+
+def test_probe_to_dict_includes_self_describing_fields():
+    data = probe_to_dict(_probe_assessment())
+
+    assert data["schema_version"] == 1
+    assert data["interpretation"] == (
+        "No active defenses on example.com — raw HTTP requests work."
+    )
+    assert data["probe_descriptions"] == {
+        "naked": "Raw HTTP client, bot user-agent — tests baseline bot detection",
+        "impersonated": (
+            "Chrome TLS fingerprint + Chrome user-agent — "
+            "tests if browser impersonation works"
+        ),
+        "tls_only": (
+            "Chrome TLS fingerprint, bot user-agent — "
+            "isolates whether detection is TLS-based or UA-based"
+        ),
+    }
+    assert data["verdict_descriptions"]["client_dependent"] == (
+        "Detection based on TLS fingerprint or user-agent — "
+        "browser impersonation bypasses it"
+    )
+
+
+def test_probe_to_json_includes_probe_to_dict_enrichment():
+    data = json.loads(probe_to_json(_probe_assessment()))
+
+    assert data["schema_version"] == 1
+    assert "interpretation" in data
+    assert "probe_descriptions" in data
+    assert "verdict_descriptions" in data
+
+
+def test_probe_interpretation_includes_vendor_passthrough():
+    data = probe_to_dict(
+        _probe_assessment(vendors=[VendorMatch("cloudflare", "high", ["cf-ray"])])
+    )
+
+    assert data["interpretation"] == (
+        "Cloudflare detected on example.com but not enforcing — "
+        "raw HTTP requests work."
+    )
+
+
+def test_probe_interpretation_describes_client_dependent_takeaway():
+    data = probe_to_dict(
+        _probe_assessment(
+            verdict=ProbeVerdict.CLIENT_DEPENDENT,
+            results={
+                "naked": _result("naked", status=403),
+                "impersonated": _result("impersonated"),
+                "tls_only": _result("tls_only"),
+            },
+        )
+    )
+
+    assert data["interpretation"] == (
+        "example.com filters by TLS fingerprint — "
+        "browser impersonation required, raw clients blocked."
+    )
+
+
+def test_probe_interpretation_describes_challenge_and_full_block():
+    challenge = probe_to_dict(
+        _probe_assessment(
+            verdict=ProbeVerdict.JS_CHALLENGE,
+            vendors=[VendorMatch("cloudflare", "high", ["challenge"])],
+        )
+    )
+    blocked = probe_to_dict(_probe_assessment(verdict=ProbeVerdict.FULL_BLOCK))
+
+    assert challenge["interpretation"] == (
+        "Cloudflare JS challenge on example.com — requires a real browser session."
+    )
+    assert blocked["interpretation"] == (
+        "example.com blocks all automated access — manual browser session required."
     )
 
 

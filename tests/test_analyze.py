@@ -159,6 +159,91 @@ def test_run_analyze_jsonl_skips_classification(tmp_path: Path) -> None:
     assert len(lines) == 1
 
 
+def test_run_analyze_json_output_is_llm_optimized(
+    tmp_path: Path, capsys: pytest.CaptureFixture
+) -> None:
+    flows = [
+        CapturedFlow(
+            method="GET",
+            host="api.example.com",
+            path="/api/users/123",
+            url="https://api.example.com/api/users/123",
+            request_headers={
+                "authorization": "Bearer token",
+                "cookie": "sessionid=abc",
+            },
+            request_body=b"",
+            response_status=200,
+            response_headers={
+                "content-type": "application/json",
+                "cf-mitigated": "challenge",
+                "set-cookie": "sessionid=abc; Path=/; Secure",
+            },
+            response_body=b'{"id":123}',
+            tags=["api_signal"],
+            timestamp=1715100000.0,
+        ),
+        CapturedFlow(
+            method="GET",
+            host="api.example.com",
+            path="/api/users/456?include=profile",
+            url="https://api.example.com/api/users/456?include=profile",
+            request_headers={"authorization": "Bearer token"},
+            request_body=b"",
+            response_status=200,
+            response_headers={"content-type": "application/json"},
+            response_body=b'{"id":456}',
+            tags=["api_signal"],
+            timestamp=1715100001.0,
+        ),
+    ]
+    jsonl_file = tmp_path / "flows.jsonl"
+    with open(jsonl_file, "w") as fh:
+        for flow in flows:
+            write_flow_jsonl(fh, flow)
+
+    bundle_dir = tmp_path / "bundle"
+    run_analyze(
+        str(jsonl_file),
+        domain="example.com",
+        json_output=True,
+        output_dir=str(bundle_dir),
+    )
+
+    captured = capsys.readouterr()
+    data = json.loads(captured.out)
+
+    assert data["schema_version"] == 1
+    assert "Analyzed 2 flows for example.com" in data["interpretation"]
+    assert data["domain"] == "example.com"
+    assert data["total_flows"] == 2
+    assert data["kept_flows"] == 2
+    assert data["drop_descriptions"]["static_asset"].startswith("Static files")
+    assert data["auth_type_descriptions"]["bearer"].startswith("OAuth2")
+    assert data["vendors"] == [
+        {
+            "vendor": "cloudflare",
+            "confidence": "high",
+            "signals": ["header_value:cf-mitigated"],
+        }
+    ]
+    assert data["auth_patterns"] == [
+        {
+            "auth_type": "bearer",
+            "detail": "authorization: bearer",
+            "flow_count": 2,
+        },
+        {"auth_type": "session_cookie", "detail": "sessionid", "flow_count": 1},
+    ]
+    assert data["top_endpoints"] == [
+        {"method": "GET", "path": "/api/users/{id}", "count": 2}
+    ]
+    assert data["bundle_dir"] == str(bundle_dir)
+    assert data["report_path"] == str(bundle_dir / "report.md")
+    assert data["cookies_path"] == str(bundle_dir / "cookies.txt")
+    assert data["graphql_schema_path"] is None
+
+
 # ---------------------------------------------------------------------------
 # HAR with static-asset drops (classification reduces flow count)
 # ---------------------------------------------------------------------------

@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import json
 from pathlib import Path
+from urllib.parse import urlparse
 
 from rich import box
 from rich.align import Align
@@ -27,6 +28,27 @@ _PROBE_HINTS = {
     "tls_only": "Chrome TLS, bot UA",
 }
 
+_PROBE_DESCRIPTIONS = {
+    "naked": "Raw HTTP client, bot user-agent — tests baseline bot detection",
+    "impersonated": (
+        "Chrome TLS fingerprint + Chrome user-agent — tests if browser impersonation works"
+    ),
+    "tls_only": (
+        "Chrome TLS fingerprint, bot user-agent — "
+        "isolates whether detection is TLS-based or UA-based"
+    ),
+}
+
+_VERDICT_DESCRIPTIONS = {
+    "no_protection": "No active bot defenses detected — raw HTTP requests work",
+    "client_dependent": (
+        "Detection based on TLS fingerprint or user-agent — "
+        "browser impersonation bypasses it"
+    ),
+    "js_challenge": "JavaScript challenge issued — requires a real browser session to solve",
+    "full_block": "All automated access blocked — manual browser session required",
+}
+
 
 def probe_to_dict(assessment: ProbeAssessment) -> dict:
     probes = {}
@@ -45,10 +67,14 @@ def probe_to_dict(assessment: ProbeAssessment) -> dict:
     ]
 
     result: dict = {
+        "schema_version": 1,
         "url": assessment.url,
         "verdict": assessment.verdict.value,
+        "interpretation": _build_probe_interpretation(assessment),
         "recommendation": assessment.recommendation,
         "probes": probes,
+        "probe_descriptions": dict(_PROBE_DESCRIPTIONS),
+        "verdict_descriptions": dict(_VERDICT_DESCRIPTIONS),
         "vendors": vendors,
         "graphql": {
             "endpoints": assessment.graphql_endpoints,
@@ -66,6 +92,102 @@ def probe_to_dict(assessment: ProbeAssessment) -> dict:
             "silent_throttle": assessment.rate_limit.silent_throttle,
         }
     return result
+
+
+def _build_probe_interpretation(assessment: ProbeAssessment) -> str:
+    target = _display_target(assessment.url)
+    vendors = [_display_vendor(v.vendor) for v in assessment.vendors]
+    vendor_text = _join_names(vendors)
+
+    if assessment.verdict == ProbeVerdict.NO_PROTECTION:
+        if vendor_text:
+            return (
+                f"{vendor_text} detected on {target} but not enforcing — "
+                "raw HTTP requests work."
+            )
+        return f"No active defenses on {target} — raw HTTP requests work."
+
+    if assessment.verdict == ProbeVerdict.JS_CHALLENGE:
+        if vendor_text:
+            return (
+                f"{vendor_text} JS challenge on {target} — "
+                "requires a real browser session."
+            )
+        return f"JavaScript challenge on {target} — requires a real browser session."
+
+    if assessment.verdict == ProbeVerdict.FULL_BLOCK:
+        if vendor_text:
+            return (
+                f"{vendor_text} blocks all automated access on {target} — "
+                "manual browser session required."
+            )
+        return (
+            f"{target} blocks all automated access — "
+            "manual browser session required."
+        )
+
+    subject = f"{vendor_text} on {target}" if vendor_text else target
+    naked = assessment.results.get("naked")
+    impersonated = assessment.results.get("impersonated")
+    tls_only = assessment.results.get("tls_only")
+
+    if naked and impersonated and naked.is_blocked and not impersonated.is_blocked:
+        if tls_only and tls_only.is_blocked:
+            return (
+                f"{subject} filters by TLS fingerprint and user-agent — "
+                "browser impersonation required, raw clients blocked."
+            )
+        return (
+            f"{subject} filters by TLS fingerprint — "
+            "browser impersonation required, raw clients blocked."
+        )
+
+    if naked and impersonated and not naked.is_blocked and impersonated.is_blocked:
+        if tls_only and tls_only.is_blocked:
+            return (
+                f"{subject} blocks impersonated browser TLS fingerprints — "
+                "raw clients work, browser impersonation is blocked."
+            )
+        return (
+            f"{subject} filters by browser user-agent — "
+            "raw clients work, browser user-agent requests blocked."
+        )
+
+    if any(result.is_challenge for result in assessment.results.values()):
+        return (
+            f"{subject} challenges selectively by client signals — "
+            "a real browser session may be required."
+        )
+
+    passed = [label for label, result in assessment.results.items() if not result.is_blocked]
+    failed = [label for label, result in assessment.results.items() if result.is_blocked]
+    if passed and failed:
+        return (
+            f"{subject} gives mixed probe results — "
+            f"{_join_names(passed)} passed, {_join_names(failed)} blocked."
+        )
+
+    return (
+        f"{subject} is client-dependent — "
+        "browser-like request signals are likely required."
+    )
+
+
+def _display_target(url: str) -> str:
+    parsed = urlparse(url)
+    return parsed.netloc or parsed.path or url
+
+
+def _display_vendor(vendor: str) -> str:
+    return vendor.replace("_", " ").title()
+
+
+def _join_names(names: list[str]) -> str:
+    if len(names) <= 1:
+        return "".join(names)
+    if len(names) == 2:
+        return f"{names[0]} and {names[1]}"
+    return f"{', '.join(names[:-1])}, and {names[-1]}"
 
 
 def probe_to_json(assessment: ProbeAssessment) -> str:

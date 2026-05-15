@@ -1,12 +1,14 @@
 from __future__ import annotations
 
 import asyncio
+import json
 from pathlib import Path
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
-from apisniff.models import CapturedFlow
+from apisniff.models import CapturedFlow, ReplayResult
+from apisniff.output import replay_to_json
 from apisniff.replay import (
     _filter_flows,
     compare_shape,
@@ -47,6 +49,27 @@ def _mock_response(status: int, body: bytes = b"") -> MagicMock:
     resp.status_code = status
     resp.content = body
     return resp
+
+
+def _replay_result(
+    category: str = "match",
+    path: str = "/api/test",
+    original_status: int = 200,
+    replayed_status: int | None = 200,
+    body_shape_diff: dict | None = None,
+) -> ReplayResult:
+    return ReplayResult(
+        original_flow=_flow(path=path, response_status=original_status),
+        replayed_status=replayed_status,
+        elapsed_ms=12.0,
+        error=None,
+        category=category,  # type: ignore[arg-type]
+        status_match=(original_status == replayed_status),
+        body_shape_match=(body_shape_diff is None),
+        body_shape_diff=body_shape_diff,
+        size_original=100,
+        size_replayed=100 if body_shape_diff is None else 90,
+    )
 
 
 # ---------------------------------------------------------------------------
@@ -221,6 +244,32 @@ class TestReplayEndpoint:
 
         assert result.category == "drift"
 
+    def test_host_url_mismatch_rejected_before_cookies_are_sent(self):
+        flow = CapturedFlow(
+            method="GET",
+            host="api.example.com",
+            path="/api/test",
+            url="https://attacker.example/collect",
+            request_headers={},
+            request_body=b"",
+            response_status=200,
+            response_headers={"content-type": "application/json"},
+            response_body=b'{"id": 1}',
+        )
+        session_mock = self._make_session_mock(200, b'{"id": 1}')
+
+        with patch("curl_cffi.requests.AsyncSession", return_value=session_mock):
+            result = self._run(
+                replay_endpoint(
+                    flow,
+                    cookies=[("api.example.com", "session", "SECRET")],
+                )
+            )
+
+        assert result.category == "error"
+        assert "flow host mismatch" in (result.error or "")
+        session_mock.request.assert_not_called()
+
 
 # ---------------------------------------------------------------------------
 # Method safety filter — pure function, no mocks needed
@@ -240,6 +289,37 @@ def test_include_unsafe_passes_all():
     safe, unsafe = _filter_flows(flows, include_unsafe=True)
     assert [f.method for f in safe] == ["GET", "POST"]
     assert unsafe == []
+
+
+def test_replay_to_json_includes_self_describing_fields():
+    results = [
+        _replay_result("match", path="/api/a"),
+        _replay_result(
+            "drift",
+            path="/api/b",
+            body_shape_diff={"data.id": {"was": "int", "now": "str"}},
+        ),
+        _replay_result("blocked", path="/api/c", replayed_status=403),
+    ]
+
+    data = json.loads(replay_to_json(results, "api.example.com"))
+
+    assert data["schema_version"] == 1
+    assert data["summary"]["match"] == 1
+    assert data["summary"]["drift"] == 1
+    assert data["summary"]["blocked"] == 1
+    assert data["interpretation"] == (
+        "Replayed 3 endpoints on api.example.com: 1 match, 1 drift, 1 blocked."
+    )
+    assert data["category_descriptions"] == {
+        "match": "Response matches original capture",
+        "drift": "Response differs from original capture — API behavior changed",
+        "auth_expired": (
+            "Authentication rejected — credentials from capture are no longer valid"
+        ),
+        "blocked": "Request was blocked by the server (likely bot detection)",
+        "error": "Request failed (network error or timeout)",
+    }
 
 
 class TestEarlyAbort:

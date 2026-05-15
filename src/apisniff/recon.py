@@ -25,7 +25,7 @@ from apisniff.bundle import (
     safe_bundle_name,
     write_flow_jsonl,  # noqa: F401 — re-exported for backwards compat
 )
-from apisniff.models import CapturedFlow, SessionStats
+from apisniff.models import CapturedFlow, SessionStats, normalize_path
 
 stderr = Console(stderr=True)
 
@@ -38,6 +38,137 @@ class _BundleResult:
     cookies: list
     cookies_path: Path | None
     graphql_schema_path: Path | None
+
+
+_DROP_DESCRIPTIONS = {
+    "options": "CORS preflight (OPTIONS) requests",
+    "noise_domain": "Requests to unrelated domains (ads, analytics, CDNs)",
+    "path_telemetry": "Telemetry or tracking paths on the target domain",
+    "third_party": "Third-party API calls not on the target domain",
+    "static_asset": "Static files (images, CSS, JS, fonts)",
+    "same_site_noise": "Non-API paths on the target domain (HTML pages, favicons)",
+}
+
+_AUTH_TYPE_DESCRIPTIONS = {
+    "bearer": "OAuth2 / JWT bearer token in Authorization header",
+    "basic": "HTTP Basic authentication in Authorization header",
+    "api_key_header": "API key sent in a custom request header",
+    "api_key_query": "API key sent as a URL query parameter",
+    "session_cookie": "Server-side session identified by a known session cookie name",
+    "token_endpoint": "Request to a known token/auth endpoint path",
+}
+
+_AUTH_TYPE_LABELS = {
+    "bearer": "Bearer token",
+    "basic": "Basic auth",
+    "api_key_header": "API key header",
+    "api_key_query": "API key query parameter",
+    "session_cookie": "session cookie",
+    "token_endpoint": "token endpoint",
+}
+
+
+def _display_name(value: str) -> str:
+    return value.replace("_", " ").title()
+
+
+def _summarize_names(names: list[str]) -> str:
+    if not names:
+        return ""
+    if len(names) <= 3:
+        return ", ".join(names)
+    return ", ".join(names[:3]) + f", +{len(names) - 3} more"
+
+
+def _top_endpoints(flows: list[CapturedFlow], limit: int = 15) -> list[dict]:
+    counts: Counter[tuple[str, str]] = Counter()
+    for flow in flows:
+        counts[(flow.method.upper(), normalize_path(flow.path))] += 1
+    return [
+        {"method": method, "path": path, "count": count}
+        for (method, path), count in counts.most_common(limit)
+    ]
+
+
+def _build_analyze_interpretation(
+    domain: str,
+    session_stats: SessionStats,
+    result: _BundleResult,
+) -> str:
+    parts = [
+        f"Analyzed {session_stats.total_flows} flows for {domain}, "
+        f"kept {session_stats.kept_flows} API calls."
+    ]
+
+    vendor_names = [_display_name(v.vendor) for v in result.vendors]
+    if vendor_names:
+        parts.append(
+            f"Found {len(vendor_names)} vendors ({_summarize_names(vendor_names)})."
+        )
+    else:
+        parts.append("No vendors detected.")
+
+    auth_names = [
+        _AUTH_TYPE_LABELS.get(p.auth_type, p.auth_type.replace("_", " "))
+        for p in result.auth_patterns
+    ]
+    if auth_names:
+        parts.append(
+            f"{len(auth_names)} auth patterns detected ({_summarize_names(auth_names)})."
+        )
+    else:
+        parts.append("No auth patterns detected.")
+
+    return " ".join(parts)
+
+
+def _fallback_session_stats(domain: str, flows: list[CapturedFlow]) -> SessionStats:
+    return SessionStats(
+        domain=domain,
+        started_at=datetime.now(tz=UTC).isoformat(),
+        duration_seconds=0.0,
+        total_flows=len(flows),
+        kept_flows=len(flows),
+        dropped={},
+    )
+
+
+def _analyze_to_dict(
+    domain: str,
+    session_stats: SessionStats | None,
+    result: _BundleResult,
+    kept_flows: list[CapturedFlow],
+    bundle_dir: Path,
+) -> dict:
+    stats = session_stats or _fallback_session_stats(domain, kept_flows)
+    stats_dict = stats.to_dict()
+
+    return {
+        "schema_version": 1,
+        "interpretation": _build_analyze_interpretation(domain, stats, result),
+        **stats_dict,
+        "drop_descriptions": dict(_DROP_DESCRIPTIONS),
+        "vendors": [
+            {"vendor": v.vendor, "confidence": v.confidence, "signals": v.signals}
+            for v in result.vendors
+        ],
+        "auth_patterns": [
+            {
+                "auth_type": p.auth_type,
+                "detail": p.detail,
+                "flow_count": p.flow_count,
+            }
+            for p in result.auth_patterns
+        ],
+        "top_endpoints": _top_endpoints(kept_flows),
+        "auth_type_descriptions": dict(_AUTH_TYPE_DESCRIPTIONS),
+        "bundle_dir": str(bundle_dir),
+        "report_path": str(bundle_dir / "report.md"),
+        "cookies_path": str(result.cookies_path) if result.cookies_path else None,
+        "graphql_schema_path": (
+            str(result.graphql_schema_path) if result.graphql_schema_path else None
+        ),
+    }
 
 
 def _post_process_bundle(
@@ -188,6 +319,7 @@ def run_recon(
     cmd = [
         sys.executable, "-c",
         "from mitmproxy.tools.main import mitmdump; mitmdump()",
+        "--listen-host", "127.0.0.1",
         "--listen-port", str(port),
         "--quiet",
         "-s", str(addon_path),
@@ -282,19 +414,23 @@ def run_recon(
         return
 
     result = _post_process_bundle(domain, flows, bundle_dir, session_stats)
-    from apisniff.output import render_recon
-    render_recon(
-        domain=domain,
-        session_stats=session_stats,
-        flows=flows,
-        vendors=result.vendors,
-        auth_patterns=result.auth_patterns,
-        cookies=result.cookies,
-        bundle_dir=bundle_dir,
-        cookies_path=result.cookies_path,
-        graphql_schema_path=result.graphql_schema_path,
-        console=stderr,
-    )
+    if json_output:
+        data = _analyze_to_dict(domain, session_stats, result, flows, bundle_dir)
+        sys.stdout.write(json.dumps(data, indent=2) + "\n")
+    else:
+        from apisniff.output import render_recon
+        render_recon(
+            domain=domain,
+            session_stats=session_stats,
+            flows=flows,
+            vendors=result.vendors,
+            auth_patterns=result.auth_patterns,
+            cookies=result.cookies,
+            bundle_dir=bundle_dir,
+            cookies_path=result.cookies_path,
+            graphql_schema_path=result.graphql_schema_path,
+            console=stderr,
+        )
 
 
 def run_analyze(
@@ -397,7 +533,8 @@ def run_analyze(
     )
 
     if json_output:
-        sys.stdout.write(json.dumps(session_stats.to_dict(), indent=2) + "\n")
+        data = _analyze_to_dict(domain, session_stats, result, kept_flows, bundle_dir)
+        sys.stdout.write(json.dumps(data, indent=2) + "\n")
         stderr.print(f"\n  Report: {bundle_dir / 'report.md'}")
         stderr.print(f"  Analyzed [bold]{len(kept_flows)}[/bold] flows → {bundle_dir}\n")
     else:

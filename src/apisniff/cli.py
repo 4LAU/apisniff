@@ -237,8 +237,16 @@ def spec(
         False, "--no-infer-security-schemes",
         help="Keep observed auth in extensions only",
     ),
+    examples: bool = typer.Option(
+        False,
+        "--examples",
+        help="Include sample values from captured traffic in generated spec",
+    ),
     no_examples: bool = typer.Option(
-        False, "--no-examples", help="Omit sample response values from generated spec"
+        False,
+        "--no-examples",
+        help="Deprecated: examples are omitted by default",
+        hidden=True,
     ),
 ) -> None:
     """Extract API structure -- generate OpenAPI from captured traffic."""
@@ -247,7 +255,7 @@ def spec(
     run_spec(
         domain, input_file=input_file, output_format=output_format,
         output_file=output_file, infer_schemes=not no_infer_schemes,
-        include_examples=not no_examples,
+        include_examples=examples and not no_examples,
     )
 
 
