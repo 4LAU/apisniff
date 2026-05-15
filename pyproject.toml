@@ -58,3 +58,9 @@ select = ["E", "F", "I", "UP", "B", "SIM"]
 [tool.pytest.ini_options]
 asyncio_mode = "auto"
 testpaths = ["tests"]
+
+[tool.hatch.build]
+exclude = [
+    "/.venv",
+    "/venv",
+]
