@@ -1,4 +1,4 @@
-from apisniff.classify import Classifier
+from apisniff.classify import Classifier, classify_flow
 from apisniff.models import CapturedFlow
 
 
@@ -136,3 +136,35 @@ def test_telemetry_path_in_path_segment_dropped():
     result = c.classify(_flow(path="/tracking/beacon.gif"))
     assert result.action == "keep"
     assert result.category == "telemetry"
+
+
+def test_telemetry_fragment_requires_segment_boundary():
+    """Paths like /api/v1/events must not match /event as a substring."""
+    s = classify_flow(_flow(path="/api/v1/events"), "example.com")
+    assert s.category == "business_api", f"got {s.category}: {s.reason}"
+    s2 = classify_flow(_flow(path="/api/v1/collections"), "example.com")
+    assert s2.category == "business_api", f"got {s2.category}: {s2.reason}"
+
+
+def test_telemetry_exact_segment_still_matches():
+    """/event as an exact path segment must still be classified as telemetry."""
+    s = classify_flow(_flow(path="/analytics/event"), "example.com")
+    assert s.category == "telemetry"
+    s2 = classify_flow(_flow(path="/track"), "example.com")
+    assert s2.category == "telemetry"
+
+
+def test_auth_fragment_requires_segment_boundary():
+    """Paths like /api/v1/tokens must not match /token as a substring."""
+    s = classify_flow(_flow(path="/api/v1/tokens"), "example.com")
+    assert s.category == "business_api", f"got {s.category}: {s.reason}"
+    s2 = classify_flow(_flow(path="/api/v1/sessions"), "example.com")
+    assert s2.category == "business_api", f"got {s2.category}: {s2.reason}"
+
+
+def test_auth_exact_segment_still_matches():
+    """/auth and /token as exact segments must still classify as auth."""
+    s = classify_flow(_flow(path="/auth/login"), "example.com")
+    assert s.category == "auth"
+    s2 = classify_flow(_flow(path="/token"), "example.com")
+    assert s2.category == "auth"

@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import functools
 import json
 from dataclasses import replace
 from pathlib import Path
@@ -95,6 +96,7 @@ _ANTIBOT_HOST_FRAGMENTS = (
 )
 
 
+@functools.lru_cache(maxsize=4)
 def _load_yaml(name: str) -> dict | list:
     with open(_SIGNATURES_DIR / name) as f:
         return yaml.safe_load(f)
@@ -132,6 +134,23 @@ _TELEMETRY_SUBDOMAIN_INDICATORS = ("analytics.", "smetrics.", "telemetry.", "met
 def _contains_any(value: str, fragments: tuple[str, ...] | list[str]) -> bool:
     value = value.lower()
     return any(fragment.lower() in value for fragment in fragments)
+
+
+def _path_contains_any(path: str, fragments: tuple[str, ...]) -> bool:
+    """Match fragments at path-segment boundaries, not as arbitrary substrings."""
+    path = path.lower()
+    for fragment in fragments:
+        frag = fragment.lower()
+        idx = 0
+        while True:
+            idx = path.find(frag, idx)
+            if idx < 0:
+                break
+            end = idx + len(frag)
+            if end == len(path) or path[end] == "/":
+                return True
+            idx += 1
+    return False
 
 
 def _request_content_type(flow: CapturedFlow) -> str:
@@ -245,13 +264,15 @@ def classify_flow(
             signals=api_signals + ("antibot_signature",),
         )
 
-    telemetry_paths = (
+    telemetry_substrings = (
         tuple(indicators.get("drop_path_substrings", []))
         + tuple(indicators.get("same_site_drop_paths", []))
-        + _TELEMETRY_PATH_FRAGMENTS
     )
     noise_domains = _load_yaml("noise_domains.yaml")
-    if _contains_any(path_only, telemetry_paths):
+    if (
+        _contains_any(path_only, telemetry_substrings)
+        or _path_contains_any(path_only, _TELEMETRY_PATH_FRAGMENTS)
+    ):
         return SurfaceClassification(
             category="telemetry",
             reason="telemetry, logging, analytics, or beacon path",
@@ -314,7 +335,7 @@ def classify_flow(
             signals=api_signals,
         )
 
-    if _contains_any(path_only, _AUTH_PATH_FRAGMENTS):
+    if _path_contains_any(path_only, _AUTH_PATH_FRAGMENTS):
         return SurfaceClassification(
             category="auth",
             reason="auth API",
