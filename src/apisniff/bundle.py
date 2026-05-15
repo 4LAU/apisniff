@@ -8,6 +8,7 @@ from typing import IO
 from apisniff.models import CapturedFlow
 
 CAPTURES_DIR = Path.home() / "apisniff-captures"
+MAX_IMPORT_BYTES = 200 * 1024 * 1024
 
 
 def safe_bundle_name(domain: str) -> str:
@@ -65,6 +66,12 @@ def load_flows(path: str) -> tuple[list[CapturedFlow], str]:
     p = Path(path)
     try:
         with open(p, encoding="utf-8", errors="replace") as f:
+            size = p.stat().st_size
+            if size > MAX_IMPORT_BYTES:
+                raise ValueError(
+                    f"Input file is too large: {size} bytes; limit is "
+                    f"{MAX_IMPORT_BYTES} bytes"
+                )
             head = f.read(1024)
     except OSError:
         return [], "unknown"

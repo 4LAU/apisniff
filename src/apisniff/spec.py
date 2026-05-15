@@ -357,7 +357,11 @@ def run_spec(
     include_examples: bool = False,
 ) -> None:
     if input_file:
-        flows, fmt = load_flows(input_file)
+        try:
+            flows, fmt = load_flows(input_file)
+        except ValueError as e:
+            stderr.print(f"[red]{e}[/red]")
+            raise SystemExit(1) from None
         if fmt == "unknown":
             stderr.print(f"[red]Unknown input format for {input_file}[/red]")
             return

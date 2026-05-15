@@ -1,3 +1,4 @@
+import signal
 import tempfile
 from pathlib import Path
 
@@ -8,6 +9,7 @@ from apisniff.recon import (
     _normalize_target,
     detect_input_format,
     read_capture_jsonl,
+    run_recon,
     write_flow_jsonl,
 )
 
@@ -99,4 +101,42 @@ def test_normalize_target(raw, expected_domain, expected_url):
     assert domain == expected_domain
     assert url == expected_url
 
+
+def test_run_recon_stops_proxy_when_setup_raises(monkeypatch, tmp_path: Path):
+    class FakeProc:
+        returncode = None
+
+        def __init__(self) -> None:
+            self.signals: list[int] = []
+            self.killed = False
+
+        def poll(self):
+            return self.returncode
+
+        def send_signal(self, sig: int) -> None:
+            self.signals.append(sig)
+
+        def wait(self, timeout=None):
+            self.returncode = 0
+            return self.returncode
+
+        def kill(self) -> None:
+            self.killed = True
+            self.returncode = -9
+
+    proxy_proc = FakeProc()
+
+    def raise_setup_error() -> bool:
+        raise RuntimeError("trust check failed")
+
+    monkeypatch.setattr("apisniff.recon.CAPTURES_DIR", tmp_path)
+    monkeypatch.setattr("apisniff.recon.time.sleep", lambda _: None)
+    monkeypatch.setattr("apisniff.recon._is_ca_trusted", raise_setup_error)
+    monkeypatch.setattr("apisniff.recon.subprocess.Popen", lambda *_, **__: proxy_proc)
+
+    with pytest.raises(RuntimeError, match="trust check failed"):
+        run_recon("example.com")
+
+    assert proxy_proc.signals == [signal.SIGINT]
+    assert proxy_proc.returncode == 0
 

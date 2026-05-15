@@ -1,5 +1,8 @@
 from __future__ import annotations
 
+import pytest
+from defusedxml.common import DefusedXmlException
+
 from apisniff.adapters.burp import burp_to_flows
 
 
@@ -106,3 +109,22 @@ def test_burp_plain_text_http_messages_are_parsed():
     assert flow.request_headers["x-custom"] == "hello"
     assert flow.response_headers["content-type"] == "text/plain"
     assert flow.response_body == b"ok"
+
+
+def test_burp_doctype_declaration_is_rejected_by_defusedxml():
+    xml = """<?xml version="1.0"?>
+<!DOCTYPE items [
+  <!ENTITY expanded "blocked">
+]>
+<items>
+  <item>
+    <method>GET</method>
+    <url>https://example.com/</url>
+    <status>200</status>
+    <request />
+    <response />
+  </item>
+</items>"""
+
+    with pytest.raises(DefusedXmlException):
+        burp_to_flows(xml)
