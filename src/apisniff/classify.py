@@ -11,10 +11,15 @@ from apisniff.models import CapturedFlow, ClassifyResult
 
 _SIGNATURES_DIR = Path(__file__).parent / "signatures"
 
-# Offline-only (suffix_list_urls=() disables HTTP fetch per docs).
+# Offline-only (suffix_list_urls=() disables HTTP fetch per docs). cache_dir=None
+# avoids writing tldextract lock files in restricted runtime environments.
 # include_psl_private_domains=True so herokuapp.com, github.io, etc.
 # are treated as public suffixes — each app is a distinct registrable domain.
-_tld_extract = tldextract.TLDExtract(suffix_list_urls=(), include_psl_private_domains=True)
+_tld_extract = tldextract.TLDExtract(
+    cache_dir=None,
+    suffix_list_urls=(),
+    include_psl_private_domains=True,
+)
 
 _JS_CONTENT_TYPES = ("application/javascript", "text/javascript", "application/x-javascript")
 
