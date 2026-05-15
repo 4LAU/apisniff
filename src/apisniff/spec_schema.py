@@ -266,11 +266,22 @@ def _merge_schemas(existing: dict, new: dict) -> dict:
     n_type = new.get("type")
 
     if e_type != n_type:
+        either_nullable = existing.get("nullable") or new.get("nullable")
         if n_type in ("object", "array") and e_type not in ("object", "array"):
+            if either_nullable and not new.get("nullable"):
+                result = dict(new)
+                result["nullable"] = True
+                return result
             return new
         if e_type in ("object", "array") and n_type not in ("object", "array"):
+            if either_nullable and not existing.get("nullable"):
+                result = dict(existing)
+                result["nullable"] = True
+                return result
             return existing
         result: dict = {"type": "string"}
+        if either_nullable:
+            result["nullable"] = True
         observed = _observed_types(existing, new)
         if observed:
             result["x-apisniff-observed-types"] = observed
