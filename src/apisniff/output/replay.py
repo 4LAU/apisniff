@@ -255,6 +255,48 @@ def render_dry_run(
     console.print()
 
 
+def dry_run_to_json(
+    safe: list[CapturedFlow],
+    unsafe: list[CapturedFlow],
+    domain: str,
+) -> str:
+    generated_at = datetime.now(UTC).strftime("%Y-%m-%dT%H:%M:%SZ")
+
+    def endpoint(flow: CapturedFlow) -> dict:
+        captured_at = (
+            datetime.fromtimestamp(flow.timestamp, tz=UTC).strftime("%Y-%m-%dT%H:%M:%SZ")
+            if flow.timestamp
+            else None
+        )
+        return {
+            "method": flow.method.upper(),
+            "path": flow.path,
+            "captured_at": captured_at,
+            "auth": _auth_label(flow.request_headers),
+        }
+
+    data = {
+        "schema_version": 1,
+        "domain": domain,
+        "mode": "dry_run",
+        "generated_at": generated_at,
+        "interpretation": (
+            f"Dry run found {len(safe)} safe endpoint"
+            f"{'s' if len(safe) != 1 else ''} on {domain}; "
+            f"{len(unsafe)} unsafe endpoint"
+            f"{'s' if len(unsafe) != 1 else ''} skipped."
+        ),
+        "endpoints": [endpoint(flow) for flow in safe],
+        "skipped_unsafe": [endpoint(flow) for flow in unsafe],
+        "summary": {
+            "safe": len(safe),
+            "unsafe": len(unsafe),
+            "total": len(safe) + len(unsafe),
+        },
+    }
+    return json.dumps(data, indent=2)
+
+
 def replay_to_json(
     results: list[ReplayResult],
     domain: str,

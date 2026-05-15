@@ -322,6 +322,59 @@ def test_replay_to_json_includes_self_describing_fields():
     }
 
 
+@pytest.mark.asyncio
+async def test_run_replay_dry_run_json_outputs_machine_readable_inventory(
+    tmp_path: Path,
+    capsys,
+) -> None:
+    flows = [
+        _flow(
+            method="GET",
+            path="/api/users/123",
+            request_headers={"authorization": "Bearer tok"},
+            timestamp=1715100000.0,
+        ),
+        _flow(method="POST", path="/api/users", timestamp=1715100001.0),
+    ]
+    flows_path = tmp_path / "flows.jsonl"
+    with open(flows_path, "w") as f:
+        for flow in flows:
+            f.write(flow.to_jsonl() + "\n")
+
+    results = await run_replay(
+        bundle_dir=str(tmp_path),
+        domain="api.example.com",
+        dry_run=True,
+        json_output=True,
+    )
+
+    captured = capsys.readouterr()
+    data = json.loads(captured.out)
+
+    assert results == []
+    assert captured.err == ""
+    assert data["schema_version"] == 1
+    assert data["mode"] == "dry_run"
+    assert data["domain"] == "api.example.com"
+    assert data["summary"] == {"safe": 1, "unsafe": 1, "total": 2}
+    assert data["endpoints"] == [
+        {
+            "method": "GET",
+            "path": "/api/users/123",
+            "captured_at": "2024-05-07T16:40:00Z",
+            "auth": "bearer",
+        }
+    ]
+    assert data["skipped_unsafe"] == [
+        {
+            "method": "POST",
+            "path": "/api/users",
+            "captured_at": "2024-05-07T16:40:01Z",
+            "auth": "none",
+        }
+    ]
+
+
 class TestEarlyAbort:
     """Replay aborts on auth failure instead of continuing."""
 

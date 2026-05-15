@@ -164,7 +164,12 @@ def _vendor_table(vendors: list[VendorMatch]) -> Table | None:
 
 from apisniff.output.probe import probe_to_dict, probe_to_json, render_probe  # noqa: E402
 from apisniff.output.recon import render_recon  # noqa: E402
-from apisniff.output.replay import render_dry_run, render_replay, replay_to_json  # noqa: E402
+from apisniff.output.replay import (  # noqa: E402
+    dry_run_to_json,
+    render_dry_run,
+    render_replay,
+    replay_to_json,
+)
 
 __all__ = [
     "Align",
@@ -189,6 +194,7 @@ __all__ = [
     "VendorMatch",
     "box",
     "datetime",
+    "dry_run_to_json",
     "get_args",
     "get_header",
     "json",

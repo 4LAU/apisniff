@@ -390,9 +390,17 @@ async def run_replay(
     if dry_run:
         from rich.console import Console
 
-        from apisniff.output import render_dry_run
-        console = Console(stderr=True)
-        render_dry_run(flows, unsafe_flows, resolved_domain, console)
+        from apisniff.output import dry_run_to_json, render_dry_run
+
+        if json_output:
+            output = dry_run_to_json(flows, unsafe_flows, resolved_domain)
+            if output_file:
+                Path(output_file).write_text(output)
+            else:
+                sys.stdout.write(output + "\n")
+        else:
+            console = Console(stderr=True)
+            render_dry_run(flows, unsafe_flows, resolved_domain, console)
         return []
 
     cookies: list[tuple[str, str, str]] = []
