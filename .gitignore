@@ -12,3 +12,4 @@ build/
 .plans/
 .claude/
 testing-policy.md
+.security/
