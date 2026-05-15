@@ -9,6 +9,7 @@ from unittest.mock import AsyncMock, patch
 import yaml
 from typer.testing import CliRunner
 
+from apisniff import __version__
 from apisniff.cli import app
 
 runner = CliRunner()
@@ -24,13 +25,6 @@ def _bundle_files_present(bundle_dir: Path) -> dict[str, bool]:
     """Return a map of expected bundle filenames → exists."""
     expected = ["flows.jsonl", "session.json", "surface.jsonl", "report.md"]
     return {name: (bundle_dir / name).exists() for name in expected}
-
-
-def _find_bundle_dir(parent: Path) -> Path:
-    """Find the first (usually only) bundle directory created under parent."""
-    dirs = [p for p in parent.iterdir() if p.is_dir()]
-    assert dirs, f"No bundle directory found in {parent}"
-    return dirs[0]
 
 
 def _extract_json(output: str) -> dict:
@@ -278,7 +272,7 @@ class TestSpecThirdParty:
         spec = _extract_json(result.output)
         # When including api.stripe.com, its paths should appear
         paths_str = json.dumps(spec.get("paths", {}))
-        assert "charges" in paths_str or len(spec.get("paths", {})) >= 0
+        assert "charges" in paths_str, "Expected api.stripe.com paths with --include-host"
 
 
 class TestSpecNoInferSchemes:
@@ -299,17 +293,16 @@ class TestSpecNoInferSchemes:
 class TestSpecEmptyInput:
     def test_no_api_flows_yields_empty_paths(self):
         """When input has zero API flows, spec should still be valid with empty paths."""
-        # Pass empty.har directly to spec --input
         spec_result = runner.invoke(app, [
             "spec", "example.com", "--input", str(FIXTURES / "empty.har"),
             "--format", "json",
         ])
-        # Either exits 0 with empty paths or exits 1 gracefully
         combined = spec_result.output + (spec_result.stderr or "")
         assert "Traceback" not in combined
-        if spec_result.exit_code == 0 and "{" in spec_result.output:
+        assert spec_result.exit_code in (0, 1), f"Unexpected exit code: {spec_result.exit_code}"
+        if spec_result.exit_code == 0:
             spec = _extract_json(spec_result.output)
-            assert spec.get("paths") == {} or isinstance(spec.get("paths"), dict)
+            assert spec.get("paths") == {}
 
 
 # ===========================================================================
@@ -550,26 +543,19 @@ class TestProbe:
 
 
 class TestGlobalCLI:
-    """
-    The existing test_cli.py covers --version, help, and header parsing.
-    These tests cover complementary aspects to avoid duplication.
-    """
+
+    def test_version_flag(self):
+        result = runner.invoke(app, ["--version"])
+        assert result.exit_code == 0
+        assert __version__ in result.output
 
     def test_no_args_shows_help(self):
         result = runner.invoke(app, [])
-        # Typer's no_args_is_help triggers Click's UsageError which exits 2
         assert result.exit_code in (0, 2)
-        # Should show available commands
         assert "analyze" in result.output
         assert "spec" in result.output
 
-    def test_unknown_command_exits_nonzero(self):
-        result = runner.invoke(app, ["nonexistent-command"])
+    def test_invalid_header_format(self):
+        result = runner.invoke(app, ["probe", "https://example.com", "-H", "no-colon"])
         assert result.exit_code != 0
-
-    def test_analyze_help_lists_options(self):
-        result = runner.invoke(app, ["analyze", "--help"])
-        assert result.exit_code == 0
-        assert "--domain" in result.output
-        assert "--json" in result.output
-        assert "--output-dir" in result.output
+        assert "missing" in result.output.lower() or "invalid" in result.output.lower()
