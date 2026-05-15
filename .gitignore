@@ -9,6 +9,7 @@ venv/
 .ruff_cache/
 .worktrees/
 .ignore-dump/
+scripts/
 .env*
 .plans/
 .claude/
