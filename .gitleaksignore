@@ -1,0 +1,6 @@
+tests/fixtures/minimal.burp.xml:generic-api-key:71
+tests/fixtures/auth_variants.har:generic-api-key:75
+tests/fixtures/minimal.jsonl:generic-api-key:5
+tests/fixtures/redaction.jsonl:jwt:1
+tests/fixtures/redaction.jsonl:stripe-access-token:2
+tests/fixtures/redaction.jsonl:generic-api-key:1

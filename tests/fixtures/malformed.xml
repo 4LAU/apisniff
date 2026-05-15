@@ -1,0 +1,7 @@
+<?xml version="1.0"?>
+<items burpVersion="2024.1">
+  <item>
+    <method>GET</method>
+    <url>https://example.com/api/test</url>
+    <status>200</status>
+    <request base64="false">GET /api/test HTTP/1.1
