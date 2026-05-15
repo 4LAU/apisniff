@@ -15,8 +15,8 @@ from rich.console import Console
 
 from apisniff.auth import AuthPattern, detect_auth
 from apisniff.bundle import load_flows, read_capture_jsonl
-from apisniff.classify import target_host
-from apisniff.models import CapturedFlow, get_header
+from apisniff.classify import _is_jsonish_content_type, target_host
+from apisniff.models import CapturedFlow, get_header, is_dynamic_segment
 from apisniff.spec_classify import (
     OpenAPISelection,
     build_capture_context,
@@ -34,7 +34,6 @@ from apisniff.spec_schema import (
     _infer_schema,
     _merge_schemas,
     _parse_form_urlencoded,
-    _parse_json_body,
     _parse_multipart,
 )
 from apisniff.surface import (
@@ -46,9 +45,6 @@ from apisniff.surface import (
 stderr = Console(stderr=True)
 
 __all__ = [
-    "_infer_schema",
-    "_merge_schemas",
-    "_parse_json_body",
     "build_surface_inventory",
     "classify_spec_flow",
     "generate_openapi",
@@ -58,12 +54,6 @@ __all__ = [
     "summarize_spec_selection",
 ]
 
-_UUID_RE = re.compile(
-    r"^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$",
-    re.I,
-)
-_NUMERIC_RE = re.compile(r"^\d+$")
-_HEX_RE = re.compile(r"^[0-9a-f]{16,}$", re.I)
 _GENERIC_TAG_PREFIXES = frozenset({"api", "rest", "rpc"})
 _VERSION_SEGMENT_RE = re.compile(r"^v\d+$", re.I)
 _METHODS_WITH_REQUEST_BODY = frozenset({"post", "put", "patch"})
@@ -85,10 +75,6 @@ class ObservedOperation:
     query: dict[str, QueryEvidence] = field(default_factory=lambda: defaultdict(QueryEvidence))
     request_schemas: dict[str, dict] = field(default_factory=dict)
     response_schemas: dict[tuple[str, str], dict] = field(default_factory=dict)
-
-
-def _is_dynamic_path_segment(segment: str) -> bool:
-    return bool(_UUID_RE.match(segment) or _NUMERIC_RE.match(segment) or _HEX_RE.match(segment))
 
 
 def _singularize_segment(segment: str) -> str:
@@ -148,7 +134,7 @@ def _normalize_openapi_path(path: str) -> tuple[str, list[str], dict[str, str]]:
         if not part:
             normalized.append(part)
             continue
-        if _is_dynamic_path_segment(part):
+        if is_dynamic_segment(part):
             prefix = _path_param_prefix(previous_static)
             base_name = "id" if prefix == "id" else f"{prefix}Id"
             param_name = _dedupe_param_name(base_name, name_counts)
@@ -272,7 +258,7 @@ def _record_response_schema(
     include_examples: bool,
 ) -> None:
     resp_ct = flow.content_type or "application/json"
-    if "json" not in resp_ct:
+    if not _is_jsonish_content_type(resp_ct):
         return
     schema = _infer_json_body_schema(flow.response_body, include_examples=include_examples)
     if schema is None:
@@ -526,11 +512,7 @@ def generate_openapi(
 
         schemes: dict[str, dict] = {}
         for pattern in auth_patterns:
-            x_observed.append({
-                "type": pattern.auth_type,
-                "detail": pattern.detail,
-                "flow_count": pattern.flow_count,
-            })
+            x_observed.append(pattern.to_dict())
             if pattern.auth_type == "token_endpoint":
                 x_token_endpoints.append(pattern.detail)
                 continue

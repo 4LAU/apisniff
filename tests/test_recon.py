@@ -220,7 +220,7 @@ def test_run_recon_json_outputs_enriched_capture(monkeypatch, tmp_path: Path, ca
     assert data["vendors"][0]["vendor"] == "cloudflare"
     assert data["auth_patterns"] == [
         {
-            "auth_type": "bearer",
+            "type": "bearer",
             "detail": "authorization: bearer",
             "flow_count": 1,
         }

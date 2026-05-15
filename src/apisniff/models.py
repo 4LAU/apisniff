@@ -29,6 +29,10 @@ def get_header(headers: dict[str, str], name: str) -> str:
     return ""
 
 
+def is_dynamic_segment(segment: str) -> bool:
+    return bool(_UUID_RE.match(segment) or _NUMERIC_RE.match(segment) or _HEX_RE.match(segment))
+
+
 def normalize_path(path: str) -> str:
     parts = path.split("?")[0].split("/")
     normalized = []
@@ -36,7 +40,7 @@ def normalize_path(path: str) -> str:
         if not part:
             normalized.append(part)
             continue
-        if _UUID_RE.match(part) or _NUMERIC_RE.match(part) or _HEX_RE.match(part):
+        if is_dynamic_segment(part):
             normalized.append("{id}")
         else:
             normalized.append(part)
@@ -149,9 +153,7 @@ class CapturedFlow:
 
     @property
     def content_type(self) -> str:
-        ct = self.response_headers.get("content-type") or get_header(
-            self.response_headers, "content-type"
-        )
+        ct = get_header(self.response_headers, "content-type")
         return ct.split(";")[0].strip().lower()
 
 
@@ -212,16 +214,10 @@ class ProbeAssessment:
     rate_limit: RateLimitResult | None = None
 
 
-_DropCategory = Literal[
-    "options", "noise_domain", "path_telemetry",
-    "third_party", "static_asset", "same_site_noise",
-]
-
-
 @dataclass(frozen=True, slots=True)
 class ClassifyResult:
     action: Literal["keep", "drop"]
-    category: _DropCategory | str
+    category: str
     flow: CapturedFlow | None
 
 

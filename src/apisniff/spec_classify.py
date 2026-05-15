@@ -62,13 +62,14 @@ def derive_surface_records(
 ) -> tuple[CaptureClassificationContext, list[dict]]:
     context = context or build_capture_context(flows, domain)
     classifications = classify_flows(flows, domain, context)
+    ctx_dict = context.to_dict()
     records = [
         {
             "flow_index": index,
             "method": flow.method.upper(),
             "host": flow.host.lower().rstrip("."),
             "path": flow.path,
-            "capture_context": context.to_dict(),
+            "capture_context": ctx_dict,
             "classification": classification.to_dict(),
         }
         for index, (flow, classification) in enumerate(zip(flows, classifications, strict=True))
@@ -104,7 +105,7 @@ def select_openapi_flow(
 
 
 def classify_spec_flow(flow: CapturedFlow, domain: str) -> tuple[bool, SurfaceCategory, str]:
-    classification = classify_flows([flow], domain)[0]
+    classification = classify_flow(flow, target_host(domain))
     include = select_openapi_flow(flow, classification, domain)
     return include, classification.category, classification.reason
 
@@ -114,19 +115,12 @@ def is_spec_flow(
     domain: str,
     selection: OpenAPISelection | None = None,
 ) -> bool:
-    classification = classify_flows([flow], domain)[0]
+    classification = classify_flow(flow, target_host(domain))
     return select_openapi_flow(flow, classification, domain, selection)
 
 
 def _auth_summary(group: list[CapturedFlow]) -> list[dict]:
-    return [
-        {
-            "type": pattern.auth_type,
-            "detail": pattern.detail,
-            "flow_count": pattern.flow_count,
-        }
-        for pattern in detect_auth(group)
-    ]
+    return [pattern.to_dict() for pattern in detect_auth(group)]
 
 
 def _safe_inventory_tags(group: list[CapturedFlow]) -> list[str]:

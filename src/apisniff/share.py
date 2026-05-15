@@ -76,24 +76,9 @@ def share_bundle(src: str, dst: str, domain: str) -> dict:
     (dst_path / "report.md").write_text(report)
 
     if session_stats:
-        safe_session = {
-            "domain": session_stats.domain,
-            "started_at": session_stats.started_at,
-            "duration_seconds": session_stats.duration_seconds,
-            "total_flows": session_stats.total_flows,
-            "kept_flows": session_stats.kept_flows,
-            "dropped": dict(session_stats.dropped),
-        }
-        for field in (
-            "captured_flows",
-            "openapi_candidate_flows",
-            "surface_flows",
-            "noise_flows",
-        ):
-            value = getattr(session_stats, field)
-            if value is not None:
-                safe_session[field] = value
-        (dst_path / "session.json").write_text(json.dumps(safe_session, indent=2))
+        (dst_path / "session.json").write_text(
+            json.dumps(session_stats.to_dict(), indent=2)
+        )
 
     gql_src = src_path / "graphql-schema.json"
     if gql_src.exists():

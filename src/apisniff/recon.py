@@ -153,14 +153,7 @@ def _analyze_to_dict(
             {"vendor": v.vendor, "confidence": v.confidence, "signals": v.signals}
             for v in result.vendors
         ],
-        "auth_patterns": [
-            {
-                "auth_type": p.auth_type,
-                "detail": p.detail,
-                "flow_count": p.flow_count,
-            }
-            for p in result.auth_patterns
-        ],
+        "auth_patterns": [p.to_dict() for p in result.auth_patterns],
         "top_endpoints": _top_endpoints(kept_flows),
         "auth_type_descriptions": dict(_AUTH_TYPE_DESCRIPTIONS),
         "bundle_dir": str(bundle_dir),

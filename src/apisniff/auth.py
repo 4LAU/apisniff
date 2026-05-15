@@ -23,6 +23,13 @@ class AuthPattern:
     detail: str
     flow_count: int
 
+    def to_dict(self) -> dict:
+        return {
+            "type": self.auth_type,
+            "detail": self.detail,
+            "flow_count": self.flow_count,
+        }
+
 
 def detect_auth(flows: list[CapturedFlow]) -> list[AuthPattern]:
     counts: Counter[tuple[str, str]] = Counter()

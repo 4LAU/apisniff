@@ -154,6 +154,6 @@ def read_surface_metadata(
                 records[index] = classification
     except (OSError, json.JSONDecodeError, KeyError, TypeError, ValueError):
         return {}
-    if set(records) != set(range(len(expected_flows))):
+    if len(records) != len(expected_flows):
         return {}
     return records

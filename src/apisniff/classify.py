@@ -278,7 +278,6 @@ def classify_flow(
             signals=api_signals + ("antibot_signature",),
         )
 
-    noise_domains = _load_yaml("noise_domains.yaml")
     if (
         _contains_any(path_only, _telemetry_substrings())
         or _path_contains_any(path_only, _TELEMETRY_PATH_FRAGMENTS)
@@ -301,10 +300,11 @@ def classify_flow(
             host_role=role,
             signals=api_signals + ("telemetry_subdomain",),
         )
+    noise_domains = _load_yaml("noise_domains.yaml")
     if _matches_domain_list(host, noise_domains):
         category = (
             "telemetry"
-            if api_like or _contains_any(path_only, _TELEMETRY_PATH_FRAGMENTS)
+            if api_like or _path_contains_any(path_only, _TELEMETRY_PATH_FRAGMENTS)
             else "non_api"
         )
         return SurfaceClassification(
@@ -315,9 +315,10 @@ def classify_flow(
             signals=api_signals + ("noise_domain",),
         )
 
-    if flow.content_type.startswith(_DROPPABLE_CONTENT_TYPES):
+    content_type = flow.content_type
+    if content_type.startswith(_DROPPABLE_CONTENT_TYPES):
         if (
-            flow.content_type in _JS_CONTENT_TYPES
+            content_type in _JS_CONTENT_TYPES
             and len(_scan_antibot_markers(flow.response_body)) >= 2
         ):
             return SurfaceClassification(
@@ -332,7 +333,7 @@ def classify_flow(
             reason="static asset",
             api_like=False,
             host_role=role,
-            signals=(f"response_ct:{flow.content_type}",),
+            signals=(f"response_ct:{content_type}",),
         )
 
     if not api_like:
@@ -386,6 +387,7 @@ class Classifier:
         self._target_rd = extract_registered_domain(self._target_host)
         self._related_domains: set[str] = set()
         self._noise_domains: list[str] = _load_yaml("noise_domains.yaml")
+        self._cached_context: CaptureClassificationContext | None = None
 
     def classify(self, flow: CapturedFlow) -> ClassifyResult:
         surface = self.classify_surface(flow)
@@ -411,9 +413,14 @@ class Classifier:
         return classify_flow(flow, self._target_host, self.context())
 
     def context(self) -> CaptureClassificationContext:
-        return CaptureClassificationContext(
-            known_related_domains=tuple(sorted(self._related_domains))
-        )
+        if self._cached_context is None:
+            self._cached_context = CaptureClassificationContext(
+                known_related_domains=tuple(sorted(self._related_domains))
+            )
+        return self._cached_context
+
+    def _invalidate_context(self) -> None:
+        self._cached_context = None
 
     def _learn_request_relationship(self, flow: CapturedFlow) -> None:
         rd = extract_registered_domain(flow.host)
@@ -426,6 +433,7 @@ class Classifier:
                 h = _host_from_url(val)
                 if h and extract_registered_domain(h) == self._target_rd:
                     self._related_domains.add(rd)
+                    self._invalidate_context()
                     return
 
     def _learn_csp(self, flow: CapturedFlow) -> None:
@@ -448,8 +456,10 @@ class Classifier:
                     rd
                     and rd != self._target_rd
                     and not _matches_domain_list(host, self._noise_domains)
+                    and rd not in self._related_domains
                 ):
                     self._related_domains.add(rd)
+                    self._invalidate_context()
 
 
 def _scan_antibot_markers(body: bytes) -> list[str]:

@@ -4,13 +4,10 @@ import json
 import re
 from urllib.parse import parse_qs
 
+from apisniff.models import _NUMERIC_RE, _UUID_RE
+
 _MULTIPART_NAME_RE = re.compile(r'name="([^"]+)"')
 _MULTIPART_FILENAME_RE = re.compile(r'filename="[^"]*"')
-_UUID_RE = re.compile(
-    r"^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$",
-    re.I,
-)
-_NUMERIC_RE = re.compile(r"^\d+$")
 _SECRET_RE = re.compile(
     r"(?i)(bearer |basic |eyj|sk_|pk_|api_|ghp_|gho_|ghs_|glpat-|xox[bpsar]-|AKIA)"
 )

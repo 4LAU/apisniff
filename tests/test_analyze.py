@@ -229,11 +229,11 @@ def test_run_analyze_json_output_is_llm_optimized(
     ]
     assert data["auth_patterns"] == [
         {
-            "auth_type": "bearer",
+            "type": "bearer",
             "detail": "authorization: bearer",
             "flow_count": 2,
         },
-        {"auth_type": "session_cookie", "detail": "sessionid", "flow_count": 1},
+        {"type": "session_cookie", "detail": "sessionid", "flow_count": 1},
     ]
     assert data["top_endpoints"] == [
         {"method": "GET", "path": "/api/users/{id}", "count": 2}
