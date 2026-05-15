@@ -34,7 +34,6 @@ _DROPPABLE_CONTENT_TYPES = _JS_CONTENT_TYPES + (
     "text/css", "image/", "video/", "audio/", "font/",
     "application/font", "application/pdf", "application/wasm",
 )
-_STATIC_CONTENT_TYPE_PREFIXES = _DROPPABLE_CONTENT_TYPES
 _API_CONTENT_TYPES = (
     "application/json",
     "application/problem+json",
@@ -102,6 +101,17 @@ def _load_yaml(name: str) -> dict | list:
         return yaml.safe_load(f)
 
 
+@functools.lru_cache(maxsize=1)
+def _antibot_allowlist_domains() -> tuple[str, ...]:
+    return tuple(_load_yaml("challenge_indicators.yaml").get("allowlist_domains", []))
+
+
+@functools.lru_cache(maxsize=1)
+def _telemetry_substrings() -> tuple[str, ...]:
+    ind = _load_yaml("challenge_indicators.yaml")
+    return tuple(ind.get("drop_path_substrings", [])) + tuple(ind.get("same_site_drop_paths", []))
+
+
 def extract_registered_domain(hostname: str) -> str:
     h = hostname.lower().rstrip(".")
     if not h:
@@ -132,21 +142,18 @@ _TELEMETRY_SUBDOMAIN_INDICATORS = ("analytics.", "smetrics.", "telemetry.", "met
 
 
 def _contains_any(value: str, fragments: tuple[str, ...] | list[str]) -> bool:
-    value = value.lower()
-    return any(fragment.lower() in value for fragment in fragments)
+    return any(fragment in value for fragment in fragments)
 
 
 def _path_contains_any(path: str, fragments: tuple[str, ...]) -> bool:
     """Match fragments at path-segment boundaries, not as arbitrary substrings."""
-    path = path.lower()
     for fragment in fragments:
-        frag = fragment.lower()
         idx = 0
         while True:
-            idx = path.find(frag, idx)
+            idx = path.find(fragment, idx)
             if idx < 0:
                 break
-            end = idx + len(frag)
+            end = idx + len(fragment)
             if end == len(path) or path[end] == "/":
                 return True
             idx += 1
@@ -206,10 +213,16 @@ def _looks_like_antibot_payload(flow: CapturedFlow) -> bool:
     return punctuation >= 20
 
 
-def _host_role(host: str, target_domain: str, context: CaptureClassificationContext) -> HostRole:
+def _host_role(
+    host: str,
+    target_domain: str,
+    context: CaptureClassificationContext,
+    target_rd: str | None = None,
+) -> HostRole:
     rd = extract_registered_domain(host)
-    target_rd = extract_registered_domain(target_domain)
-    if host.lower().rstrip(".") == target_domain.lower().rstrip("."):
+    if target_rd is None:
+        target_rd = extract_registered_domain(target_domain)
+    if host == target_domain:
         return "target"
     if rd == target_rd or rd in context.known_related_domains:
         return "same_site"
@@ -225,7 +238,8 @@ def classify_flow(
     target = target_host(target_domain)
     host = flow.host.lower().rstrip(".")
     path_only = flow.path.split("?", 1)[0].lower()
-    role = _host_role(host, target, context)
+    target_rd = extract_registered_domain(target)
+    role = _host_role(host, target, context, target_rd)
 
     if flow.method.upper() == "OPTIONS":
         return SurfaceClassification(
@@ -253,7 +267,7 @@ def classify_flow(
     if (
         _looks_like_antibot_payload(flow)
         or _matches_domain_list(host, _ANTIBOT_HOST_FRAGMENTS)
-        or _matches_domain_list(host, tuple(indicators.get("allowlist_domains", [])))
+        or _matches_domain_list(host, _antibot_allowlist_domains())
         or _contains_any(path_only, indicators.get("allowlist_paths", []))
     ):
         return SurfaceClassification(
@@ -264,13 +278,9 @@ def classify_flow(
             signals=api_signals + ("antibot_signature",),
         )
 
-    telemetry_substrings = (
-        tuple(indicators.get("drop_path_substrings", []))
-        + tuple(indicators.get("same_site_drop_paths", []))
-    )
     noise_domains = _load_yaml("noise_domains.yaml")
     if (
-        _contains_any(path_only, telemetry_substrings)
+        _contains_any(path_only, _telemetry_substrings())
         or _path_contains_any(path_only, _TELEMETRY_PATH_FRAGMENTS)
     ):
         return SurfaceClassification(
@@ -280,9 +290,8 @@ def classify_flow(
             host_role=role,
             signals=api_signals + ("telemetry_path",),
         )
-    host_lower = host.lower()
     if role != "third_party" and any(
-        host_lower.startswith(ind) or f".{ind}" in host_lower
+        host.startswith(ind) or f".{ind}" in host
         for ind in _TELEMETRY_SUBDOMAIN_INDICATORS
     ):
         return SurfaceClassification(
@@ -306,7 +315,7 @@ def classify_flow(
             signals=api_signals + ("noise_domain",),
         )
 
-    if flow.content_type.startswith(_STATIC_CONTENT_TYPE_PREFIXES):
+    if flow.content_type.startswith(_DROPPABLE_CONTENT_TYPES):
         if (
             flow.content_type in _JS_CONTENT_TYPES
             and len(_scan_antibot_markers(flow.response_body)) >= 2
@@ -379,11 +388,7 @@ class Classifier:
         self._noise_domains: list[str] = _load_yaml("noise_domains.yaml")
 
     def classify(self, flow: CapturedFlow) -> ClassifyResult:
-        if flow.method.upper() != "OPTIONS":
-            self._learn_csp(flow)
-            self._learn_request_relationship(flow)
-
-        surface = classify_flow(flow, self._target_host, self.context())
+        surface = self.classify_surface(flow)
         if surface.category == "options":
             return ClassifyResult(action="drop", category="options", flow=None)
 

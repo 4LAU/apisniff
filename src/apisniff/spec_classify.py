@@ -4,8 +4,14 @@ from collections import defaultdict
 from dataclasses import dataclass
 
 from apisniff.auth import detect_auth
-from apisniff.classify import Classifier, classify_flow, is_api_like, target_host
-from apisniff.models import CapturedFlow, get_header, normalize_path
+from apisniff.classify import (
+    Classifier,
+    _request_content_type,
+    classify_flow,
+    is_api_like,
+    target_host,
+)
+from apisniff.models import CapturedFlow, normalize_path
 from apisniff.surface import (
     IMPORTANT_SURFACE_CATEGORIES,
     CaptureClassificationContext,
@@ -29,10 +35,6 @@ class OpenAPISelection:
     include_hosts: frozenset[str] = frozenset()
 
 
-def _target_host(domain: str) -> str:
-    return target_host(domain)
-
-
 def build_capture_context(
     flows: list[CapturedFlow],
     domain: str,
@@ -49,7 +51,7 @@ def classify_flows(
     context: CaptureClassificationContext | None = None,
 ) -> list[SurfaceClassification]:
     context = context or build_capture_context(flows, domain)
-    target = _target_host(domain)
+    target = target_host(domain)
     return [classify_flow(flow, target, context) for flow in flows]
 
 
@@ -87,7 +89,7 @@ def select_openapi_flow(
 ) -> bool:
     selection = selection or OpenAPISelection()
     host = flow.host.lower().rstrip(".")
-    requested_host = _target_host(domain)
+    requested_host = target_host(domain)
     category = classification.category
 
     if category == "options":
@@ -114,10 +116,6 @@ def is_spec_flow(
 ) -> bool:
     classification = classify_flows([flow], domain)[0]
     return select_openapi_flow(flow, classification, domain, selection)
-
-
-def _request_content_type(flow: CapturedFlow) -> str:
-    return get_header(flow.request_headers, "content-type").split(";")[0].strip().lower()
 
 
 def _auth_summary(group: list[CapturedFlow]) -> list[dict]:
@@ -179,7 +177,6 @@ def build_surface_inventory(
             "method": method,
             "host": host,
             "path": normalized,
-            "normalized_path": normalized,
             "category": category,
             "reason": first_classification.reason,
             "host_role": first_classification.host_role,
@@ -189,7 +186,6 @@ def build_surface_inventory(
                 ct for flow in group if (ct := _request_content_type(flow))
             }),
             "response_content_types": sorted({f.content_type for f in group if f.content_type}),
-            "content_types": sorted({f.content_type for f in group if f.content_type}),
             "observed_auth": _auth_summary(group),
             "tags": _safe_inventory_tags(group),
             "included_in_openapi": include,

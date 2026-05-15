@@ -15,10 +15,10 @@ from rich.console import Console
 
 from apisniff.auth import AuthPattern, detect_auth
 from apisniff.bundle import load_flows, read_capture_jsonl
+from apisniff.classify import target_host
 from apisniff.models import CapturedFlow, get_header
 from apisniff.spec_classify import (
     OpenAPISelection,
-    _target_host,
     build_capture_context,
     build_surface_inventory,
     classify_flows,
@@ -483,7 +483,7 @@ def generate_openapi(
     infer_schemes: bool = False,
     include_examples: bool = False,
 ) -> dict:
-    host = _target_host(domain)
+    host = target_host(domain)
     operations = _aggregate_operations(flows, include_examples=include_examples)
     operation_ids = _operation_ids(operations)
 
