@@ -1,11 +1,12 @@
 import json
+from dataclasses import replace
 
 import yaml
 from typer.testing import CliRunner
 
 from apisniff.cli import app
 from apisniff.models import CapturedFlow
-from apisniff.share import generate_inventory, share_bundle
+from apisniff.share import share_bundle
 
 runner = CliRunner()
 
@@ -59,64 +60,6 @@ def _write_bundle(tmp_path, flows, extras=None):
 
 
 # ---------------------------------------------------------------------------
-# generate_inventory tests
-# ---------------------------------------------------------------------------
-
-
-def test_generate_inventory_groups_by_endpoint():
-    """Inventory groups flows by normalized path + method."""
-    flows = [
-        _flow("GET", "/api/users"),
-        _flow("GET", "/api/users"),
-        _flow("GET", "/api/users/123"),
-        _flow("POST", "/api/users"),
-    ]
-    inventory = generate_inventory(flows)
-    assert len(inventory) == 3
-    get_users = next(
-        e for e in inventory
-        if e["method"] == "GET" and e["path"] == "/api/users"
-    )
-    assert get_users["count"] == 2
-    get_user_id = next(
-        e for e in inventory
-        if e["path"] == "/api/users/{id}"
-    )
-    assert get_user_id["method"] == "GET"
-    assert get_user_id["count"] == 1
-
-
-def test_generate_inventory_captures_status_codes():
-    """Inventory records all observed status codes."""
-    flows = [
-        _flow("GET", "/api/users", response_status=200),
-        _flow("GET", "/api/users", response_status=200),
-        _flow("GET", "/api/users", response_status=404),
-    ]
-    inventory = generate_inventory(flows)
-    entry = inventory[0]
-    assert set(entry["status_codes"]) == {200, 404}
-
-
-def test_generate_inventory_captures_content_types():
-    """Inventory records response content types."""
-    flows = [
-        _flow(
-            "GET", "/api/users",
-            response_headers={"content-type": "application/json"},
-        ),
-        _flow(
-            "GET", "/api/users",
-            response_headers={"content-type": "text/html"},
-        ),
-    ]
-    inventory = generate_inventory(flows)
-    entry = inventory[0]
-    assert "application/json" in entry["content_types"]
-    assert "text/html" in entry["content_types"]
-
-
-# ---------------------------------------------------------------------------
 # share_bundle tests
 # ---------------------------------------------------------------------------
 
@@ -153,6 +96,7 @@ def test_share_bundle_no_raw_secrets_in_output(tmp_path):
             b'"session_id": "session_id_abc123"}'
         ),
     )
+    flow = replace(flow, tags=["token=tag_secret_999", "surface:business_api"])
     src = _write_bundle(tmp_path, [flow])
     dst = tmp_path / "shared"
 
@@ -169,6 +113,7 @@ def test_share_bundle_no_raw_secrets_in_output(tmp_path):
         assert "123-45-6789" not in content
         assert "alice@example.com" not in content
         assert "session_id_abc123" not in content
+        assert "tag_secret_999" not in content
 
 
 def test_share_bundle_spec_has_no_examples(tmp_path):
@@ -184,6 +129,29 @@ def test_share_bundle_spec_has_no_examples(tmp_path):
     schema_props = props["content"]["application/json"]["schema"]["properties"]
     assert "example" not in schema_props["email"]
     assert "example" not in schema_props["name"]
+
+
+def test_share_bundle_inventory_includes_operational_flows_excluded_from_spec(tmp_path):
+    business = _flow(path="/api/users")
+    antibot = _flow(
+        method="POST",
+        path="/jMdNhK4DL/bTQsJS7e/Q/XNYrQm1k/Mn1tPnsWAg/bxM/MaQZNbw4u",
+        request_headers={"content-type": "text/plain;charset=UTF-8"},
+        request_body=b'{"sensor_data":"3;0;1"}',
+    )
+    src = _write_bundle(tmp_path, [business, antibot])
+    dst = tmp_path / "shared"
+
+    share_bundle(str(src), str(dst), "example.com")
+
+    spec = yaml.safe_load((dst / "spec.yaml").read_text())
+    assert "/api/users" in spec["paths"]
+    assert "/jMdNhK4DL/bTQsJS7e/Q/XNYrQm1k/Mn1tPnsWAg/bxM/MaQZNbw4u" not in spec["paths"]
+
+    inventory = json.loads((dst / "inventory.json").read_text())
+    categories = {entry["category"]: entry for entry in inventory}
+    assert categories["business_api"]["included_in_openapi"] is True
+    assert categories["antibot"]["included_in_openapi"] is False
 
 
 def test_share_bundle_regenerates_report(tmp_path):

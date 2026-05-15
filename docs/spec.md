@@ -23,9 +23,9 @@ All commands follow these rules:
 - **`--header` / `-H`** accepts `key:value` format. Can be repeated: `-H "Authorization:Bearer tok" -H "Accept:application/json"`.
 - **`--proxy`** accepts `http://`, `https://`, `socks5://` URLs.
 - **Common public flags** are for output, routing, credentials, and safety: `--json`, `--output`, `--format`, `--domain`, `--proxy`, `--header`, `--cookie-file`, `--dry-run`, `--include-unsafe`, and `--insecure`.
-- **Opinionated defaults** do the useful thing without extra flags: `spec` includes redacted examples and formal security schemes by default.
+- **Opinionated defaults** keep the OpenAPI contract clean: `spec` includes requested-host business/auth API traffic by default and keeps examples out unless `--examples` is set.
 - **Explicit network expansion** stays opt-in: `analyze --fetch-graphql` fetches GraphQL schemas from detected endpoints.
-- **Opt-out flags** exist for the few defaults users may need to suppress, such as `--no-examples`.
+- **Broader projections are explicit.** Use `--include-third-party`, `--include-category`, or `--include-host` when you want traffic outside the default requested-host API contract in the generated OpenAPI document.
 
 ## Bundle Layout
 
@@ -34,6 +34,8 @@ A bundle is a directory created by `recon` or `analyze`, stored under `~/apisnif
 ```
 example-com_2026-05-12_14-30/
   flows.jsonl        — Captured HTTP flows (SENSITIVE — contains credentials)
+  surface.jsonl      — Rebuildable per-flow surface classification metadata
+  surface-context.json — Capture classification context for deterministic reclassification
   session.json       — Capture metadata (domain, duration, flow counts)
   cookies.txt        — Netscape cookie jar (SENSITIVE — session credentials)
   report.md          — Recon report (vendors, auth, endpoints)
@@ -47,6 +49,7 @@ example-com_2026-05-12_14-30/
 ## Safety Model
 
 - **`recon` and `analyze` capture full HTTP traffic** including credentials. Raw bundles must never be shared.
+- **OpenAPI is a projection, not the capture truth.** Anti-bot, captcha, telemetry, analytics, and third-party API-shaped traffic are preserved for inventory, but excluded from default OpenAPI output unless selected with `--include-third-party`, `--include-category`, or `--include-host`.
 - **`recon` uses mitmproxy for HTTPS capture.** The mitmproxy CA certificate lets the proxied browser trust locally generated certificates, which is what makes decrypted HTTPS inspection possible. Trust it only on machines and browser profiles you control.
 - **`share` produces only derived artifacts.** No raw traffic, no cookie values, no headers. Output is safe to distribute.
 - **`replay` defaults to safe methods only** (GET, HEAD, OPTIONS). `--include-unsafe` opts in to POST/PUT/DELETE/PATCH.

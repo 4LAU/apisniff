@@ -233,6 +233,30 @@ def spec(
         click_type=click.Choice(["yaml", "json"]),
     ),
     output_file: str | None = typer.Option(None, "--output", "-o", help="Output file path"),
+    surface_output: str | None = typer.Option(
+        None,
+        "--surface-output",
+        help="Write categorized surface inventory JSON to this path",
+    ),
+    include_third_party: bool = typer.Option(
+        False,
+        "--include-third-party",
+        help="Include third-party API-shaped dependencies in OpenAPI output",
+    ),
+    include_category: Annotated[
+        list[str] | None,
+        typer.Option(
+            "--include-category",
+            help="Include a surface category in OpenAPI output; repeatable",
+        ),
+    ] = None,
+    include_host: Annotated[
+        list[str] | None,
+        typer.Option(
+            "--include-host",
+            help="Include API-shaped traffic from a host in OpenAPI output; repeatable",
+        ),
+    ] = None,
     no_infer_schemes: bool = typer.Option(
         False, "--no-infer-security-schemes",
         help="Keep observed auth in extensions only",
@@ -254,8 +278,12 @@ def spec(
 
     run_spec(
         domain, input_file=input_file, output_format=output_format,
-        output_file=output_file, infer_schemes=not no_infer_schemes,
+        output_file=output_file, surface_output=surface_output,
+        infer_schemes=not no_infer_schemes,
         include_examples=examples and not no_examples,
+        include_third_party=include_third_party,
+        include_categories=include_category,
+        include_hosts=include_host,
     )
 
 

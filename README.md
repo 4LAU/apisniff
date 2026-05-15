@@ -10,9 +10,9 @@ One tool for API recon: preflight defenses, capture real traffic, extract a usab
 ## What you get
 
 - Probe a URL in 10 seconds, classify 25+ vendor products (Cloudflare, Akamai, DataDome, PerimeterX, Imperva, Kasada, and more)
-- Browse a site through a local [mitmproxy](https://github.com/mitmproxy/mitmproxy) instance. Noise is filtered automatically; you keep only API calls.
+- Browse a site through a local [mitmproxy](https://github.com/mitmproxy/mitmproxy) instance. Raw non-OPTIONS traffic is preserved locally, then projected into a clean API spec and categorized surface inventory.
 - Import HAR files or Burp Suite exports for offline analysis
-- Generate an OpenAPI spec from captured traffic with schema inference and example values
+- Generate a clean OpenAPI spec from captured traffic with schema inference, auth detection, and opt-in broader views for third-party or challenge traffic
 - Replay captured calls against the live API and see what changed
 - Export safely: derived artifacts only, no raw traffic, no credentials
 
@@ -54,7 +54,7 @@ apisniff share example.com
 | Command | Purpose | Docs |
 |---------|---------|------|
 | [`probe`](docs/commands/probe.md) | Defense preflight: assess defenses, detect vendors, check rate limits | [Reference →](docs/commands/probe.md) |
-| [`recon`](docs/commands/recon.md) | Capture + classify: browse through proxy, filter noise, generate report | [Reference →](docs/commands/recon.md) |
+| [`recon`](docs/commands/recon.md) | Capture + classify: browse through proxy, preserve traffic, generate report | [Reference →](docs/commands/recon.md) |
 | [`analyze`](docs/commands/analyze.md) | Offline analysis: import HAR, Burp XML, or JSONL captures | [Reference →](docs/commands/analyze.md) |
 | [`replay`](docs/commands/replay.md) | Replay captured calls and detect API drift | [Reference →](docs/commands/replay.md) |
 | [`spec`](docs/commands/spec.md) | Generate OpenAPI 3.0.3 from captured traffic | [Reference →](docs/commands/spec.md) |

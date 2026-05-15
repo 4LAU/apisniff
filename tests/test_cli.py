@@ -88,3 +88,29 @@ def test_spec_examples_are_explicit_opt_in(monkeypatch):
 
     assert result.exit_code == 0
     assert captured["include_examples"] is True
+
+
+def test_spec_include_flags_pass_through(monkeypatch):
+    captured = {}
+
+    def fake_run_spec(*args, **kwargs):
+        captured.update(kwargs)
+
+    monkeypatch.setattr("apisniff.spec.run_spec", fake_run_spec)
+
+    result = runner.invoke(app, [
+        "spec",
+        "example.com",
+        "--include-third-party",
+        "--include-category",
+        "antibot",
+        "--include-category",
+        "captcha",
+        "--include-host",
+        "api.example.com",
+    ])
+
+    assert result.exit_code == 0
+    assert captured["include_third_party"] is True
+    assert captured["include_categories"] == ["antibot", "captcha"]
+    assert captured["include_hosts"] == ["api.example.com"]

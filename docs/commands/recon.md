@@ -4,7 +4,7 @@
 
 # `apisniff recon`
 
-Browse a site through a local mitmproxy, classify every request in real-time. Filters noise (ads, analytics, third-party), detects antibot JS, and writes classified flows to a bundle directory.
+Browse a site through a local mitmproxy, classify every request in real-time. Preserves captured traffic before projection, detects antibot JS, and writes classified flows plus surface metadata to a bundle directory.
 
 ## Usage
 

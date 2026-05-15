@@ -116,7 +116,7 @@ apisniff probe api.example.com -H "Authorization:Bearer tok" --cookie "session=a
 apisniff spec example.com -o spec.yaml
 ```
 
-Example values are included by default from captured responses. Secrets (bearer tokens, API keys, JWTs) are automatically redacted to `***REDACTED***`. Strings longer than 200 characters are truncated. Use `--no-examples` when you want schemas only.
+The default OpenAPI output is the clean requested-host API contract. Anti-bot, captcha, telemetry, analytics, and third-party API-shaped traffic stay visible in the surface inventory instead of being promoted into `paths`. Use `--examples` to include redacted sample values, or `--include-third-party`, `--include-category`, and `--include-host` when you intentionally want a broader OpenAPI projection.
 
 ## Share results with a teammate
 

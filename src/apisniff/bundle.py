@@ -49,6 +49,8 @@ def detect_input_format(head: str) -> str:
     if re.match(r'^\{\s*"log"\s*:', stripped):
         return "har"
     if stripped.startswith("{"):
+        if re.match(r'^\{\s*"method"\s*:', stripped):
+            return "jsonl"
         first_line = stripped.splitlines()[0]
         try:
             first_obj = json.loads(first_line)

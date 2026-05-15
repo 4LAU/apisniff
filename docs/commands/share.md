@@ -41,7 +41,7 @@ apisniff share example.com -o ./for-teammate/
 | File | Contents |
 |------|----------|
 | `spec.yaml` | OpenAPI 3.0.3 specification |
-| `inventory.json` | Endpoint summary (method, path, status codes, counts) |
+| `inventory.json` | Categorized surface inventory (host, path, category, reason, counts) |
 | `session.json` | Capture metadata (domain, duration, flow counts) |
 | `report.md` | Recon report with redacted cookie values |
 | `graphql-schema.json` | GraphQL schema (if captured) |

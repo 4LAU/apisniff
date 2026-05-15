@@ -218,7 +218,7 @@ def test_run_analyze_json_output_is_llm_optimized(
     assert data["domain"] == "example.com"
     assert data["total_flows"] == 2
     assert data["kept_flows"] == 2
-    assert data["drop_descriptions"]["static_asset"].startswith("Static files")
+    assert data["drop_descriptions"]["static"].startswith("Static files")
     assert data["auth_type_descriptions"]["bearer"].startswith("OAuth2")
     assert data["vendors"] == [
         {
@@ -248,8 +248,8 @@ def test_run_analyze_json_output_is_llm_optimized(
 # HAR with static-asset drops (classification reduces flow count)
 # ---------------------------------------------------------------------------
 
-def test_run_analyze_har_classifies_drops_static(tmp_path: Path) -> None:
-    """Classifier drops static assets; kept_flows < total_flows for HAR."""
+def test_run_analyze_har_preserves_static_before_projection(tmp_path: Path) -> None:
+    """HAR import preserves non-OPTIONS static assets before projection."""
     har_text = _make_har([
         _har_entry(url="https://api.example.com/v1/users"),
         _har_entry(url="https://api.example.com/app.js", resp_ct="application/javascript"),
@@ -263,7 +263,9 @@ def test_run_analyze_har_classifies_drops_static(tmp_path: Path) -> None:
 
     sess = json.loads((bundle_dir / "session.json").read_text())
     assert sess["total_flows"] == 3
-    assert sess["kept_flows"] < sess["total_flows"]
+    assert sess["kept_flows"] == sess["total_flows"]
+    assert sess["captured_flows"] == 3
+    assert sess["noise_flows"] == 2
 
 
 # ---------------------------------------------------------------------------

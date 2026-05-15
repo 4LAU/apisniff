@@ -42,11 +42,12 @@ class _BundleResult:
 
 _DROP_DESCRIPTIONS = {
     "options": "CORS preflight (OPTIONS) requests",
-    "noise_domain": "Requests to unrelated domains (ads, analytics, CDNs)",
-    "path_telemetry": "Telemetry or tracking paths on the target domain",
-    "third_party": "Third-party API calls not on the target domain",
-    "static_asset": "Static files (images, CSS, JS, fonts)",
-    "same_site_noise": "Non-API paths on the target domain (HTML pages, favicons)",
+    "telemetry": "Telemetry, analytics, logging, or beacon traffic",
+    "third_party_api": "API-shaped traffic on third-party hosts",
+    "static": "Static files (images, CSS, JS, fonts)",
+    "non_api": "Non-API page or asset traffic",
+    "antibot": "Bot-defense sensor or challenge traffic",
+    "captcha": "Captcha or browser challenge traffic",
 }
 
 _AUTH_TYPE_DESCRIPTIONS = {
@@ -479,13 +480,13 @@ def run_analyze(
         kept_flows = []
         for flow in flows:
             result = classifier.classify(flow)
-            if result.action == "keep":
-                if result.flow is not None:
-                    kept_flows.append(result.flow)
-            else:
+            if result.action == "drop":
                 drop_counts[result.category] = drop_counts.get(result.category, 0) + 1
+                continue
+            if result.flow is not None:
+                kept_flows.append(result.flow)
     elif fmt == "jsonl":
-        kept_flows = flows
+        kept_flows = [flow for flow in flows if flow.method.upper() != "OPTIONS"]
     else:
         stderr.print(f"[red]Unrecognised format for {input_file}[/red]")
         return
@@ -501,6 +502,28 @@ def run_analyze(
 
     bundle_dir.mkdir(parents=True, exist_ok=True)
     bundle_dir.chmod(0o700)
+
+    from apisniff.spec_classify import derive_surface_records
+    from apisniff.surface import (
+        IMPORTANT_SURFACE_CATEGORIES,
+        write_capture_context,
+        write_surface_metadata,
+    )
+
+    context, records = derive_surface_records(kept_flows, domain)
+    write_capture_context(bundle_dir, context)
+    write_surface_metadata(bundle_dir, records)
+    classifications = [record["classification"] for record in records]
+    openapi_candidate_flows = sum(
+        1 for item in classifications
+        if item["category"] in {"business_api", "auth"}
+    )
+    surface_flows = sum(
+        1 for item in classifications
+        if item["category"] in IMPORTANT_SURFACE_CATEGORIES
+        and item["category"] not in {"business_api", "auth"}
+    )
+    noise_flows = len(classifications) - openapi_candidate_flows - surface_flows
 
     session_path = bundle_dir / "session.json"
     if session_path.exists():
@@ -518,6 +541,10 @@ def run_analyze(
             total_flows=len(flows),
             kept_flows=len(kept_flows),
             dropped=drop_counts,
+            captured_flows=len(kept_flows),
+            openapi_candidate_flows=openapi_candidate_flows,
+            surface_flows=surface_flows,
+            noise_flows=noise_flows,
         )
         session_path.write_text(json.dumps(session_stats.to_dict(), indent=2))
 

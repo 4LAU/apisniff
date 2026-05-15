@@ -233,9 +233,13 @@ class SessionStats:
     total_flows: int
     kept_flows: int
     dropped: dict[str, int]
+    captured_flows: int | None = None
+    openapi_candidate_flows: int | None = None
+    surface_flows: int | None = None
+    noise_flows: int | None = None
 
     def to_dict(self) -> dict:
-        return {
+        data = {
             "domain": self.domain,
             "started_at": self.started_at,
             "duration_seconds": self.duration_seconds,
@@ -243,6 +247,15 @@ class SessionStats:
             "kept_flows": self.kept_flows,
             "dropped": dict(self.dropped),
         }
+        if self.captured_flows is not None:
+            data["captured_flows"] = self.captured_flows
+        if self.openapi_candidate_flows is not None:
+            data["openapi_candidate_flows"] = self.openapi_candidate_flows
+        if self.surface_flows is not None:
+            data["surface_flows"] = self.surface_flows
+        if self.noise_flows is not None:
+            data["noise_flows"] = self.noise_flows
+        return data
 
     @classmethod
     def from_dict(cls, d: dict) -> SessionStats:
@@ -253,6 +266,10 @@ class SessionStats:
             total_flows=d["total_flows"],
             kept_flows=d["kept_flows"],
             dropped=d.get("dropped", {}),
+            captured_flows=d.get("captured_flows"),
+            openapi_candidate_flows=d.get("openapi_candidate_flows"),
+            surface_flows=d.get("surface_flows"),
+            noise_flows=d.get("noise_flows"),
         )
 
 

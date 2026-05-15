@@ -13,6 +13,11 @@ from mitmproxy import http
 from apisniff.adapters.mitmproxy_adapter import flow_to_captured
 from apisniff.classify import Classifier
 from apisniff.models import SessionStats
+from apisniff.surface import (
+    IMPORTANT_SURFACE_CATEGORIES,
+    write_capture_context,
+    write_surface_metadata,
+)
 
 
 class ApisniffAddon:
@@ -26,6 +31,9 @@ class ApisniffAddon:
         self.started_at = time.time()
         self.total_flows = 0
         self.kept_flows = 0
+        self.api_flows = 0
+        self.surface_flows = 0
+        self.noise_flows = 0
         self.drop_counts: Counter[str] = Counter()
 
     def response(self, flow: http.HTTPFlow) -> None:
@@ -43,21 +51,35 @@ class ApisniffAddon:
             return
 
         self.kept_flows += 1
+        if result.category in {"business_api", "auth"}:
+            self.api_flows += 1
+        elif result.category in IMPORTANT_SURFACE_CATEGORIES:
+            self.surface_flows += 1
+        else:
+            self.noise_flows += 1
         self.output_file.write(result.flow.to_jsonl() + "\n")
         self.output_file.flush()
         self._print_status()
 
     def _print_status(self) -> None:
         elapsed = int(time.time() - self.started_at)
-        dropped = sum(self.drop_counts.values())
         sys.stderr.write(
-            f"\r  Captured: {self.kept_flows}  |  Filtered: {dropped}  |  {elapsed}s"
+            f"\r  Captured: {self.kept_flows}  |  API: {self.api_flows}  |  "
+            f"Surface: {self.surface_flows}  |  Noise: {self.noise_flows}  |  {elapsed}s"
         )
         sys.stderr.flush()
 
     def done(self) -> None:
         if self.output_file:
             self.output_file.close()
+
+        from apisniff.bundle import read_capture_jsonl
+        from apisniff.spec_classify import derive_surface_records
+
+        flows = read_capture_jsonl(str(self.output_path)) if self.output_path.exists() else []
+        context, records = derive_surface_records(flows, self.domain, self.classifier.context())
+        write_capture_context(self.output_path.parent, context)
+        write_surface_metadata(self.output_path.parent, records)
 
         duration = time.time() - self.started_at
         stats = SessionStats(
@@ -67,6 +89,10 @@ class ApisniffAddon:
             total_flows=self.total_flows,
             kept_flows=self.kept_flows,
             dropped=dict(self.drop_counts),
+            captured_flows=self.kept_flows,
+            openapi_candidate_flows=self.api_flows,
+            surface_flows=self.surface_flows,
+            noise_flows=self.noise_flows,
         )
         session_path = self.output_path.parent / "session.json"
         session_path.write_text(json.dumps(stats.to_dict(), indent=2))

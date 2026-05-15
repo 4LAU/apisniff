@@ -2,37 +2,17 @@ from __future__ import annotations
 
 import json
 import shutil
-from collections import defaultdict
 from pathlib import Path
 
 import yaml
 
 from apisniff.auth import ExtractedCookie, detect_auth, extract_cookies
 from apisniff.bundle import read_capture_jsonl
-from apisniff.models import CapturedFlow, SessionStats, normalize_path
+from apisniff.models import SessionStats
 from apisniff.report import generate_report
-from apisniff.spec import generate_openapi, is_api_flow
+from apisniff.spec import build_surface_inventory, generate_openapi
+from apisniff.spec_classify import classify_flows, select_openapi_flow
 from apisniff.vendors import flows_to_probe_results, load_signatures, match_vendors
-
-
-def generate_inventory(flows: list[CapturedFlow]) -> list[dict]:
-    groups: dict[tuple[str, str], list[CapturedFlow]] = defaultdict(list)
-    for flow in flows:
-        key = (flow.method.upper(), normalize_path(flow.path))
-        groups[key].append(flow)
-
-    inventory: list[dict] = []
-    for (method, path), group in sorted(groups.items()):
-        status_codes = sorted({f.response_status for f in group})
-        content_types = sorted({f.content_type for f in group if f.content_type})
-        inventory.append({
-            "method": method,
-            "path": path,
-            "count": len(group),
-            "status_codes": status_codes,
-            "content_types": content_types,
-        })
-    return inventory
 
 
 def _load_session_stats(src_path: Path):
@@ -53,11 +33,16 @@ def share_bundle(src: str, dst: str, domain: str) -> dict:
     if not flows_path.exists():
         raise FileNotFoundError(f"No flows.jsonl in {src_path}")
     flows = read_capture_jsonl(str(flows_path))
+    classifications = classify_flows(flows, domain)
 
     dst_path.mkdir(parents=True, exist_ok=True)
 
-    api_flows = [f for f in flows if is_api_flow(f)]
-    auth_patterns = detect_auth(flows)
+    api_flows = [
+        flow
+        for flow, classification in zip(flows, classifications, strict=True)
+        if select_openapi_flow(flow, classification, domain)
+    ]
+    auth_patterns = detect_auth(api_flows)
     cookies = extract_cookies(flows)
 
     spec = generate_openapi(
@@ -67,7 +52,7 @@ def share_bundle(src: str, dst: str, domain: str) -> dict:
     spec_yaml = yaml.dump(spec, sort_keys=False, default_flow_style=False)
     (dst_path / "spec.yaml").write_text(spec_yaml)
 
-    inventory = generate_inventory(flows)
+    inventory = build_surface_inventory(flows, domain, classifications)
     (dst_path / "inventory.json").write_text(
         json.dumps(inventory, indent=2)
     )
@@ -99,6 +84,15 @@ def share_bundle(src: str, dst: str, domain: str) -> dict:
             "kept_flows": session_stats.kept_flows,
             "dropped": dict(session_stats.dropped),
         }
+        for field in (
+            "captured_flows",
+            "openapi_candidate_flows",
+            "surface_flows",
+            "noise_flows",
+        ):
+            value = getattr(session_stats, field)
+            if value is not None:
+                safe_session[field] = value
         (dst_path / "session.json").write_text(json.dumps(safe_session, indent=2))
 
     gql_src = src_path / "graphql-schema.json"

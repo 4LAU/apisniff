@@ -34,8 +34,8 @@ def test_api_flow_kept():
 def test_noise_domain_dropped():
     c = Classifier(target_domain="example.com")
     result = c.classify(_flow(host="google-analytics.com", path="/collect"))
-    assert result.action == "drop"
-    assert result.category == "noise_domain"
+    assert result.action == "keep"
+    assert result.category == "telemetry"
 
 
 def test_allowlist_domain_kept():
@@ -51,8 +51,8 @@ def test_allowlist_domain_kept():
 def test_third_party_dropped():
     c = Classifier(target_domain="example.com")
     result = c.classify(_flow(host="unrelated-cdn.net", path="/widget.js"))
-    assert result.action == "drop"
-    assert result.category == "third_party"
+    assert result.action == "keep"
+    assert result.category == "third_party_api"
 
 
 def test_related_domain_via_referer():
@@ -71,8 +71,8 @@ def test_static_asset_dropped():
         response_headers={"content-type": "application/javascript"},
         response_body=b"console.log('hello')",
     ))
-    assert result.action == "drop"
-    assert result.category == "static_asset"
+    assert result.action == "keep"
+    assert result.category == "static"
 
 
 def test_antibot_js_kept():
@@ -90,8 +90,8 @@ def test_antibot_js_kept():
 def test_telemetry_path_dropped():
     c = Classifier(target_domain="example.com")
     result = c.classify(_flow(path="/rum.gif"))
-    assert result.action == "drop"
-    assert result.category == "path_telemetry"
+    assert result.action == "keep"
+    assert result.category == "telemetry"
 
 
 def test_options_dropped():
@@ -110,7 +110,15 @@ def test_co_uk_domain_extraction():
 def test_herokuapp_is_third_party():
     c = Classifier(target_domain="example.com")
     result = c.classify(_flow(host="myapp.herokuapp.com"))
-    assert result.action == "drop"
+    assert result.action == "keep"
+    assert result.category == "third_party_api"
+
+
+def test_antibot_domain_signature_requires_boundary():
+    c = Classifier(target_domain="example.com")
+    result = c.classify(_flow(host="notdatadome.co.evil.test"))
+    assert result.action == "keep"
+    assert result.category == "third_party_api"
 
 
 def test_query_string_beacon_not_dropped():
@@ -126,5 +134,5 @@ def test_telemetry_path_in_path_segment_dropped():
     """A drop-pattern in the actual path (not query string) must still be dropped."""
     c = Classifier(target_domain="example.com")
     result = c.classify(_flow(path="/tracking/beacon.gif"))
-    assert result.action == "drop"
-    assert result.category == "path_telemetry"
+    assert result.action == "keep"
+    assert result.category == "telemetry"

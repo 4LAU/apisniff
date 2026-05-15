@@ -71,12 +71,13 @@ Same processing pipeline, different input source.
 apisniff spec example.com
 ```
 
-The command reads your latest capture and produces an OpenAPI 3.0.3 spec on stdout. It includes:
-- Every observed endpoint, normalized (e.g., `/users/123` → `/users/{id}`)
+The command reads your latest capture and produces an OpenAPI 3.0.3 spec on stdout. By default it includes the clean requested-host API contract:
+- Business and auth API endpoints on the requested host, normalized (e.g., `/users/123` → `/users/{id}`)
 - Request and response schemas inferred from captured data
-- Redacted example values
 - Query parameters merged across observations
 - Detected authentication patterns and security schemes
+
+Anti-bot, captcha, telemetry, analytics, and third-party API-shaped traffic are kept in the surface inventory instead of being silently lost.
 
 Save it to a file:
 
@@ -84,10 +85,18 @@ Save it to a file:
 apisniff spec example.com -o spec.yaml
 ```
 
-If you want schemas only, omit examples:
+If you want sample values from captured data, opt in:
 
 ```bash
-apisniff spec example.com --no-examples -o spec.yaml
+apisniff spec example.com --examples -o spec.yaml
+```
+
+If you intentionally want a broader OpenAPI view:
+
+```bash
+apisniff spec example.com --include-third-party -o spec.yaml
+apisniff spec example.com --include-category antibot --include-category captcha -o spec.yaml
+apisniff spec example.com --include-host api.example.com -o spec.yaml
 ```
 
 ## Step 4: Share results
@@ -98,7 +107,7 @@ Raw capture bundles contain credentials and should never be shared. To create a 
 apisniff share example.com
 ```
 
-The output is a directory with derived artifacts only: an OpenAPI spec, endpoint inventory, session metadata, and a redacted report. No raw traffic, no cookies, no headers.
+The output is a directory with derived artifacts only: an OpenAPI spec, categorized surface inventory, session metadata, and a redacted report. No raw traffic, no cookies, no headers.
 
 ## What to do with the spec
 
