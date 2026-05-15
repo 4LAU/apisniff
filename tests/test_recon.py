@@ -1,10 +1,11 @@
+import json
 import signal
 import tempfile
 from pathlib import Path
 
 import pytest
 
-from apisniff.models import CapturedFlow
+from apisniff.models import CapturedFlow, SessionStats
 from apisniff.recon import (
     _normalize_target,
     detect_input_format,
@@ -129,14 +130,101 @@ def test_run_recon_stops_proxy_when_setup_raises(monkeypatch, tmp_path: Path):
     def raise_setup_error() -> bool:
         raise RuntimeError("trust check failed")
 
+    popen_args = []
+
+    def fake_popen(*args, **kwargs):
+        popen_args.append(args[0])
+        return proxy_proc
+
     monkeypatch.setattr("apisniff.recon.CAPTURES_DIR", tmp_path)
     monkeypatch.setattr("apisniff.recon.time.sleep", lambda _: None)
     monkeypatch.setattr("apisniff.recon._is_ca_trusted", raise_setup_error)
-    monkeypatch.setattr("apisniff.recon.subprocess.Popen", lambda *_, **__: proxy_proc)
+    monkeypatch.setattr("apisniff.recon.subprocess.Popen", fake_popen)
 
     with pytest.raises(RuntimeError, match="trust check failed"):
         run_recon("example.com")
 
+    assert "--listen-host" in popen_args[0]
+    assert popen_args[0][popen_args[0].index("--listen-host") + 1] == "127.0.0.1"
     assert proxy_proc.signals == [signal.SIGINT]
     assert proxy_proc.returncode == 0
 
+
+def test_run_recon_json_outputs_enriched_capture(monkeypatch, tmp_path: Path, capsys):
+    flow = CapturedFlow(
+        method="GET",
+        host="api.example.com",
+        path="/api/users/123",
+        url="https://api.example.com/api/users/123",
+        request_headers={"authorization": "Bearer token"},
+        request_body=b"",
+        response_status=200,
+        response_headers={
+            "content-type": "application/json",
+            "cf-mitigated": "challenge",
+        },
+        response_body=b'{"id":123}',
+        tags=["api_signal"],
+        timestamp=1715100000.0,
+    )
+
+    class FakeProc:
+        def __init__(self, env=None) -> None:
+            self.returncode = None
+            self.output_path = Path(env["APISNIFF_OUTPUT"]) if env else None
+
+        def poll(self):
+            return self.returncode
+
+        def send_signal(self, sig: int) -> None:
+            self.returncode = 0
+
+        def wait(self, timeout=None):
+            if self.output_path is not None:
+                self.output_path.write_text(flow.to_jsonl() + "\n")
+                session = SessionStats(
+                    domain="example.com",
+                    started_at="2026-05-14T10:00:00+00:00",
+                    duration_seconds=0.0,
+                    total_flows=1,
+                    kept_flows=1,
+                    dropped={},
+                )
+                (self.output_path.parent / "session.json").write_text(
+                    json.dumps(session.to_dict())
+                )
+            self.returncode = 0
+            return self.returncode
+
+        def terminate(self) -> None:
+            self.returncode = 0
+
+        def kill(self) -> None:
+            self.returncode = -9
+
+    def fake_popen(*args, **kwargs):
+        return FakeProc(kwargs.get("env"))
+
+    monkeypatch.setattr("apisniff.recon.CAPTURES_DIR", tmp_path)
+    monkeypatch.setattr("apisniff.recon.time.sleep", lambda _: None)
+    monkeypatch.setattr("apisniff.recon._is_ca_trusted", lambda: True)
+    monkeypatch.setattr("apisniff.recon.subprocess.Popen", fake_popen)
+
+    run_recon("example.com", json_output=True)
+
+    captured = capsys.readouterr()
+    data = json.loads(captured.out)
+
+    assert data["schema_version"] == 1
+    assert data["domain"] == "example.com"
+    assert data["vendors"][0]["vendor"] == "cloudflare"
+    assert data["auth_patterns"] == [
+        {
+            "auth_type": "bearer",
+            "detail": "authorization: bearer",
+            "flow_count": 1,
+        }
+    ]
+    assert data["top_endpoints"] == [
+        {"method": "GET", "path": "/api/users/{id}", "count": 1}
+    ]

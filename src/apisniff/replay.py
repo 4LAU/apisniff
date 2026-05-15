@@ -8,6 +8,7 @@ import time
 from contextlib import suppress
 from pathlib import Path
 from typing import Any
+from urllib.parse import urlparse
 
 from apisniff.bundle import find_latest_bundle, read_capture_jsonl
 from apisniff.models import (
@@ -150,6 +151,18 @@ def cookies_for_host(
     return "; ".join(matching)
 
 
+def _request_host(flow: CapturedFlow) -> str:
+    host = (urlparse(flow.url).hostname or "").lower()
+    expected = flow.host.lower()
+    if not host:
+        return expected
+    if expected and host != expected:
+        raise ValueError(
+            f"flow host mismatch: host={flow.host!r}, url host={host!r}"
+        )
+    return host
+
+
 def _has_auth_headers(flow: CapturedFlow) -> bool:
     lower_keys = {k.lower() for k in flow.request_headers}
     return bool(lower_keys & _AUTH_HEADERS)
@@ -209,15 +222,6 @@ async def replay_endpoint(
         if k.lower() not in _HOP_BY_HOP:
             req_headers[k.lower()] = v
 
-    if cookies:
-        cookie_str = cookies_for_host(cookies, flow.host)
-        if cookie_str:
-            # Merge with any existing cookie header
-            existing = req_headers.get("cookie", "")
-            req_headers["cookie"] = (
-                existing + "; " + cookie_str if existing else cookie_str
-            )
-
     if headers:
         for k, v in headers.items():
             req_headers[k.lower()] = v
@@ -228,6 +232,15 @@ async def replay_endpoint(
     replayed_body = b""
 
     try:
+        if cookies:
+            cookie_str = cookies_for_host(cookies, _request_host(flow))
+            if cookie_str:
+                # Merge with any existing cookie header
+                existing = req_headers.get("cookie", "")
+                req_headers["cookie"] = (
+                    existing + "; " + cookie_str if existing else cookie_str
+                )
+
         async with AsyncSession(impersonate=impersonate) as session:
             resp = await session.request(
                 method=flow.method,

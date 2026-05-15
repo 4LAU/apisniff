@@ -60,3 +60,31 @@ def test_spec_oversized_input_exits_without_traceback(tmp_path: Path):
     assert result.exit_code == 1
     assert "Input file is too large" in result.output
     assert "Traceback" not in result.output
+
+
+def test_spec_omits_examples_by_default(monkeypatch):
+    captured = {}
+
+    def fake_run_spec(*args, **kwargs):
+        captured.update(kwargs)
+
+    monkeypatch.setattr("apisniff.spec.run_spec", fake_run_spec)
+
+    result = runner.invoke(app, ["spec", "example.com"])
+
+    assert result.exit_code == 0
+    assert captured["include_examples"] is False
+
+
+def test_spec_examples_are_explicit_opt_in(monkeypatch):
+    captured = {}
+
+    def fake_run_spec(*args, **kwargs):
+        captured.update(kwargs)
+
+    monkeypatch.setattr("apisniff.spec.run_spec", fake_run_spec)
+
+    result = runner.invoke(app, ["spec", "example.com", "--examples"])
+
+    assert result.exit_code == 0
+    assert captured["include_examples"] is True

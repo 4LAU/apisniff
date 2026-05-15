@@ -37,6 +37,14 @@ _CATEGORY_LABEL = {
     "error": "ERROR",
 }
 
+_CATEGORY_DESCRIPTIONS = {
+    "match": "Response matches original capture",
+    "drift": "Response differs from original capture — API behavior changed",
+    "auth_expired": "Authentication rejected — credentials from capture are no longer valid",
+    "blocked": "Request was blocked by the server (likely bot detection)",
+    "error": "Request failed (network error or timeout)",
+}
+
 
 _CATEGORIES = get_args(ReplayCategory)
 
@@ -46,6 +54,21 @@ def _tally_results(results: list[ReplayResult]) -> dict[str, int]:
     for r in results:
         counts[r.category] += 1
     return counts
+
+
+def _replay_interpretation(
+    endpoint_count: int,
+    domain: str,
+    counts: dict[str, int],
+) -> str:
+    breakdown = ", ".join(
+        f"{count} {category.replace('_', ' ')}"
+        for category in _CATEGORIES
+        if (count := counts.get(category, 0))
+    )
+    if not breakdown:
+        breakdown = "no results"
+    return f"Replayed {endpoint_count} endpoints on {domain}: {breakdown}."
 
 
 def _auth_label(headers: dict[str, str]) -> str:
@@ -255,8 +278,11 @@ def replay_to_json(
         )
 
     data: dict = {
+        "schema_version": 1,
         "domain": domain,
         "replayed_at": replayed_at,
+        "interpretation": _replay_interpretation(len(results), domain, counts),
+        "category_descriptions": _CATEGORY_DESCRIPTIONS,
         "endpoints": endpoints,
         "summary": counts,
     }
