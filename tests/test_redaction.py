@@ -143,9 +143,12 @@ def test_sensitive_fields_always_redacted():
         for field_name, field_schema in props.items():
             path = f"{breadcrumb}.{field_name}" if breadcrumb else field_name
 
-            # Check nested objects recursively
             if field_schema.get("type") == "object" and "properties" in field_schema:
                 _check_schema(field_schema, breadcrumb=path)
+                continue
+
+            if field_schema.get("type") == "array" and "items" in field_schema:
+                _check_schema(field_schema["items"], breadcrumb=f"{path}[]")
                 continue
 
             # Sensitive field name patterns (must match spec.py's redaction logic)
