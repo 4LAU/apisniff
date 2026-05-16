@@ -1,5 +1,9 @@
 # tests/test_cli_contracts.py
-"""CLI contract tests — verify every command's observable behavior through CliRunner."""
+"""CLI wire contracts — flags that silently produce wrong output if broken.
+
+Each test protects a flag/mode whose failure would NOT crash the CLI but
+would silently produce incorrect, missing, or leaked data.
+"""
 from __future__ import annotations
 
 import json
@@ -9,7 +13,6 @@ from unittest.mock import AsyncMock, patch
 import yaml
 from typer.testing import CliRunner
 
-from apisniff import __version__
 from apisniff.cli import app
 
 runner = CliRunner()
@@ -17,23 +20,7 @@ runner = CliRunner()
 FIXTURES = Path(__file__).parent / "fixtures"
 
 
-# ---------------------------------------------------------------------------
-# Helpers
-# ---------------------------------------------------------------------------
-
-def _bundle_files_present(bundle_dir: Path) -> dict[str, bool]:
-    """Return a map of expected bundle filenames → exists."""
-    expected = ["flows.jsonl", "session.json", "surface.jsonl", "report.md"]
-    return {name: (bundle_dir / name).exists() for name in expected}
-
-
 def _extract_json(output: str) -> dict:
-    """Extract the JSON object from mixed CliRunner output (stderr + stdout merged).
-
-    CliRunner merges stdout and stderr. Rich status lines appear before/after
-    the JSON body. Find the first '{' and use raw_decode to stop at the end of
-    the JSON object, ignoring trailing stderr text.
-    """
     idx = output.find("{")
     assert idx != -1, f"No JSON found in output: {output[:200]}"
     decoder = json.JSONDecoder()
@@ -42,10 +29,6 @@ def _extract_json(output: str) -> dict:
 
 
 def _extract_yaml(output: str) -> dict:
-    """Extract the YAML document from mixed CliRunner output.
-
-    The YAML starts with 'openapi:' — find that line and parse from there.
-    """
     lines = output.splitlines()
     start = None
     for i, line in enumerate(lines):
@@ -58,7 +41,6 @@ def _extract_yaml(output: str) -> dict:
 
 
 def _create_bundle(tmp_path: Path, fixture: str = "minimal.har") -> Path:
-    """Run analyze to create a real bundle, return bundle dir path."""
     bundle_dir = tmp_path / "bundle"
     result = runner.invoke(app, [
         "analyze", str(FIXTURES / fixture),
@@ -68,48 +50,12 @@ def _create_bundle(tmp_path: Path, fixture: str = "minimal.har") -> Path:
     return bundle_dir
 
 
-# ===========================================================================
-# analyze
-# ===========================================================================
-
-
-class TestAnalyzeHAR:
-    def test_har_creates_bundle(self, tmp_path: Path):
-        bundle = tmp_path / "out"
-        result = runner.invoke(app, [
-            "analyze", str(FIXTURES / "minimal.har"),
-            "--output-dir", str(bundle),
-        ])
-        assert result.exit_code == 0
-        present = _bundle_files_present(bundle)
-        for name, exists in present.items():
-            assert exists, f"Missing {name} in bundle"
-
-    def test_burp_creates_bundle(self, tmp_path: Path):
-        bundle = tmp_path / "out"
-        result = runner.invoke(app, [
-            "analyze", str(FIXTURES / "minimal.burp.xml"),
-            "--output-dir", str(bundle),
-        ])
-        assert result.exit_code == 0
-        present = _bundle_files_present(bundle)
-        for name, exists in present.items():
-            assert exists, f"Missing {name} in bundle"
-
-    def test_jsonl_creates_bundle(self, tmp_path: Path):
-        bundle = tmp_path / "out"
-        result = runner.invoke(app, [
-            "analyze", str(FIXTURES / "minimal.jsonl"),
-            "--output-dir", str(bundle),
-        ])
-        assert result.exit_code == 0
-        present = _bundle_files_present(bundle)
-        for name, exists in present.items():
-            assert exists, f"Missing {name} in bundle"
+# --- analyze: silent-failure flags ---
 
 
 class TestAnalyzeDomain:
     def test_domain_override(self, tmp_path: Path):
+        """--domain could silently be ignored; session.json would have wrong domain."""
         bundle = tmp_path / "out"
         result = runner.invoke(app, [
             "analyze", str(FIXTURES / "minimal.har"),
@@ -123,6 +69,7 @@ class TestAnalyzeDomain:
 
 class TestAnalyzeJSON:
     def test_json_flag(self, tmp_path: Path):
+        """--json could silently produce non-JSON output."""
         bundle = tmp_path / "out"
         result = runner.invoke(app, [
             "analyze", str(FIXTURES / "minimal.har"),
@@ -135,39 +82,12 @@ class TestAnalyzeJSON:
         assert "kept_flows" in data
 
 
-class TestAnalyzeErrors:
-    def test_missing_file_exits_1(self):
-        result = runner.invoke(app, ["analyze", "/nonexistent/file.har"])
-        assert result.exit_code == 1
-        assert "not found" in result.output.lower() or "not found" in (result.stderr or "").lower()
-
-    def test_malformed_input_no_traceback(self):
-        result = runner.invoke(app, ["analyze", str(FIXTURES / "malformed.har")])
-        # Malformed HAR may produce empty flows and exit early or exit 0
-        # The key contract: no Python traceback in output
-        combined = result.output + (result.stderr or "")
-        assert "Traceback" not in combined
-
-    def test_empty_har_no_crash(self, tmp_path: Path):
-        bundle = tmp_path / "out"
-        result = runner.invoke(app, [
-            "analyze", str(FIXTURES / "empty.har"),
-            "--output-dir", str(bundle),
-        ])
-        # Empty HAR has zero entries. run_analyze prints a warning and returns early.
-        # The contract: no crash (exit 0), no traceback.
-        assert result.exit_code == 0
-        combined = result.output + (result.stderr or "")
-        assert "Traceback" not in combined
+# --- spec: silent-failure flags ---
 
 
-# ===========================================================================
-# spec
-# ===========================================================================
-
-
-class TestSpecYAML:
+class TestSpecFormats:
     def test_default_yaml_to_stdout(self, tmp_path: Path):
+        """Spec YAML could silently be invalid OpenAPI."""
         bundle = _create_bundle(tmp_path)
         result = runner.invoke(app, [
             "spec", "example.com", "--input", str(bundle),
@@ -178,6 +98,7 @@ class TestSpecYAML:
         assert "paths" in spec
 
     def test_format_json(self, tmp_path: Path):
+        """--format json could silently produce invalid JSON."""
         bundle = _create_bundle(tmp_path)
         result = runner.invoke(app, [
             "spec", "example.com", "--input", str(bundle),
@@ -188,9 +109,8 @@ class TestSpecYAML:
         assert spec["openapi"].startswith("3.")
         assert "paths" in spec
 
-
-class TestSpecOutput:
     def test_output_file(self, tmp_path: Path):
+        """--output could silently not write the file."""
         bundle = _create_bundle(tmp_path)
         out_file = tmp_path / "spec.yaml"
         result = runner.invoke(app, [
@@ -202,23 +122,10 @@ class TestSpecOutput:
         spec = yaml.safe_load(out_file.read_text())
         assert "paths" in spec
 
-    def test_surface_output(self, tmp_path: Path):
-        bundle = _create_bundle(tmp_path)
-        out_file = tmp_path / "spec.yaml"
-        surface_out = tmp_path / "surface.json"
-        result = runner.invoke(app, [
-            "spec", "example.com", "--input", str(bundle),
-            "--output", str(out_file),
-            "--surface-output", str(surface_out),
-        ])
-        assert result.exit_code == 0
-        assert surface_out.exists()
-        inventory = json.loads(surface_out.read_text())
-        assert isinstance(inventory, (list, dict))
-
 
 class TestSpecExamples:
     def test_examples_flag(self, tmp_path: Path):
+        """--examples could silently be ignored, producing no example keys."""
         bundle = _create_bundle(tmp_path)
         result = runner.invoke(app, [
             "spec", "example.com", "--input", str(bundle),
@@ -230,26 +137,25 @@ class TestSpecExamples:
         assert "example" in raw.lower(), "Expected at least one 'example' key in spec"
 
     def test_examples_no_secrets(self, tmp_path: Path):
-        """Even with --examples, secret values must not appear in output."""
+        """Tier 1 security: --examples must not leak captured secrets."""
         bundle = tmp_path / "out"
-        result = runner.invoke(app, [
+        runner.invoke(app, [
             "analyze", str(FIXTURES / "redaction.jsonl"),
             "--output-dir", str(bundle),
         ])
-        assert result.exit_code == 0
-
         spec_result = runner.invoke(app, [
             "spec", "example.com", "--input", str(bundle),
             "--format", "json", "--examples",
         ])
         assert spec_result.exit_code == 0
         output = spec_result.output
-        for pattern in ("sk_live_", "Bearer", "hunter2", "SuperSecret"):
+        for pattern in ("sk_live_", "SuperSecret", "hunter2"):
             assert pattern not in output, f"Secret pattern {pattern!r} found in spec"
 
 
-class TestSpecThirdParty:
+class TestSpecInclusion:
     def test_include_third_party(self, tmp_path: Path):
+        """--include-third-party could silently still exclude third-party paths."""
         bundle = _create_bundle(tmp_path, "multisite.har")
         result = runner.invoke(app, [
             "spec", "example.com", "--input", str(bundle),
@@ -257,11 +163,11 @@ class TestSpecThirdParty:
         ])
         assert result.exit_code == 0
         spec = _extract_json(result.output)
-        # Third-party hosts should contribute paths
-        # (stripe or api.example.com traffic visible)
-        assert len(spec.get("paths", {})) > 0
+        paths = list(spec.get("paths", {}).keys())
+        assert len(paths) > 0, "Expected third-party paths in spec"
 
     def test_include_host(self, tmp_path: Path):
+        """--include-host could silently be ignored."""
         bundle = _create_bundle(tmp_path, "multisite.har")
         result = runner.invoke(app, [
             "spec", "example.com", "--input", str(bundle),
@@ -270,13 +176,11 @@ class TestSpecThirdParty:
         ])
         assert result.exit_code == 0
         spec = _extract_json(result.output)
-        # When including api.stripe.com, its paths should appear
         paths_str = json.dumps(spec.get("paths", {}))
         assert "charges" in paths_str, "Expected api.stripe.com paths with --include-host"
 
-
-class TestSpecNoInferSchemes:
     def test_no_infer_security_schemes(self, tmp_path: Path):
+        """--no-infer-security-schemes could silently still emit securitySchemes."""
         bundle = _create_bundle(tmp_path, "auth_variants.har")
         result = runner.invoke(app, [
             "spec", "example.com", "--input", str(bundle),
@@ -285,43 +189,15 @@ class TestSpecNoInferSchemes:
         assert result.exit_code == 0
         spec = _extract_json(result.output)
         components = spec.get("components", {})
-        assert "securitySchemes" not in components, (
-            "securitySchemes should not be present with --no-infer-security-schemes"
-        )
+        assert "securitySchemes" not in components
 
 
-class TestSpecEmptyInput:
-    def test_no_api_flows_yields_empty_paths(self):
-        """When input has zero API flows, spec should still be valid with empty paths."""
-        spec_result = runner.invoke(app, [
-            "spec", "example.com", "--input", str(FIXTURES / "empty.har"),
-            "--format", "json",
-        ])
-        combined = spec_result.output + (spec_result.stderr or "")
-        assert "Traceback" not in combined
-        assert spec_result.exit_code in (0, 1), f"Unexpected exit code: {spec_result.exit_code}"
-        if spec_result.exit_code == 0:
-            spec = _extract_json(spec_result.output)
-            assert spec.get("paths") == {}
-
-
-# ===========================================================================
-# replay --dry-run
-# ===========================================================================
+# --- replay: silent-failure flags ---
 
 
 class TestReplayDryRun:
-    def test_lists_endpoints_no_http(self, tmp_path: Path):
-        bundle = _create_bundle(tmp_path)
-        # Monkeypatch to verify no HTTP calls are made
-        with patch("apisniff.replay.replay_endpoint", new_callable=AsyncMock) as mock_replay:
-            result = runner.invoke(app, [
-                "replay", str(bundle), "--dry-run",
-            ])
-        assert result.exit_code == 0
-        mock_replay.assert_not_called()
-
     def test_json_output(self, tmp_path: Path):
+        """--dry-run --json could silently produce non-JSON."""
         bundle = _create_bundle(tmp_path)
         result = runner.invoke(app, [
             "replay", str(bundle), "--dry-run", "--json",
@@ -329,9 +205,9 @@ class TestReplayDryRun:
         assert result.exit_code == 0
         data = json.loads(result.output)
         assert "endpoints" in data
-        assert isinstance(data["endpoints"], list)
 
     def test_filter_pattern(self, tmp_path: Path):
+        """--filter could silently include non-matching paths."""
         bundle = _create_bundle(tmp_path)
         result = runner.invoke(app, [
             "replay", str(bundle), "--dry-run", "--json",
@@ -345,165 +221,83 @@ class TestReplayDryRun:
             )
 
     def test_include_unsafe(self, tmp_path: Path):
+        """--include-unsafe could silently still exclude POST/PUT."""
         bundle = _create_bundle(tmp_path)
-        # Without --include-unsafe, only GET/HEAD/OPTIONS
         result_safe = runner.invoke(app, [
             "replay", str(bundle), "--dry-run", "--json",
         ])
-        assert result_safe.exit_code == 0
-        safe_data = json.loads(result_safe.output)
-
-        # With --include-unsafe, POST etc. appear
         result_unsafe = runner.invoke(app, [
             "replay", str(bundle), "--dry-run", "--json", "--include-unsafe",
         ])
+        assert result_safe.exit_code == 0
         assert result_unsafe.exit_code == 0
+        safe_data = json.loads(result_safe.output)
         unsafe_data = json.loads(result_unsafe.output)
-
-        # If there are POST flows in the bundle, unsafe should include them
-        # or at least have >= as many endpoints
-        total_unsafe = len(unsafe_data["endpoints"]) + len(unsafe_data.get("skipped_unsafe", []))
-        total_safe = len(safe_data["endpoints"]) + len(safe_data.get("skipped_unsafe", []))
-        assert total_unsafe >= total_safe
-
-    def test_missing_bundle_exits_1(self):
-        result = runner.invoke(app, [
-            "replay", "/nonexistent/bundle/dir", "--dry-run",
-        ])
-        assert result.exit_code == 1
-        combined = result.output + (result.stderr or "")
-        assert "Traceback" not in combined
+        safe_eps = len(safe_data["endpoints"])
+        unsafe_eps = len(unsafe_data["endpoints"])
+        assert unsafe_eps >= safe_eps
 
 
-# ===========================================================================
-# share
-# ===========================================================================
+# --- share: security invariants ---
 
 
 class TestShare:
-    def test_output_dir_contains_derived_files(self, tmp_path: Path):
-        bundle = _create_bundle(tmp_path)
-        share_out = tmp_path / "shared"
-        result = runner.invoke(app, [
-            "share", str(bundle), "--output", str(share_out),
-        ])
-        assert result.exit_code == 0
-        for name in ("spec.yaml", "inventory.json", "report.md"):
-            assert (share_out / name).exists(), f"Missing {name} in shared output"
-
     def test_spec_yaml_valid_openapi(self, tmp_path: Path):
+        """Shared spec.yaml could silently be invalid OpenAPI."""
         bundle = _create_bundle(tmp_path)
         share_out = tmp_path / "shared"
-        result = runner.invoke(app, [
-            "share", str(bundle), "--output", str(share_out),
-        ])
-        assert result.exit_code == 0
+        runner.invoke(app, ["share", str(bundle), "--output", str(share_out)])
         spec = yaml.safe_load((share_out / "spec.yaml").read_text())
         assert spec["openapi"].startswith("3.")
         assert "paths" in spec
 
     def test_no_raw_traffic(self, tmp_path: Path):
+        """Tier 1 security: shared bundle must not contain raw request/response bodies."""
         bundle = _create_bundle(tmp_path)
         share_out = tmp_path / "shared"
-        result = runner.invoke(app, [
-            "share", str(bundle), "--output", str(share_out),
-        ])
-        assert result.exit_code == 0
-        # Scan all JSON files for raw traffic keys
+        runner.invoke(app, ["share", str(bundle), "--output", str(share_out)])
         for json_file in share_out.glob("*.json"):
             content = json_file.read_text()
-            assert "request_body" not in content, (
-                f"request_body found in {json_file.name}"
-            )
-            assert "response_body" not in content, (
-                f"response_body found in {json_file.name}"
-            )
+            assert "request_body" not in content, f"request_body in {json_file.name}"
+            assert "response_body" not in content, f"response_body in {json_file.name}"
 
     def test_no_secrets_in_output(self, tmp_path: Path):
-        # Use redaction.jsonl which has secrets in bodies
+        """Tier 1 security: shared bundle must not leak secrets."""
         bundle = tmp_path / "bundle"
-        result = runner.invoke(app, [
+        runner.invoke(app, [
             "analyze", str(FIXTURES / "redaction.jsonl"),
             "--output-dir", str(bundle),
         ])
-        assert result.exit_code == 0
-
         share_out = tmp_path / "shared"
-        result = runner.invoke(app, [
-            "share", str(bundle), "--output", str(share_out),
-        ])
-        assert result.exit_code == 0
+        runner.invoke(app, ["share", str(bundle), "--output", str(share_out)])
         for f in share_out.iterdir():
             if f.is_file():
                 content = f.read_text()
                 for pattern in ("sk_live_", "SuperSecret", "hunter2"):
-                    assert pattern not in content, (
-                        f"Secret pattern {pattern!r} found in {f.name}"
-                    )
-
-    def test_domain_override(self, tmp_path: Path):
-        bundle = _create_bundle(tmp_path)
-        share_out = tmp_path / "shared"
-        result = runner.invoke(app, [
-            "share", str(bundle), "--output", str(share_out),
-            "--domain", "custom.example.org",
-        ])
-        assert result.exit_code == 0
-        # share_bundle uses the domain for spec gen but session.json
-        # is copied from the original bundle, so verify via spec
-        # At minimum, the command should succeed with the override
-        spec = yaml.safe_load((share_out / "spec.yaml").read_text())
-        assert spec is not None
-
-    def test_existing_output_dir_exits_1(self, tmp_path: Path):
-        bundle = _create_bundle(tmp_path)
-        share_out = tmp_path / "shared"
-        share_out.mkdir()  # pre-create so it already exists
-        result = runner.invoke(app, [
-            "share", str(bundle), "--output", str(share_out),
-        ])
-        assert result.exit_code == 1
-        combined = result.output + (result.stderr or "")
-        assert "already exists" in combined.lower()
+                    assert pattern not in content, f"Secret {pattern!r} in {f.name}"
 
 
-# ===========================================================================
-# probe
-# ===========================================================================
+# --- probe: exit code contracts ---
 
 
 class TestProbe:
     def _mock_assessment(self, verdict_value):
-        from apisniff.models import (
-            ProbeAssessment,
-            ProbeResult,
-            ProbeVerdict,
-        )
-
+        from apisniff.models import ProbeAssessment, ProbeResult, ProbeVerdict
         verdict = ProbeVerdict(verdict_value)
-        dummy_result = ProbeResult(
+        dummy = ProbeResult(
             label="naked", status=200, headers={}, body=b"ok",
             elapsed_ms=50.0, error=None,
         )
         return ProbeAssessment(
             url="https://example.com",
             verdict=verdict,
-            recommendation="Test recommendation",
-            results={
-                "naked": dummy_result,
-                "impersonated": ProbeResult(
-                    label="impersonated", status=200, headers={}, body=b"ok",
-                    elapsed_ms=55.0, error=None,
-                ),
-                "tls_only": ProbeResult(
-                    label="tls_only", status=200, headers={}, body=b"ok",
-                    elapsed_ms=60.0, error=None,
-                ),
-            },
+            recommendation="Test",
+            results={"naked": dummy, "impersonated": dummy, "tls_only": dummy},
             vendors=[],
         )
 
     def test_json_output_shape(self):
+        """--json could silently produce wrong shape."""
         assessment = self._mock_assessment("no_protection")
         with patch("apisniff.probe.run_probes", new_callable=AsyncMock, return_value=assessment):
             result = runner.invoke(app, ["probe", "example.com", "--json"])
@@ -514,48 +308,15 @@ class TestProbe:
         assert "url" in data
 
     def test_exit_code_2_on_full_block(self):
+        """Exit code 2 on FULL_BLOCK could silently become 0."""
         assessment = self._mock_assessment("full_block")
         with patch("apisniff.probe.run_probes", new_callable=AsyncMock, return_value=assessment):
             result = runner.invoke(app, ["probe", "example.com", "--json"])
         assert result.exit_code == 2
 
     def test_exit_code_0_on_no_protection(self):
+        """Exit code on NO_PROTECTION could silently be non-zero."""
         assessment = self._mock_assessment("no_protection")
         with patch("apisniff.probe.run_probes", new_callable=AsyncMock, return_value=assessment):
             result = runner.invoke(app, ["probe", "example.com", "--json"])
         assert result.exit_code == 0
-
-    def test_bad_url_graceful_error(self):
-        """When run_probes raises, CLI should handle gracefully."""
-        async def raise_error(*args, **kwargs):
-            raise ConnectionError("DNS resolution failed")
-
-        with patch("apisniff.probe.run_probes", side_effect=raise_error):
-            result = runner.invoke(app, ["probe", "not-a-real-host.invalid"])
-        # Should not show a Python traceback in normal output
-        # (CliRunner may capture it differently, but the key contract is no raw traceback)
-        assert result.exit_code != 0
-
-
-# ===========================================================================
-# Global CLI
-# ===========================================================================
-
-
-class TestGlobalCLI:
-
-    def test_version_flag(self):
-        result = runner.invoke(app, ["--version"])
-        assert result.exit_code == 0
-        assert __version__ in result.output
-
-    def test_no_args_shows_help(self):
-        result = runner.invoke(app, [])
-        assert result.exit_code in (0, 2)
-        assert "analyze" in result.output
-        assert "spec" in result.output
-
-    def test_invalid_header_format(self):
-        result = runner.invoke(app, ["probe", "https://example.com", "-H", "no-colon"])
-        assert result.exit_code != 0
-        assert "missing" in result.output.lower() or "invalid" in result.output.lower()

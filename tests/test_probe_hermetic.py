@@ -1,10 +1,9 @@
 """Hermetic probe tests — monkeypatched HTTP, no network access.
 
-Covers gaps not addressed by test_probe.py:
+Covers gaps not addressed by test_probe.py, test_vendors.py, or test_rate_limit.py:
 - Full run_probes() pipeline with monkeypatched HTTP clients
-- Vendor detection from specific header/cookie patterns
-- Rate limit detection (beyond what test_rate_limit.py covers)
-- GraphQL detection wiring
+- Vendor detection from specific body/cookie patterns (distinct from header-only tests)
+- Rate limit edge cases (503, immediate 429)
 - Edge cases in classify_results not covered by existing tests
 """
 from __future__ import annotations
@@ -169,20 +168,11 @@ class TestRunProbesHermetic:
 
 
 # ---------------------------------------------------------------------------
-# Vendor detection from specific header/cookie patterns
+# Vendor detection: distinct signals not covered by test_vendors.py
 # ---------------------------------------------------------------------------
 
 class TestVendorDetectionHermetic:
-    """Test vendor detection using real signatures with canned responses."""
-
-    def test_cloudflare_detected_from_cf_ray_header(self):
-        sigs = load_signatures()
-        results = [
-            _result("naked", headers={"cf-ray": "abc123-LAX"}),
-        ]
-        vendors = match_vendors(results, sigs)
-        vendor_names = [v.vendor for v in vendors]
-        assert "cloudflare" in vendor_names
+    """Vendor detection using real signatures with canned responses."""
 
     def test_cloudflare_detected_from_challenge_body(self):
         sigs = load_signatures()
@@ -206,23 +196,6 @@ class TestVendorDetectionHermetic:
         vendors = match_vendors(results, sigs)
         vendor_names = [v.vendor for v in vendors]
         assert "akamai" in vendor_names
-
-    def test_datadome_detected_from_header(self):
-        sigs = load_signatures()
-        results = [
-            _result("naked", headers={"x-datadome-cid": "abc"}),
-        ]
-        vendors = match_vendors(results, sigs)
-        vendor_names = [v.vendor for v in vendors]
-        assert "datadome" in vendor_names
-
-    def test_no_vendor_for_clean_response(self):
-        sigs = load_signatures()
-        results = [
-            _result("naked", headers={"content-type": "text/html"}),
-        ]
-        vendors = match_vendors(results, sigs)
-        assert vendors == []
 
 
 # ---------------------------------------------------------------------------
@@ -272,18 +245,6 @@ class TestClassifyEdgeCases:
         verdict, _ = classify_results(results)
         assert verdict == ProbeVerdict.CLIENT_DEPENDENT
 
-    def test_naked_pass_impersonated_blocked_tls_pass(self):
-        """When impersonated is blocked but naked passes — browser UA triggers defense."""
-        results = {
-            "naked": _result("naked", status=200),
-            "impersonated": _result("impersonated", status=403),
-            "tls_only": _result("tls_only", status=200),
-        }
-        verdict, recommendation = classify_results(results)
-        assert verdict == ProbeVerdict.CLIENT_DEPENDENT
-        # The defense blocks browser user-agents specifically
-        assert "browser" in recommendation.lower() or "javascript" in recommendation.lower()
-
     def test_naked_and_tls_challenged_impersonated_passes(self):
         """Mixed challenge: only impersonated passes."""
         results = {
@@ -307,11 +268,11 @@ class TestClassifyEdgeCases:
 
 
 # ---------------------------------------------------------------------------
-# Rate limit detection: additional edge cases
+# Rate limit detection: edge cases not covered by test_rate_limit.py
 # ---------------------------------------------------------------------------
 
 class TestRateLimitHermetic:
-    """Additional rate limit detection tests."""
+    """Rate limit edge cases: 503 status and immediate 429."""
 
     @pytest.mark.asyncio
     async def test_503_counts_as_rate_limit(self, monkeypatch):
@@ -348,16 +309,3 @@ class TestRateLimitHermetic:
         assert result.first_block_at == 1
         assert result.retry_after == "60"
         assert result.requests_sent == 1
-
-    @pytest.mark.asyncio
-    async def test_no_silent_throttle_with_uniform_timing(self, monkeypatch):
-        async def fake_probe(
-            url, label, ua, headers=None, proxy=None,
-            impersonate="chrome", insecure=False,
-        ):
-            return _result(label, status=200, elapsed_ms=100.0)
-
-        monkeypatch.setattr("apisniff.probe._probe_curl_cffi", fake_probe)
-        result = await probe_rate_limit("https://example.com", count=20)
-        assert result.silent_throttle is False
-        assert result.first_block_at is None
