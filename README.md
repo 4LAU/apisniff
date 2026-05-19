@@ -89,7 +89,9 @@ Use `apisniff share` to create a safe export with only derived artifacts.
 
 `--mode cdp-attach` connects to an existing Chrome DevTools endpoint with `--remote-url` or `--port`.
 
-`--mode proxy` starts a local HTTP/HTTPS MITM proxy. For HTTPS capture, the client you route through the proxy must trust `~/.apisniff/ca-cert.pem`. Treat that CA as sensitive local configuration: a trusted CA can decrypt HTTPS traffic from clients that trust it and send traffic through this proxy. The private key is stored at `~/.apisniff/ca-key.pem` with owner-only permissions.
+CDP capture records API responses, response body size metadata, and WebSocket handshake/frame summaries when Chrome exposes those events.
+
+`--mode proxy` starts a local HTTP/HTTPS MITM proxy with HTTP/2 support. For HTTPS capture, the client you route through the proxy must trust `~/.apisniff/ca-cert.pem`. Treat that CA as sensitive local configuration: a trusted CA can decrypt HTTPS traffic from clients that trust it and send traffic through this proxy. The private key is stored at `~/.apisniff/ca-key.pem` with owner-only permissions.
 
 ### What recon can see
 

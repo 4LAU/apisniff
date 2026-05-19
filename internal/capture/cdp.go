@@ -2,10 +2,12 @@ package capture
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"net/url"
 	"path/filepath"
 	"sort"
+	"strconv"
 	"strings"
 	"sync"
 	"time"
@@ -36,7 +38,11 @@ type Result struct {
 }
 
 type partialFlow struct {
-	flow model.CapturedFlow
+	flow       model.CapturedFlow
+	wsFrames   []webSocketFrameCapture
+	wsSent     int
+	wsReceived int
+	wsErrors   int
 }
 
 type recorder struct {
@@ -46,6 +52,18 @@ type recorder struct {
 	bodyWG  sync.WaitGroup
 	dropped map[string]int
 }
+
+type webSocketFrameCapture struct {
+	Direction string  `json:"direction"`
+	Opcode    float64 `json:"opcode"`
+	Payload   string  `json:"payload"`
+	Truncated bool    `json:"truncated,omitempty"`
+}
+
+const (
+	maxWebSocketFrames       = 100
+	maxWebSocketFramePayload = 64 * 1024
+)
 
 func Capture(ctx context.Context, cfg Config) (*Result, error) {
 	if cfg.Mode == "" {
@@ -150,6 +168,20 @@ func (r *recorder) listen(ctx context.Context) func(any) {
 			r.addTag(ev.RequestID, "served_from_cache")
 		case *network.EventLoadingFailed:
 			r.addTag(ev.RequestID, "loading_failed")
+		case *network.EventWebSocketCreated:
+			r.webSocketCreated(ev)
+		case *network.EventWebSocketWillSendHandshakeRequest:
+			r.webSocketWillSendHandshakeRequest(ev)
+		case *network.EventWebSocketHandshakeResponseReceived:
+			r.webSocketHandshakeResponseReceived(ev)
+		case *network.EventWebSocketFrameSent:
+			r.webSocketFrame(ev.RequestID, "sent", ev.Response)
+		case *network.EventWebSocketFrameReceived:
+			r.webSocketFrame(ev.RequestID, "received", ev.Response)
+		case *network.EventWebSocketFrameError:
+			r.webSocketFrameError(ev)
+		case *network.EventWebSocketClosed:
+			r.addTag(ev.RequestID, "websocket_closed")
 		}
 	}
 }
@@ -193,6 +225,9 @@ func (r *recorder) responseReceived(ev *network.EventResponseReceived) {
 	pf := r.ensureFlowLocked(ev.RequestID, ev.Response.URL)
 	pf.flow.ResponseStatus = int(ev.Response.Status)
 	pf.flow.ResponseHeaders = headersToStrings(ev.Response.Headers)
+	if ev.Response.Protocol != "" {
+		pf.flow.Tags = appendTag(pf.flow.Tags, "protocol:"+ev.Response.Protocol)
+	}
 	if ev.Response.FromDiskCache {
 		pf.flow.Tags = appendTag(pf.flow.Tags, "served_from_cache")
 	}
@@ -208,6 +243,7 @@ func (r *recorder) loadingFinished(ctx context.Context, ev *network.EventLoading
 	r.bodyWG.Add(1)
 	go func() {
 		defer r.bodyWG.Done()
+		r.addTag(ev.RequestID, "response_encoded_bytes:"+strconv.FormatInt(int64(ev.EncodedDataLength), 10))
 		var body []byte
 		err := chromedp.Run(ctx, chromedp.ActionFunc(func(ctx context.Context) error {
 			var err error
@@ -221,9 +257,79 @@ func (r *recorder) loadingFinished(ctx context.Context, ev *network.EventLoading
 		r.mu.Lock()
 		if pf := r.flows[ev.RequestID]; pf != nil {
 			pf.flow.ResponseBody = body
+			pf.flow.Tags = appendTag(pf.flow.Tags, "response_body_bytes:"+strconv.Itoa(len(body)))
 		}
 		r.mu.Unlock()
 	}()
+}
+
+func (r *recorder) webSocketCreated(ev *network.EventWebSocketCreated) {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	pf := r.ensureFlowLocked(ev.RequestID, ev.URL)
+	if pf.flow.Method == "" {
+		pf.flow.Method = "GET"
+	}
+	pf.flow.Tags = appendTag(pf.flow.Tags, "websocket")
+}
+
+func (r *recorder) webSocketWillSendHandshakeRequest(ev *network.EventWebSocketWillSendHandshakeRequest) {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	pf := r.ensureFlowLocked(ev.RequestID, "")
+	pf.flow.Tags = appendTag(pf.flow.Tags, "websocket")
+	pf.flow.Tags = appendTag(pf.flow.Tags, "websocket_handshake_request")
+	if ev.Request != nil && len(ev.Request.Headers) > 0 {
+		pf.flow.RequestHeaders = headersToStrings(ev.Request.Headers)
+	}
+}
+
+func (r *recorder) webSocketHandshakeResponseReceived(ev *network.EventWebSocketHandshakeResponseReceived) {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	pf := r.ensureFlowLocked(ev.RequestID, "")
+	pf.flow.Tags = appendTag(pf.flow.Tags, "websocket")
+	pf.flow.Tags = appendTag(pf.flow.Tags, "websocket_handshake_response")
+	if ev.Response != nil {
+		pf.flow.ResponseStatus = int(ev.Response.Status)
+		pf.flow.ResponseHeaders = headersToStrings(ev.Response.Headers)
+	}
+}
+
+func (r *recorder) webSocketFrame(id network.RequestID, direction string, frame *network.WebSocketFrame) {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	pf := r.ensureFlowLocked(id, "")
+	pf.flow.Tags = appendTag(pf.flow.Tags, "websocket")
+	if direction == "sent" {
+		pf.wsSent++
+	} else {
+		pf.wsReceived++
+	}
+	if frame == nil || len(pf.wsFrames) >= maxWebSocketFrames {
+		return
+	}
+	payload := frame.PayloadData
+	truncated := false
+	if len(payload) > maxWebSocketFramePayload {
+		payload = payload[:maxWebSocketFramePayload]
+		truncated = true
+	}
+	pf.wsFrames = append(pf.wsFrames, webSocketFrameCapture{
+		Direction: direction,
+		Opcode:    frame.Opcode,
+		Payload:   payload,
+		Truncated: truncated,
+	})
+}
+
+func (r *recorder) webSocketFrameError(ev *network.EventWebSocketFrameError) {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	pf := r.ensureFlowLocked(ev.RequestID, "")
+	pf.wsErrors++
+	pf.flow.Tags = appendTag(pf.flow.Tags, "websocket")
+	pf.flow.Tags = appendTag(pf.flow.Tags, "websocket_frame_error")
 }
 
 func (r *recorder) addTag(id network.RequestID, tag string) {
@@ -255,10 +361,33 @@ func (r *recorder) snapshotFlows() []model.CapturedFlow {
 		if pf == nil {
 			continue
 		}
+		pf.finalizeWebSocket()
 		pf.flow.Tags = sortedTags(pf.flow.Tags)
 		flows = append(flows, pf.flow)
 	}
 	return flows
+}
+
+func (pf *partialFlow) finalizeWebSocket() {
+	if pf.wsSent == 0 && pf.wsReceived == 0 && pf.wsErrors == 0 {
+		return
+	}
+	pf.flow.Tags = appendTag(pf.flow.Tags, "websocket_sent_frames:"+strconv.Itoa(pf.wsSent))
+	pf.flow.Tags = appendTag(pf.flow.Tags, "websocket_received_frames:"+strconv.Itoa(pf.wsReceived))
+	if pf.wsErrors > 0 {
+		pf.flow.Tags = appendTag(pf.flow.Tags, "websocket_frame_errors:"+strconv.Itoa(pf.wsErrors))
+	}
+	if len(pf.wsFrames) == 0 || len(pf.flow.ResponseBody) > 0 {
+		return
+	}
+	body, err := json.Marshal(map[string]any{"websocket_frames": pf.wsFrames})
+	if err == nil {
+		pf.flow.ResponseBody = body
+		if pf.flow.ResponseHeaders == nil {
+			pf.flow.ResponseHeaders = map[string]string{}
+		}
+		pf.flow.ResponseHeaders["content-type"] = "application/json"
+	}
 }
 
 func parseRequestURL(raw string) (string, string, string) {

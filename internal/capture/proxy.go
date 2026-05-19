@@ -75,6 +75,12 @@ func CaptureProxy(ctx context.Context, cfg Config) (*Result, error) {
 	}
 	proxy := goproxy.NewProxyHttpServer()
 	proxy.Verbose = false
+	proxy.AllowHTTP2 = true
+	proxy.Tr = &http.Transport{
+		ForceAttemptHTTP2: true,
+		Proxy:             http.ProxyFromEnvironment,
+		TLSClientConfig:   &tls.Config{InsecureSkipVerify: true}, //nolint:gosec
+	}
 	proxy.OnRequest().HandleConnect(goproxy.AlwaysMitm)
 	proxy.OnRequest().DoFunc(func(req *http.Request, pctx *goproxy.ProxyCtx) (*http.Request, *http.Response) {
 		flow, err := flowFromProxyRequest(req)
@@ -103,6 +109,8 @@ func CaptureProxy(ctx context.Context, cfg Config) (*Result, error) {
 		flow := state.flow
 		flow.ResponseStatus = resp.StatusCode
 		flow.ResponseHeaders = headersToMap(resp.Header)
+		flow.Tags = appendTag(flow.Tags, "request_proto:"+flowProto(pctx.Req))
+		flow.Tags = appendTag(flow.Tags, "upstream_response_proto:"+resp.Proto)
 		if resp.Body != nil {
 			body, readErr := io.ReadAll(io.LimitReader(resp.Body, proxyBodyLimit))
 			resp.Body.Close()
@@ -270,7 +278,15 @@ func flowFromProxyRequest(req *http.Request) (model.CapturedFlow, error) {
 	host := strings.ToLower(parsed.Hostname())
 	flow := model.NewCapturedFlow(req.Method, rawURL, host, path)
 	flow.RequestHeaders = headersToMap(req.Header)
+	flow.Tags = appendTag(flow.Tags, "request_proto:"+flowProto(req))
 	return flow, nil
+}
+
+func flowProto(req *http.Request) string {
+	if req == nil {
+		return ""
+	}
+	return req.Proto
 }
 
 func headersToMap(headers http.Header) map[string]string {

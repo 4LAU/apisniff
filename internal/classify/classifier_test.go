@@ -35,6 +35,20 @@ func TestAPIFlowKept(t *testing.T) {
 	}
 }
 
+func TestCaptureTagsPreserved(t *testing.T) {
+	result, kept := Must("example.com").Classify(testFlow(func(f *model.CapturedFlow) {
+		f.Tags = []string{"websocket", "response_body_bytes:128"}
+	}))
+	if result.Action != "keep" || kept == nil {
+		t.Fatalf("result = %+v kept=%v", result, kept)
+	}
+	for _, tag := range []string{"websocket", "response_body_bytes:128"} {
+		if !hasTag(kept.Tags, tag) {
+			t.Fatalf("missing tag %q in %+v", tag, kept.Tags)
+		}
+	}
+}
+
 func TestNoiseDomainDropped(t *testing.T) {
 	result, _ := Must("example.com").Classify(testFlow(func(f *model.CapturedFlow) {
 		f.Host = "google-analytics.com"

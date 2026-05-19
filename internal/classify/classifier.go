@@ -72,7 +72,7 @@ func (c *Classifier) Classify(flow model.CapturedFlow) (model.ClassifyResult, *m
 		return model.ClassifyResult{Action: "drop", Category: model.Options, Reason: "CORS preflight"}, nil
 	}
 
-	tags := []string{}
+	tags := append([]string(nil), flow.Tags...)
 	host := flow.Host
 	path := flow.Path
 	pathOnly := strings.SplitN(path, "?", 2)[0]

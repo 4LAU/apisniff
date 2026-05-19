@@ -163,6 +163,91 @@ func TestCaptureProxyCapturesHTTPSMITMFlow(t *testing.T) {
 	}
 }
 
+func TestCaptureProxyUsesHTTP2UpstreamWhenAvailable(t *testing.T) {
+	t.Setenv("HOME", t.TempDir())
+	caPath, err := EnsureProxyCA()
+	if err != nil {
+		t.Fatal(err)
+	}
+	caPEM, err := os.ReadFile(caPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	roots := x509.NewCertPool()
+	if !roots.AppendCertsFromPEM(caPEM) {
+		t.Fatal("failed to load proxy CA")
+	}
+
+	protoCh := make(chan string, 1)
+	backend := httptest.NewUnstartedServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		select {
+		case protoCh <- r.Proto:
+		default:
+		}
+		w.Header().Set("content-type", "application/json")
+		w.WriteHeader(http.StatusOK)
+		w.Write([]byte(`{"h2":true}`))
+	}))
+	backend.EnableHTTP2 = true
+	backend.StartTLS()
+	defer backend.Close()
+
+	port := freePort(t)
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	resultCh := make(chan *Result, 1)
+	errCh := make(chan error, 1)
+	go func() {
+		result, err := CaptureProxy(ctx, Config{Domain: "127.0.0.1", Port: port, Timeout: 10 * time.Second})
+		if err != nil {
+			errCh <- err
+			return
+		}
+		resultCh <- result
+	}()
+	waitForProxy(t, port)
+
+	proxyURL, err := url.Parse("http://127.0.0.1:" + strconv.Itoa(port))
+	if err != nil {
+		t.Fatal(err)
+	}
+	client := &http.Client{Transport: &http.Transport{
+		ForceAttemptHTTP2: true,
+		Proxy:             http.ProxyURL(proxyURL),
+		TLSClientConfig:   &tls.Config{RootCAs: roots}, //nolint:gosec
+	}}
+	resp, err := client.Get(backend.URL + "/api/h2")
+	if err != nil {
+		t.Fatal(err)
+	}
+	resp.Body.Close()
+	cancel()
+
+	var result *Result
+	select {
+	case result = <-resultCh:
+	case err := <-errCh:
+		t.Fatal(err)
+	case <-time.After(5 * time.Second):
+		t.Fatal("timed out waiting for proxy capture")
+	}
+	select {
+	case proto := <-protoCh:
+		if proto != "HTTP/2.0" {
+			t.Fatalf("upstream proto = %s, want HTTP/2.0", proto)
+		}
+	default:
+		t.Fatal("backend did not receive proxied request")
+	}
+	flows, err := adapter.LoadJSONL(result.FlowsPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(flows) != 1 || !hasTag(flows[0].Tags, "upstream_response_proto:HTTP/2.0") {
+		t.Fatalf("flows = %#v", flows)
+	}
+}
+
 func freePort(t *testing.T) int {
 	t.Helper()
 	listener, err := net.Listen("tcp", "127.0.0.1:0")

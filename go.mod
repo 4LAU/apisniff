@@ -6,7 +6,9 @@ require (
 	github.com/chromedp/cdproto v0.0.0-20260321001828-e3e3800016bc
 	github.com/chromedp/chromedp v0.15.1
 	github.com/elazarl/goproxy v1.8.3
+	github.com/enetx/g v1.0.224
 	github.com/enetx/surf v1.0.200
+	github.com/gobwas/ws v1.4.0
 	github.com/spf13/cobra v1.10.2
 	golang.org/x/net v0.43.0
 	gopkg.in/yaml.v3 v3.0.1
@@ -15,7 +17,6 @@ require (
 require (
 	github.com/andybalholm/brotli v1.2.1 // indirect
 	github.com/chromedp/sysutil v1.1.0 // indirect
-	github.com/enetx/g v1.0.224 // indirect
 	github.com/enetx/http v1.0.28 // indirect
 	github.com/enetx/http2 v1.0.26 // indirect
 	github.com/enetx/http3 v1.0.7 // indirect
@@ -23,7 +24,6 @@ require (
 	github.com/go-json-experiment/json v0.0.0-20260214004413-d219187c3433 // indirect
 	github.com/gobwas/httphead v0.1.0 // indirect
 	github.com/gobwas/pool v0.2.1 // indirect
-	github.com/gobwas/ws v1.4.0 // indirect
 	github.com/inconshreveable/mousetrap v1.1.0 // indirect
 	github.com/klauspost/compress v1.18.5 // indirect
 	github.com/kr/text v0.2.0 // indirect
