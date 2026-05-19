@@ -1,49 +1,32 @@
-<!-- Generated from apisniff CLI. Do not edit manually. -->
-<!-- Re-run: uv run python scripts/generate_command_docs.py -->
-
-
 # `apisniff probe`
 
-Assess what defenses protect a URL before you capture traffic. Sends three parallel requests with different client profiles and classifies the differential response. Detects 25+ vendor products (Cloudflare, Akamai, DataDome, etc.).
+Assess a URL before capture by comparing normal Go, Surf Chrome, and headless-browser client behavior.
 
 ## Usage
 
+```bash
+apisniff probe URL [flags]
+apisniff probe rate URL [flags]
 ```
-Usage: apisniff probe [OPTIONS] TARGET...
 
- Defense preflight -- what kind of surface am I dealing with?
+## Flags
 
-╭─ Arguments ──────────────────────────────────────────────────────────────────╮
-│ *    target      TARGET...  URL to probe, or `rate URL` to check rate        │
-│                             limiting                                         │
-│                             [required]                                       │
-╰──────────────────────────────────────────────────────────────────────────────╯
-╭─ Options ────────────────────────────────────────────────────────────────────╮
-│ --json                    Output as JSON                                     │
-│ --proxy             TEXT  Route probes through proxy (SOCKS5/HTTP)           │
-│ --header    -H      TEXT  Extra header (key:value)                           │
-│ --cookie            TEXT  Cookie header value                                │
-│ --insecure                Skip TLS verification                              │
-│ --help                    Show this message and exit.                        │
-╰──────────────────────────────────────────────────────────────────────────────╯
-```
+| Flag | Default | Description |
+|------|---------|-------------|
+| `--json` | `false` | Output as JSON |
+| `--proxy` | | Route probes through an upstream proxy |
+| `--header`, `-H` | | Extra header as `key:value` |
+| `--cookie` | | Cookie header value |
+| `--insecure` | `false` | Skip TLS verification |
+| `--impersonate` | `chrome` | TLS profile |
 
 ## Examples
 
 ```bash
-# Quick defense check
 apisniff probe example.com
-
-# With JSON output for scripting
 apisniff probe example.com --json
-
-# Route through a proxy
 apisniff probe example.com --proxy socks5://127.0.0.1:1080
-
-# Include auth headers for authenticated endpoints
-apisniff probe api.example.com -H "Authorization:Bearer tok123"
-
-# Detect rate limiting (fires 20 rapid requests)
+apisniff probe api.example.com -H "Authorization: Bearer tok123"
 apisniff probe rate example.com
 ```
 

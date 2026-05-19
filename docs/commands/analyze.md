@@ -1,51 +1,28 @@
-<!-- Generated from apisniff CLI. Do not edit manually. -->
-<!-- Re-run: uv run python scripts/generate_command_docs.py -->
-
-
 # `apisniff analyze`
 
-Import a traffic capture file (HAR, Burp XML, or JSONL), run the same classification pipeline as recon, and produce a full bundle with report.
+Load HAR, Burp XML, or JSONL traffic and summarize endpoints, auth patterns, and cookies.
 
 ## Usage
 
+```bash
+apisniff analyze INPUT_FILE [flags]
 ```
-Usage: apisniff analyze [OPTIONS] INPUT_FILE
 
- Offline analysis -- import traffic capture, classify, extract everything.
+## Flags
 
-╭─ Arguments ──────────────────────────────────────────────────────────────────╮
-│ *    input_file      TEXT  Input file (HAR, Burp XML, or JSONL) [required]   │
-╰──────────────────────────────────────────────────────────────────────────────╯
-╭─ Options ────────────────────────────────────────────────────────────────────╮
-│ --domain         -d      TEXT  Target domain (auto-detected if omitted)      │
-│ --json                         Output session stats as JSON                  │
-│ --output-dir             TEXT  Directory to write bundle (default:           │
-│                                ~/apisniff-captures/)                         │
-│ --fetch-graphql                Fetch GraphQL schema from detected endpoints  │
-│ --help                         Show this message and exit.                   │
-╰──────────────────────────────────────────────────────────────────────────────╯
-```
+| Flag | Default | Description |
+|------|---------|-------------|
+| `--domain`, `-d` | | Target domain label for output |
+| `--json` | `false` | Include full converted flows in JSON output |
+| `--output-dir` | | Reserved for future bundle writing |
+| `--fetch-graphql` | `false` | Reserved for future GraphQL schema fetching |
 
 ## Examples
 
 ```bash
-# Analyze a HAR file exported from Chrome DevTools
 apisniff analyze traffic.har
-
-# Analyze a Burp Suite export
-apisniff analyze burp-export.xml
-
-# Analyze a previous apisniff capture
-apisniff analyze ~/apisniff-captures/example-com_2026-05-12/flows.jsonl
-
-# Specify the domain explicitly
-apisniff analyze traffic.har --domain api.example.com
-
-# Write results to a specific directory
-apisniff analyze traffic.har --output-dir ./my-analysis/
-
-# Fetch GraphQL schemas from detected endpoints
-apisniff analyze traffic.har --fetch-graphql
+apisniff analyze burp-export.xml --domain api.example.com
+apisniff analyze ~/apisniff-captures/example-com_2026-05-12/flows.jsonl --json
 ```
 
 ---

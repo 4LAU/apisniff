@@ -1,0 +1,14 @@
+{
+  "schema_version": 1,
+  "mode": "dry_run",
+  "summary": {
+    "safe": 2,
+    "total": 3,
+    "unsafe": 1
+  },
+  "endpoints": [
+    "GET /api/users?page=1",
+    "HEAD /health",
+    "POST /api/users"
+  ]
+}

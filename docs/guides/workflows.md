@@ -18,7 +18,7 @@ apisniff spec example.com -o spec.yaml
 cat spec.yaml
 ```
 
-If this is your first HTTPS capture, read the [mitmproxy certificate note](getting-started.md#https-and-the-mitmproxy-certificate) before browsing through `recon`.
+If CDP capture is not suitable for the target, use `recon --mode proxy` and read the proxy CA note in [Getting Started](getting-started.md#step-2-capture-traffic).
 
 ## Check if an API has changed since your last capture
 
@@ -34,7 +34,7 @@ Replay compares response status codes, JSON structure, and body size. Each endpo
 
 ## Replay with saved credentials
 
-After `recon`, apisniff saves a `cookies.txt` file in the bundle:
+Export a browser cookie jar in Netscape format and pass it to replay:
 
 ```bash
 apisniff replay example.com \
@@ -58,7 +58,7 @@ apisniff replay example.com -H "Authorization:Bearer your-token"
 apisniff analyze traffic.har
 ```
 
-Same classification pipeline as recon, same bundle output with report.
+Same classification pipeline as recon, using offline input.
 
 ## Analyze a Burp Suite capture
 
@@ -95,13 +95,10 @@ Fires 20 requests in sequence and reports:
 
 ## Map a GraphQL API
 
-If `probe` detects a GraphQL endpoint with introspection enabled:
+Probe can check common GraphQL endpoint paths:
 
 ```bash
-# Probe will report GraphQL endpoints and fetch the schema automatically
 apisniff probe api.example.com
-
-# The schema is saved to ~/apisniff-captures/graphql-schema.json
 ```
 
 If the endpoint requires auth, pass headers:
@@ -116,7 +113,7 @@ apisniff probe api.example.com -H "Authorization:Bearer tok" --cookie "session=a
 apisniff spec example.com -o spec.yaml
 ```
 
-The default OpenAPI output is the clean requested-host API contract. Anti-bot, captcha, telemetry, analytics, and third-party API-shaped traffic stay visible in the surface inventory instead of being promoted into `paths`. Use `--examples` to include redacted sample values, or `--include-third-party`, `--include-category`, and `--include-host` when you intentionally want a broader OpenAPI projection.
+Pass `--examples` to include redacted sample values from captured responses. Pass `--infer-security-schemes` to emit OpenAPI security schemes from observed auth patterns.
 
 ## Share results with a teammate
 

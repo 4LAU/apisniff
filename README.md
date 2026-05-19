@@ -3,16 +3,14 @@
 One tool for API recon: preflight defenses, capture real traffic, extract a usable spec.
 
 [![CI](https://github.com/4LAU/apisniff/actions/workflows/ci.yml/badge.svg)](https://github.com/4LAU/apisniff/actions)
-[![PyPI](https://img.shields.io/pypi/v/apisniff)](https://pypi.org/project/apisniff/)
-[![Python](https://img.shields.io/pypi/pyversions/apisniff)](https://pypi.org/project/apisniff/)
 [![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
 
 ## What you get
 
 - Probe a URL in 10 seconds, classify 25+ vendor products (Cloudflare, Akamai, DataDome, PerimeterX, Imperva, Kasada, and more)
-- Browse a site through a local [mitmproxy](https://github.com/mitmproxy/mitmproxy) instance. Raw non-OPTIONS traffic is preserved locally, then projected into a clean API spec and categorized surface inventory.
+- Capture browser traffic through Chrome DevTools Protocol by default; use proxy mode when you need MITM fallback capture.
 - Import HAR files or Burp Suite exports for offline analysis
-- Generate a clean OpenAPI spec from captured traffic with schema inference, auth detection, and opt-in broader views for third-party or challenge traffic
+- Generate an OpenAPI spec from captured traffic with schema inference and example values
 - Replay captured calls against the live API and see what changed
 - Export safely: derived artifacts only, no raw traffic, no credentials
 
@@ -20,15 +18,13 @@ One tool for API recon: preflight defenses, capture real traffic, extract a usab
 
 ```bash
 brew tap 4LAU/tap && brew install apisniff
-# or
-pip install apisniff
-# or
-pipx install apisniff
-# or
-uv tool install apisniff
 ```
 
-Requires Python 3.12+.
+The Go build is a single binary with no Python runtime dependency. From source:
+
+```bash
+go build -ldflags="-s -w" -o apisniff ./cmd/apisniff
+```
 
 ## Quick Start
 
@@ -36,8 +32,11 @@ Requires Python 3.12+.
 # Check what defenses a site has
 apisniff probe example.com
 
-# Capture live traffic (opens Chrome + proxy)
+# Capture live traffic with Chrome DevTools Protocol
 apisniff recon example.com
+
+# Fallback: run a local MITM proxy for a browser/client you configure
+apisniff recon example.com --mode proxy --port 8080
 
 # Generate an API spec from the capture
 apisniff spec example.com -o spec.yaml
@@ -54,7 +53,7 @@ apisniff share example.com
 | Command | Purpose | Docs |
 |---------|---------|------|
 | [`probe`](docs/commands/probe.md) | Defense preflight: assess defenses, detect vendors, check rate limits | [Reference →](docs/commands/probe.md) |
-| [`recon`](docs/commands/recon.md) | Capture + classify: browse through proxy, preserve traffic, generate report | [Reference →](docs/commands/recon.md) |
+| [`recon`](docs/commands/recon.md) | Capture + classify: CDP by default, proxy fallback, filter noise | [Reference →](docs/commands/recon.md) |
 | [`analyze`](docs/commands/analyze.md) | Offline analysis: import HAR, Burp XML, or JSONL captures | [Reference →](docs/commands/analyze.md) |
 | [`replay`](docs/commands/replay.md) | Replay captured calls and detect API drift | [Reference →](docs/commands/replay.md) |
 | [`spec`](docs/commands/spec.md) | Generate OpenAPI 3.0.3 from captured traffic | [Reference →](docs/commands/spec.md) |
@@ -74,7 +73,7 @@ Only run apisniff against systems you own, administer, or have explicit permissi
 
 ### Your IP address is exposed
 
-**This tool sends real HTTP requests from your IP.** Aggressive or repeated probing can get you rate-limited or blocked. `apisniff probe rate` fires 20 rapid requests, so use it deliberately. Route through `--proxy` if you don't want to expose your IP.
+**This tool sends real HTTP requests from your IP.** Aggressive or repeated probing can get you rate-limited or blocked. `apisniff probe rate` fires rapid requests, so use it deliberately.
 
 Results reflect your IP's reputation. Residential IPs see fewer challenges than datacenter/cloud IPs. Use `--proxy` to compare results from different vantage points.
 
@@ -84,23 +83,21 @@ Results reflect your IP's reputation. Residential IPs see fewer challenges than 
 
 Use `apisniff share` to create a safe export with only derived artifacts.
 
-### Why recon needs the mitmproxy certificate
+### Recon capture modes
 
-`apisniff recon` uses [mitmproxy](https://github.com/mitmproxy/mitmproxy), an open source SSL/TLS-capable intercepting proxy for HTTP/1, HTTP/2, and WebSockets. mitmproxy is built for the same authorized inspection work penetration testers and software developers already do when they need to see what an app is sending over HTTPS. apisniff starts it locally, opens Chrome with that local proxy configured, then records the HTTP flows that pass through it.
+`apisniff recon` defaults to `--mode cdp-launch`. It launches Chrome with a dedicated user data directory and a DevTools port, then captures request/response data from Chrome's Network domain. The target sees Chrome's real TLS and HTTP/2 behavior, but JavaScript-level automation signals may still exist because Chrome is launched for automation.
 
-HTTPS is encrypted between the browser and the origin server, so a proxy cannot read request paths, JSON bodies, headers, or responses unless the browser trusts the proxy during the TLS handshake. mitmproxy solves this by creating a local certificate authority the first time it runs, stored under `~/.mitmproxy`, and generating site certificates on the fly for the domains you visit. Installing or trusting that CA certificate tells the browser: "for this local capture session, allow this proxy to inspect HTTPS traffic."
+`--mode cdp-attach` connects to an existing Chrome DevTools endpoint with `--remote-url` or `--port`.
 
-Treat the certificate like sensitive local configuration. A trusted CA can decrypt HTTPS traffic from clients that trust it and send traffic through the proxy, so only install the mitmproxy CA on machines and browser profiles you control. apisniff uses a local proxy on `127.0.0.1` and launches Chrome with `--proxy-server=http://127.0.0.1:8080`; regular browsing and apps are unaffected unless you route them through that proxy. If Chrome shows certificate warnings, start `apisniff recon`, open `http://mitm.it` in the proxied Chrome window, and follow mitmproxy's platform-specific certificate instructions.
+`--mode proxy` starts a local HTTP/HTTPS MITM proxy. For HTTPS capture, the client you route through the proxy must trust `~/.apisniff/ca-cert.pem`. Treat that CA as sensitive local configuration: a trusted CA can decrypt HTTPS traffic from clients that trust it and send traffic through this proxy. The private key is stored at `~/.apisniff/ca-key.pem` with owner-only permissions.
 
 ### What recon can see
 
-`apisniff recon` only records traffic from clients that are explicitly sent through its local proxy. By default, that means the Chrome window apisniff launches with `--proxy-server=http://127.0.0.1:8080`.
+CDP modes only record traffic from the Chrome session apisniff launches or attaches to. Proxy mode only records traffic from clients explicitly configured to use the local proxy.
 
-Other apps, other browser windows, background services, and normal device traffic are not routed through apisniff unless you configure them to use that same local proxy. apisniff does not turn on device-wide network capture, install a VPN, or monitor traffic outside the local proxy session.
+Other apps, other browser windows, background services, and normal device traffic are not routed through apisniff unless you configure them for the same capture mode. apisniff does not turn on device-wide network capture, install a VPN, or monitor traffic outside the chosen session.
 
-By default, `recon` starts mitmproxy on local port `8080`; use `--port` to choose a different port. Press **Ctrl+C** to end the session. apisniff sends SIGINT to both mitmproxy and the Chrome instance it launched, then releases the local proxy port. If you see a port-in-use error, a previous `recon` session is probably still running.
-
-More detail: [mitmproxy certificate docs](https://docs.mitmproxy.org/stable/concepts/certificates/) and [how mitmproxy works](https://docs.mitmproxy.org/stable/concepts/how-mitmproxy-works/). For questions about mitmproxy itself, see the [mitmproxy GitHub repository](https://github.com/mitmproxy/mitmproxy).
+Press **Ctrl+C** to end a proxy capture session. If you see a port-in-use error, another capture session is probably still running on that port.
 
 ## What to do with the spec
 
@@ -119,18 +116,13 @@ cat spec.yaml | llm "write a Python client for this API"
 ```bash
 git clone https://github.com/4LAU/apisniff.git
 cd apisniff
-uv sync --dev
-uv run pytest tests/ -v
-uv run ruff check .
+go test ./...
+go build -o apisniff ./cmd/apisniff
 ```
 
 See [CONTRIBUTING.md](CONTRIBUTING.md) for the local development workflow and [SECURITY.md](SECURITY.md) for vulnerability reporting.
 
-To regenerate command reference docs after changing CLI flags:
-
-```bash
-uv run python scripts/generate_command_docs.py
-```
+Build release binaries with `-ldflags="-s -w"` to keep binary size under the distribution target.
 
 ## License
 

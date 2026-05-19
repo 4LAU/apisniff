@@ -1,130 +1,80 @@
 # Getting Started
 
-This guide walks through a complete API reconnaissance workflow: install apisniff, probe a target's defenses, capture live traffic, generate an API spec, and share the results.
+This guide walks through a complete API reconnaissance workflow: probe a target, capture live traffic, generate an API spec, replay for drift, and share a safe summary.
 
 ## Install
 
 ```bash
-pip install apisniff
-# or
-pipx install apisniff
-# or
-uv tool install apisniff
+brew tap 4LAU/tap && brew install apisniff
 ```
 
-Requires Python 3.12+. The `recon` command also requires [mitmproxy](https://github.com/mitmproxy/mitmproxy), which is installed automatically as a dependency.
+From source:
 
-## Step 1: Probe the target
+```bash
+go build -ldflags="-s -w" -o apisniff ./cmd/apisniff
+```
 
-Before capturing traffic, check what defenses are in place:
+## Step 1: Probe the Target
 
 ```bash
 apisniff probe example.com
 ```
 
-This sends three requests with different client profiles and compares the responses. You'll see a verdict (no protection, client-dependent, JS challenge, or full block) and any detected vendor products.
+Probe compares multiple client profiles and reports a verdict plus vendor signals. It sends real requests from your network.
 
-The probe will identify proxies and CDNs. If you see "full block," try `--proxy` to route through a different IP.
-
-## Step 2: Capture traffic
+## Step 2: Capture Traffic
 
 ```bash
 apisniff recon example.com
 ```
 
-A local mitmproxy instance starts on port 8080 and Chrome opens automatically with that proxy configured. This is the same authorized inspection pattern penetration testers and developers use when they need to understand an app's HTTPS traffic. Browse the site normally: click through pages, submit forms, use the features you want to map. Every request is captured and classified in real-time.
+By default, `recon` launches Chrome and captures via Chrome DevTools Protocol. Browse the site normally in that Chrome session, then wait for the command to finish or stop it with Ctrl+C where appropriate.
 
-### HTTPS and the mitmproxy certificate
+For the MITM proxy fallback:
 
-Most API traffic is HTTPS. Because HTTPS encrypts traffic between the browser and the origin server, mitmproxy can only show apisniff the request and response details if the browser trusts mitmproxy's local certificate authority.
+```bash
+apisniff recon example.com --mode proxy --port 8080
+```
 
-The first time mitmproxy runs, it creates a unique CA under `~/.mitmproxy`. Trusting that CA allows mitmproxy to generate temporary certificates for the HTTPS sites you visit through the proxied browser. The certificate does not make all network traffic visible by itself; the client also has to trust the CA and send traffic through the proxy. Without it, Chrome may show certificate warnings and apisniff may miss encrypted traffic.
+Route a browser or client through `http://127.0.0.1:8080`. For HTTPS capture, trust `~/.apisniff/ca-cert.pem` in that client profile. The CA private key is stored at `~/.apisniff/ca-key.pem`; treat it as sensitive local configuration.
 
-To install the certificate, run `apisniff recon`, then open `http://mitm.it` in the Chrome window that apisniff launched. Follow the instructions for your platform. Only do this on a machine and browser profile you control, and remove the certificate when you no longer need HTTPS interception.
+Results are saved to `~/apisniff-captures/<domain>_<timestamp>/`.
 
-Read more in the [mitmproxy certificate docs](https://docs.mitmproxy.org/stable/concepts/certificates/). For questions about mitmproxy itself, see the [mitmproxy GitHub repository](https://github.com/mitmproxy/mitmproxy).
-
-Press **Ctrl+C** when you're done browsing. apisniff will:
-- Filter out noise (ads, analytics, tracking pixels, third-party domains)
-- Detect authentication patterns (bearer tokens, API keys, session cookies)
-- Extract cookies into a reusable cookie jar
-- Identify vendor products from response headers
-- Generate a recon report
-
-Results are saved to `~/apisniff-captures/example-com_<timestamp>/`.
-
-### Already have a capture?
-
-If you have a HAR file from Chrome DevTools or a Burp Suite export:
+## Already Have a Capture?
 
 ```bash
 apisniff analyze traffic.har
-# or
 apisniff analyze burp-export.xml
+apisniff analyze flows.jsonl
 ```
 
-Same processing pipeline, different input source.
-
-## Step 3: Generate an API spec
-
-```bash
-apisniff spec example.com
-```
-
-The command reads your latest capture and produces an OpenAPI 3.0.3 spec on stdout. By default it includes the clean requested-host API contract:
-- Business and auth API endpoints on the requested host, normalized (e.g., `/users/123` → `/users/{id}`)
-- Request and response schemas inferred from captured data
-- Query parameters merged across observations
-- Detected authentication patterns and security schemes
-
-Anti-bot, captcha, telemetry, analytics, and third-party API-shaped traffic are kept in the surface inventory instead of being silently lost.
-
-Save it to a file:
+## Step 3: Generate an API Spec
 
 ```bash
 apisniff spec example.com -o spec.yaml
 ```
 
-If you want sample values from captured data, opt in:
+The spec includes observed endpoints, normalized path parameters, inferred request/response schemas, query parameters, and observed auth signals.
+
+## Step 4: Replay for Drift
 
 ```bash
-apisniff spec example.com --examples -o spec.yaml
+apisniff replay example.com
 ```
 
-If you intentionally want a broader OpenAPI view:
+Replay compares status codes, JSON shape, and response sizes. It only sends safe methods by default.
 
-```bash
-apisniff spec example.com --include-third-party -o spec.yaml
-apisniff spec example.com --include-category antibot --include-category captcha -o spec.yaml
-apisniff spec example.com --include-host api.example.com -o spec.yaml
-```
-
-## Step 4: Share results
-
-Raw capture bundles contain credentials and should never be shared. To create a safe export:
+## Step 5: Share Results
 
 ```bash
 apisniff share example.com
 ```
 
-The output is a directory with derived artifacts only: an OpenAPI spec, categorized surface inventory, session metadata, and a redacted report. No raw traffic, no cookies, no headers.
+The share directory contains `spec.yaml`, `inventory.json`, `report.md`, and `session.json`. It excludes raw traffic and redacts cookie values.
 
-## What to do with the spec
+## Next Steps
 
-```bash
-# Generate a client library
-openapi-generator generate -i spec.yaml -g python -o client/
-
-# Import into Postman
-# File → Import → select spec.yaml
-
-# Feed to an LLM for client generation
-cat spec.yaml | llm "write a Python client for this API"
-```
-
-## Next steps
-
-- [Workflow recipes](workflows.md): "check for API drift," "map a GraphQL API," and more
-- [Capture formats](capture-formats.md): HAR, Burp XML, and JSONL explained
-- [Command reference](../commands/): full flag documentation for every command
-- [CLI spec](../spec.md): output format contracts and conventions
+- [Workflow recipes](workflows.md)
+- [Capture formats](capture-formats.md)
+- [Command reference](../commands/)
+- [CLI spec](../spec.md)

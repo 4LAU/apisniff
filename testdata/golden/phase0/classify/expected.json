@@ -1,0 +1,36 @@
+[
+  {
+    "action": "keep",
+    "category": "",
+    "flow": {
+      "method": "GET",
+      "host": "api.example.com",
+      "path": "/v1/users",
+      "url": "https://api.example.com/v1/users",
+      "request_headers": {
+        "accept": "application/json"
+      },
+      "request_body": null,
+      "response_status": 200,
+      "response_headers": {
+        "content-type": "application/json"
+      },
+      "response_body": "eyJ1c2VycyI6W119",
+      "_body_encoding": "base64",
+      "tags": [
+        "api"
+      ],
+      "timestamp": 1710000000
+    }
+  },
+  {
+    "action": "drop",
+    "category": "options",
+    "flow": null
+  },
+  {
+    "action": "drop",
+    "category": "static_asset",
+    "flow": null
+  }
+]

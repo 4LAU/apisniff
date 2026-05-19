@@ -1,58 +1,39 @@
-<!-- Generated from apisniff CLI. Do not edit manually. -->
-<!-- Re-run: uv run python scripts/generate_command_docs.py -->
-
-
 # `apisniff replay`
 
-Replay captured API calls against the live site and detect drift. Compares response status, structure, and size. Categorizes each endpoint as match, drift, auth_expired, blocked, or error.
+Replay captured API calls and categorize drift.
 
 ## Usage
 
+```bash
+apisniff replay BUNDLE|DOMAIN|FLOWS_JSONL [flags]
 ```
-Usage: apisniff replay [OPTIONS] BUNDLE
 
- Replay captured API calls and detect drift.
+## Flags
 
-╭─ Arguments ──────────────────────────────────────────────────────────────────╮
-│ *    bundle      TEXT  Bundle directory path or domain name [required]       │
-╰──────────────────────────────────────────────────────────────────────────────╯
-╭─ Options ────────────────────────────────────────────────────────────────────╮
-│ --filter                  TEXT  Glob filter for paths                        │
-│ --cookie-file             TEXT  Netscape cookies.txt path                    │
-│ --header          -H      TEXT  Extra header (key:value)                     │
-│ --json                          Output as JSON                               │
-│ --output          -o      TEXT  Write JSON output to file                    │
-│ --dry-run                       List endpoints without replaying             │
-│ --include-unsafe                Include non-GET/HEAD/OPTIONS methods         │
-│ --insecure                      Skip TLS verification                        │
-│ --help                          Show this message and exit.                  │
-╰──────────────────────────────────────────────────────────────────────────────╯
-```
+| Flag | Default | Description |
+|------|---------|-------------|
+| `--filter` | | Glob filter for captured paths |
+| `--timeout` | `15s` | Request timeout |
+| `--cookie-file` | | Netscape `cookies.txt` path |
+| `--header`, `-H` | | Extra replay header as `key:value` |
+| `--json` | `false` | Output as JSON |
+| `--output`, `-o` | | Write JSON output to file |
+| `--dry-run` | `false` | List selected endpoints without replaying |
+| `--include-unsafe` | `false` | Include non-GET/HEAD/OPTIONS methods |
+| `--insecure` | `false` | Skip TLS verification |
+| `--impersonate` | `chrome` | Surf profile: `chrome` or `firefox` |
 
 ## Examples
 
 ```bash
-# Replay the latest capture for a domain
 apisniff replay example.com
-
-# Replay a specific bundle directory
-apisniff replay ~/apisniff-captures/example-com_2026-05-12
-
-# Preview which endpoints would be replayed
-apisniff replay example.com --dry-run
-
-# Filter to specific paths
-apisniff replay example.com --filter "/api/v1/users*"
-
-# Use saved cookies for authenticated endpoints
-apisniff replay example.com --cookie-file ~/apisniff-captures/example-com_2026-05-12/cookies.txt
-
-# Include POST/PUT/DELETE endpoints (use with care)
-apisniff replay example.com --include-unsafe
-
-# JSON output for scripting
-apisniff replay example.com --json -o results.json
+apisniff replay ~/apisniff-captures/example-com_2026-05-12 --dry-run
+apisniff replay flows.jsonl --filter "/api/v1/users*"
+apisniff replay example.com --cookie-file cookies.txt -H "Authorization: Bearer token"
+apisniff replay example.com --include-unsafe --json -o replay.json
 ```
+
+By default, replay sends only safe methods: `GET`, `HEAD`, and `OPTIONS`.
 
 ---
 

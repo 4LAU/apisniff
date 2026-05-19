@@ -1,47 +1,48 @@
-<!-- Generated from apisniff CLI. Do not edit manually. -->
-<!-- Re-run: uv run python scripts/generate_command_docs.py -->
-
-
 # `apisniff recon`
 
-Browse a site through a local mitmproxy, classify every request in real-time. Preserves captured traffic before projection, detects antibot JS, and writes classified flows plus surface metadata to a bundle directory.
+Capture and classify browser/client traffic.
 
 ## Usage
 
+```bash
+apisniff recon DOMAIN [flags]
 ```
-Usage: apisniff recon [OPTIONS] DOMAIN
 
- Capture + classify -- browse a site through the proxy, classify everything.
+## Flags
 
-╭─ Arguments ──────────────────────────────────────────────────────────────────╮
-│ *    domain      TEXT  Domain to capture traffic from [required]             │
-╰──────────────────────────────────────────────────────────────────────────────╯
-╭─ Options ────────────────────────────────────────────────────────────────────╮
-│ --json                  Output as JSON                                       │
-│ --proxy        TEXT     Upstream proxy for mitmproxy                         │
-│ --port         INTEGER  Local proxy port [default: 8080]                     │
-│ --help                  Show this message and exit.                          │
-╰──────────────────────────────────────────────────────────────────────────────╯
-```
+| Flag | Default | Description |
+|------|---------|-------------|
+| `--json` | `false` | Output capture result as JSON |
+| `--port` | `9222` | CDP port, or proxy listen port in `--mode proxy` |
+| `--mode` | `cdp-launch` | `cdp-launch`, `cdp-attach`, or `proxy` |
+| `--remote-url` | | Chrome DevTools URL for `cdp-attach` |
+| `--headless` | `false` | Launch Chrome headless in `cdp-launch` |
+| `--wait` | `8s` | Extra wait after CDP navigation |
+| `--proxy` | | Reserved for future upstream proxy chaining |
 
 ## Examples
 
 ```bash
-# Start capturing traffic for a domain
+# Launch Chrome and capture via CDP
 apisniff recon example.com
 
-# Use a different local port
-apisniff recon example.com --port 9090
+# Launch headless Chrome
+apisniff recon example.com --headless --wait 5s
 
-# Route through an upstream proxy
-apisniff recon example.com --proxy http://corporate-proxy:3128
+# Attach to an existing Chrome DevTools endpoint
+apisniff recon example.com --mode cdp-attach --remote-url http://127.0.0.1:9222
+
+# Run the MITM proxy fallback
+apisniff recon example.com --mode proxy --port 8080
 ```
 
-Browse the site in the Chrome window that opens. Press **Ctrl+C** to stop capture.
+## Capture Modes
 
-For HTTPS traffic, the proxied browser must trust mitmproxy's local CA certificate.
-Start recon, open `http://mitm.it` in the launched Chrome window, and follow
-mitmproxy's platform instructions. See the README for the safety notes.
+`cdp-launch` uses Chrome DevTools Protocol. The target sees Chrome's real TLS/HTTP behavior, but JavaScript automation signals may still be present.
+
+`cdp-attach` captures from an existing Chrome DevTools endpoint.
+
+`proxy` starts a local MITM proxy. For HTTPS capture, route your client through `127.0.0.1:<port>` and trust `~/.apisniff/ca-cert.pem` in that client profile. The CA private key is stored at `~/.apisniff/ca-key.pem`.
 
 ---
 
