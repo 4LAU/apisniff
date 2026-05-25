@@ -1,85 +1,83 @@
 package output
 
 import (
-	"encoding/json"
 	"fmt"
-	"io"
 	"strings"
 
 	"github.com/4LAU/apisniff-go/internal/model"
 )
 
-type probeJSON struct {
-	SchemaVersion  int                    `json:"schema_version"`
-	URL            string                 `json:"url"`
-	Verdict        string                 `json:"verdict"`
-	Recommendation string                 `json:"recommendation"`
-	Probes         []probeResultJSON      `json:"probes"`
-	Vendors        []model.VendorMatch    `json:"vendors"`
-	GraphQL        *model.GraphQLResult   `json:"graphql,omitempty"`
-	RateLimit      *model.RateLimitResult `json:"rate_limit,omitempty"`
-}
-
-type probeResultJSON struct {
-	Variant   string  `json:"variant"`
-	Status    int     `json:"status,omitempty"`
-	ElapsedMS float64 `json:"elapsed_ms"`
-	Blocked   bool    `json:"blocked"`
-	Challenge bool    `json:"challenge"`
-	Error     string  `json:"error,omitempty"`
-}
-
-func WriteProbe(w io.Writer, assessment *model.ProbeAssessment, asJSON bool) error {
-	if asJSON {
-		enc := json.NewEncoder(w)
-		enc.SetIndent("", "  ")
-		return enc.Encode(probeToJSON(assessment))
+func WriteProbe(cfg Config, assessment *model.ProbeAssessment) error {
+	if assessment == nil {
+		return fmt.Errorf("probe assessment is nil")
 	}
-	fmt.Fprintf(w, "apisniff probe %s\n", assessment.URL)
-	fmt.Fprintf(w, "verdict: %s\n", assessment.Verdict.String())
+	s := newStyles(cfg)
+	lines := []string{
+		s.title("apisniff probe"),
+		s.summary("url", assessment.URL),
+		s.summary("verdict", s.verdictBadge(assessment.Verdict.String())),
+	}
 	if len(assessment.Vendors) > 0 {
 		var names []string
 		for _, match := range assessment.Vendors {
 			names = append(names, match.Vendor+"("+match.Confidence+")")
 		}
-		fmt.Fprintf(w, "vendors: %s\n", strings.Join(names, ", "))
+		lines = append(lines, s.summary("vendors", strings.Join(names, ", ")))
 	}
+	if assessment.GraphQL != nil {
+		lines = append(lines, s.summary("graphql", graphqlSummary(assessment.GraphQL)))
+	}
+	if assessment.RateLimit != nil {
+		lines = append(lines, s.summary("rate limit", rateLimitSummary(assessment.RateLimit)))
+	}
+	lines = append(lines, "", s.header("Probe variants"))
 	for _, result := range assessment.Results {
 		status := fmt.Sprint(result.Status)
 		if result.Status == 0 {
 			status = "-"
 		}
-		fmt.Fprintf(w, "  %-12s status=%s elapsed=%.1fms blocked=%t challenge=%t",
-			result.Variant, status, result.ElapsedMS(), result.IsBlocked(), result.IsChallenge())
+		detail := fmt.Sprintf(
+			"elapsed=%.1fms blocked=%t challenge=%t",
+			result.ElapsedMS(),
+			result.IsBlocked(),
+			result.IsChallenge(),
+		)
 		if result.Error != "" {
-			fmt.Fprintf(w, " error=%s", result.Error)
+			detail += " error=" + result.Error
 		}
-		fmt.Fprintln(w)
+		lines = append(lines, s.row(result.Variant, s.statusBadge(status), detail))
 	}
-	fmt.Fprintf(w, "recommendation: %s\n", assessment.Recommendation)
-	return nil
+	if assessment.Recommendation != "" {
+		lines = append(lines, "", s.panel("Recommendation", assessment.Recommendation))
+	}
+	return s.writeLines(lines...)
 }
 
-func probeToJSON(assessment *model.ProbeAssessment) probeJSON {
-	probes := make([]probeResultJSON, 0, len(assessment.Results))
-	for _, result := range assessment.Results {
-		probes = append(probes, probeResultJSON{
-			Variant:   result.Variant,
-			Status:    result.Status,
-			ElapsedMS: result.ElapsedMS(),
-			Blocked:   result.IsBlocked(),
-			Challenge: result.IsChallenge(),
-			Error:     result.Error,
-		})
+func graphqlSummary(result *model.GraphQLResult) string {
+	status := "introspection=false"
+	if result.Introspection {
+		status = "introspection=true"
 	}
-	return probeJSON{
-		SchemaVersion:  1,
-		URL:            assessment.URL,
-		Verdict:        assessment.Verdict.String(),
-		Recommendation: assessment.Recommendation,
-		Probes:         probes,
-		Vendors:        assessment.Vendors,
-		GraphQL:        assessment.GraphQL,
-		RateLimit:      assessment.RateLimit,
+	if len(result.Endpoints) == 0 {
+		return status + ", endpoints=0"
 	}
+	return fmt.Sprintf("%s, endpoints=%d (%s)", status, len(result.Endpoints), strings.Join(result.Endpoints, ", "))
+}
+
+func rateLimitSummary(result *model.RateLimitResult) string {
+	parts := []string{fmt.Sprintf("requests=%d", result.RequestsSent)}
+	if result.FirstBlockAt > 0 {
+		parts = append(parts, fmt.Sprintf("first_block_at=%d", result.FirstBlockAt))
+	}
+	if result.BlockStatus > 0 {
+		parts = append(parts, fmt.Sprintf("block_status=%d", result.BlockStatus))
+	}
+	if result.RetryAfter != "" {
+		parts = append(parts, "retry_after="+result.RetryAfter)
+	}
+	parts = append(parts, fmt.Sprintf("median=%.1fms", result.MedianMS))
+	if result.SilentThrottle {
+		parts = append(parts, "silent_throttle=true")
+	}
+	return strings.Join(parts, ", ")
 }

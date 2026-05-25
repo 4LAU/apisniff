@@ -20,6 +20,7 @@ import (
 	"github.com/4LAU/apisniff-go/internal/replay"
 	"github.com/4LAU/apisniff-go/internal/report"
 	"github.com/4LAU/apisniff-go/internal/spec"
+	"github.com/charmbracelet/x/term"
 	"github.com/spf13/cobra"
 )
 
@@ -27,6 +28,8 @@ func Execute() error {
 	root := newRootCommand()
 	return root.Execute()
 }
+
+var captureRun = capture.Capture
 
 type headerFlags []string
 
@@ -54,43 +57,64 @@ func newRootCommand() *cobra.Command {
 
 func newProbeCommand() *cobra.Command {
 	var (
-		jsonOutput  bool
-		proxyURL    string
-		headers     headerFlags
-		cookie      string
-		insecure    bool
-		impersonate string
+		jsonOutput      bool
+		proxyURL        string
+		headers         headerFlags
+		cookie          string
+		insecure        bool
+		impersonate     string
+		rateRequests    int
+		rateConcurrency int
 	)
 	cmd := &cobra.Command{
 		Use:   "probe [URL | rate URL]",
 		Short: "Defense preflight",
 		Args: func(cmd *cobra.Command, args []string) error {
-			if len(args) == 1 || (len(args) == 2 && args[0] == "rate") {
+			if len(args) == 1 && args[0] != "rate" {
 				return nil
+			}
+			if len(args) == 2 && args[0] == "rate" {
+				return nil
+			}
+			if len(args) == 1 && args[0] == "rate" {
+				return errors.New("probe rate requires a URL argument")
 			}
 			return errors.New("usage: apisniff probe URL or apisniff probe rate URL")
 		},
 		RunE: func(cmd *cobra.Command, args []string) error {
+			rateMode := args[0] == "rate"
 			target := args[0]
-			if args[0] == "rate" {
+			if rateMode {
 				target = args[1]
 			}
 			parsedHeaders, err := parseHeaders(headers)
 			if err != nil {
 				return err
 			}
-			assessment, err := probe.Run(cmd.Context(), target, probe.Options{
+			probeOptions := probe.Options{
 				Proxy:       proxyURL,
 				Headers:     parsedHeaders,
 				Cookie:      cookie,
 				Insecure:    insecure,
 				Impersonate: impersonate,
 				Timeout:     15 * time.Second,
-			})
+			}
+			var assessment *model.ProbeAssessment
+			if rateMode {
+				assessment, err = probe.RunRate(cmd.Context(), target, probeOptions, probe.RateOptions{
+					Requests:    rateRequests,
+					Concurrency: rateConcurrency,
+				})
+			} else {
+				assessment, err = probe.Run(cmd.Context(), target, probeOptions)
+			}
 			if err != nil {
 				return err
 			}
-			return output.WriteProbe(cmd.OutOrStdout(), assessment, jsonOutput)
+			if jsonOutput {
+				return writeJSON(cmd.OutOrStdout(), probeToJSON(assessment))
+			}
+			return output.WriteProbe(humanOutputConfig(cmd), assessment)
 		},
 	}
 	cmd.Flags().BoolVar(&jsonOutput, "json", false, "output as JSON")
@@ -99,6 +123,8 @@ func newProbeCommand() *cobra.Command {
 	cmd.Flags().StringVar(&cookie, "cookie", "", "Cookie header value")
 	cmd.Flags().BoolVar(&insecure, "insecure", false, "skip TLS verification")
 	cmd.Flags().StringVar(&impersonate, "impersonate", "chrome", "TLS profile")
+	cmd.Flags().IntVar(&rateRequests, "rate-requests", 20, "requests to send for probe rate")
+	cmd.Flags().IntVar(&rateConcurrency, "rate-concurrency", 1, "concurrency for probe rate")
 	return cmd
 }
 
@@ -121,7 +147,7 @@ func newReconCommand() *cobra.Command {
 				return errors.New("--proxy as an upstream proxy is not implemented; use --mode proxy to run the apisniff MITM proxy")
 			}
 			domain, launchURL := normalizeTarget(args[0])
-			result, err := capture.Capture(cmd.Context(), capture.Config{
+			result, err := captureRun(cmd.Context(), capture.Config{
 				Domain:    domain,
 				URL:       launchURL,
 				Mode:      mode,
@@ -136,9 +162,13 @@ func newReconCommand() *cobra.Command {
 			if jsonOutput {
 				return writeJSON(cmd.OutOrStdout(), result)
 			}
-			fmt.Fprintf(cmd.OutOrStdout(), "captured %d flows -> %s\n", result.Stats.KeptFlows, result.BundleDir)
-			fmt.Fprintf(cmd.OutOrStdout(), "flows: %s\n", result.FlowsPath)
-			return nil
+			return output.WriteRecon(humanOutputConfig(cmd), output.ReconResult{
+				Domain:     result.Stats.Domain,
+				BundleDir:  result.BundleDir,
+				FlowsPath:  result.FlowsPath,
+				KeptFlows:  result.Stats.KeptFlows,
+				TotalFlows: result.Stats.TotalFlows,
+			})
 		},
 	}
 	cmd.Flags().BoolVar(&jsonOutput, "json", false, "output as JSON")
@@ -163,8 +193,9 @@ func newAnalyzeCommand() *cobra.Command {
 		Short: "Load captured JSONL flows",
 		Args:  cobra.ExactArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
-			_ = outputDir
-			_ = fetchGraphQL
+			if fetchGraphQL && outputDir == "" {
+				return errors.New("--fetch-graphql requires --output-dir to store the introspection result")
+			}
 			flows, inputFormat, err := adapter.LoadFlows(args[0])
 			if err != nil {
 				return err
@@ -183,7 +214,32 @@ func newAnalyzeCommand() *cobra.Command {
 			if jsonOutput {
 				result.Flows = flows
 			}
-			return output.WriteAnalyze(cmd.OutOrStdout(), result, jsonOutput)
+			if outputDir != "" {
+				session := model.SessionStats{
+					Domain:     domain,
+					StartedAt:  time.Now().UTC().Format(time.RFC3339),
+					TotalFlows: len(flows),
+					KeptFlows:  len(flows),
+					Dropped:    map[string]int{},
+				}
+				if err := report.WriteBundle(outputDir, flows, session); err != nil {
+					return err
+				}
+				if fetchGraphQL {
+					graphQL, err := report.FetchGraphQLSchemas(cmd.Context(), flows)
+					if err != nil {
+						return err
+					}
+					if err := report.WriteGraphQLResults(outputDir, graphQL); err != nil {
+						return err
+					}
+				}
+				result.BundleDir = outputDir
+			}
+			if jsonOutput {
+				return writeJSON(cmd.OutOrStdout(), result)
+			}
+			return output.WriteAnalyze(humanOutputConfig(cmd), result)
 		},
 	}
 	cmd.Flags().StringVarP(&domain, "domain", "d", "", "target domain")
@@ -243,7 +299,7 @@ func newReplayCommand() *cobra.Command {
 			if jsonOutput {
 				return writeJSON(cmd.OutOrStdout(), summary)
 			}
-			return writeReplaySummary(cmd.OutOrStdout(), summary)
+			return output.WriteReplay(humanOutputConfig(cmd), summary)
 		},
 	}
 	cmd.Flags().StringVar(&filter, "filter", "", "glob filter for paths")
@@ -277,10 +333,6 @@ func newSpecCommand() *cobra.Command {
 		Short: "Generate OpenAPI from captured traffic",
 		Args:  cobra.ExactArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
-			_ = surfaceOutput
-			_ = includeThirdParty
-			_ = includeCategory
-			_ = includeHost
 			domain := args[0]
 			path := inputFile
 			if path == "" {
@@ -297,8 +349,30 @@ func newSpecCommand() *cobra.Command {
 			if inputFormat == "unknown" {
 				return fmt.Errorf("unknown input format for %s", path)
 			}
-			apiFlows := spec.FilterAPIFlows(flows)
-			doc := spec.Generate(apiFlows, domain, auth.Detect(flows), spec.Options{
+			inclusions := spec.InclusionOptions{
+				IncludeThirdParty: includeThirdParty,
+				IncludeCategories: includeCategory,
+				IncludeHosts:      includeHost,
+			}
+			if inclusionOptionsEnabled(inclusions) && isPrefilteredBundleInput(path) {
+				fmt.Fprintln(cmd.ErrOrStderr(), "inclusion filters have no effect on pre-filtered bundles; pass the original capture file via --input")
+			}
+			specFlows := flows
+			surface := spec.BuildSurfaceInventory(flows, domain)
+			if inclusionOptionsEnabled(inclusions) {
+				var err error
+				specFlows, surface, err = spec.ApplyInclusionFilters(flows, domain, inclusions)
+				if err != nil {
+					return err
+				}
+			}
+			if surfaceOutput != "" {
+				if err := writeJSONFile(surfaceOutput, surface); err != nil {
+					return err
+				}
+			}
+			apiFlows := spec.FilterAPIFlows(specFlows)
+			doc := spec.Generate(apiFlows, domain, auth.Detect(specFlows), spec.Options{
 				InferSchemes:    inferSchemes,
 				IncludeExamples: includeExamples,
 			})
@@ -307,10 +381,30 @@ func newSpecCommand() *cobra.Command {
 				return err
 			}
 			if outputFile != "" {
-				return os.WriteFile(outputFile, data, 0o600)
+				if err := os.WriteFile(outputFile, data, 0o600); err != nil {
+					return err
+				}
+				paths, operations := countOpenAPIOperations(doc)
+				return output.WriteSpecStatus(humanOutputConfig(cmd), output.SpecStatusResult{
+					Domain:            domain,
+					Format:            format,
+					OutputPath:        outputFile,
+					SurfaceOutputPath: surfaceOutput,
+					Paths:             paths,
+					Operations:        operations,
+				})
 			}
-			_, err = cmd.OutOrStdout().Write(append(data, '\n'))
-			return err
+			if _, err := cmd.OutOrStdout().Write(append(data, '\n')); err != nil {
+				return err
+			}
+			paths, operations := countOpenAPIOperations(doc)
+			return output.WriteSpecStatus(humanOutputConfig(cmd), output.SpecStatusResult{
+				Domain:            domain,
+				Format:            format,
+				SurfaceOutputPath: surfaceOutput,
+				Paths:             paths,
+				Operations:        operations,
+			})
 		},
 	}
 	cmd.Flags().StringVarP(&inputFile, "input", "i", "", "input file")
@@ -344,11 +438,10 @@ func newShareCommand() *cobra.Command {
 			if jsonOut {
 				return writeJSON(cmd.OutOrStdout(), result)
 			}
-			fmt.Fprintf(cmd.OutOrStdout(), "shared artifacts -> %s\n", result.OutputDir)
-			for _, file := range result.Files {
-				fmt.Fprintf(cmd.OutOrStdout(), "%s\n", file)
-			}
-			return nil
+			return output.WriteShare(humanOutputConfig(cmd), output.ShareResult{
+				OutputDir: result.OutputDir,
+				Files:     result.Files,
+			})
 		},
 	}
 	cmd.Flags().StringVarP(&outputDir, "output", "o", "", "output path")
@@ -425,6 +518,42 @@ func summarizeEndpoints(flows []model.CapturedFlow, limit int) []output.Endpoint
 	return out
 }
 
+func humanOutputConfig(cmd *cobra.Command) output.Config {
+	return output.Config{
+		Color:  useColor(cmd.ErrOrStderr()),
+		Width:  terminalWidth(cmd.ErrOrStderr()),
+		Writer: cmd.ErrOrStderr(),
+	}
+}
+
+func terminalWidth(w io.Writer) int {
+	file, ok := w.(*os.File)
+	if !ok {
+		return 80
+	}
+	info, err := file.Stat()
+	if err != nil || info.Mode()&os.ModeCharDevice == 0 {
+		return 80
+	}
+	width, _, err := term.GetSize(file.Fd())
+	if err != nil || width <= 0 {
+		return 80
+	}
+	return width
+}
+
+func useColor(w io.Writer) bool {
+	if os.Getenv("NO_COLOR") != "" {
+		return false
+	}
+	file, ok := w.(*os.File)
+	if !ok {
+		return false
+	}
+	info, err := file.Stat()
+	return err == nil && info.Mode()&os.ModeCharDevice != 0
+}
+
 func writeJSON(w io.Writer, value any) error {
 	data, err := json.MarshalIndent(value, "", "  ")
 	if err != nil {
@@ -434,37 +563,92 @@ func writeJSON(w io.Writer, value any) error {
 	return err
 }
 
-func writeReplaySummary(w io.Writer, summary replay.Summary) error {
-	if summary.Mode == "dry_run" {
-		fmt.Fprintf(w, "dry run: %d safe, %d unsafe, %d total\n", summary.Summary["safe"], summary.Summary["unsafe"], summary.Summary["total"])
-		for _, endpoint := range summary.Endpoints {
-			fmt.Fprintln(w, endpoint)
+func writeJSONFile(path string, value any) error {
+	data, err := json.MarshalIndent(value, "", "  ")
+	if err != nil {
+		return err
+	}
+	return os.WriteFile(path, append(data, '\n'), 0o600)
+}
+
+type probeJSON struct {
+	SchemaVersion  int                    `json:"schema_version"`
+	URL            string                 `json:"url"`
+	Verdict        string                 `json:"verdict"`
+	Recommendation string                 `json:"recommendation"`
+	Probes         []probeResultJSON      `json:"probes"`
+	Vendors        []model.VendorMatch    `json:"vendors"`
+	GraphQL        *model.GraphQLResult   `json:"graphql,omitempty"`
+	RateLimit      *model.RateLimitResult `json:"rate_limit,omitempty"`
+}
+
+type probeResultJSON struct {
+	Variant   string  `json:"variant"`
+	Status    int     `json:"status,omitempty"`
+	ElapsedMS float64 `json:"elapsed_ms"`
+	Blocked   bool    `json:"blocked"`
+	Challenge bool    `json:"challenge"`
+	Error     string  `json:"error,omitempty"`
+}
+
+func probeToJSON(assessment *model.ProbeAssessment) probeJSON {
+	if assessment == nil {
+		return probeJSON{SchemaVersion: 1}
+	}
+	probes := make([]probeResultJSON, 0, len(assessment.Results))
+	for _, result := range assessment.Results {
+		probes = append(probes, probeResultJSON{
+			Variant:   result.Variant,
+			Status:    result.Status,
+			ElapsedMS: result.ElapsedMS(),
+			Blocked:   result.IsBlocked(),
+			Challenge: result.IsChallenge(),
+			Error:     result.Error,
+		})
+	}
+	return probeJSON{
+		SchemaVersion:  1,
+		URL:            assessment.URL,
+		Verdict:        assessment.Verdict.String(),
+		Recommendation: assessment.Recommendation,
+		Probes:         probes,
+		Vendors:        assessment.Vendors,
+		GraphQL:        assessment.GraphQL,
+		RateLimit:      assessment.RateLimit,
+	}
+}
+
+func isPrefilteredBundleInput(path string) bool {
+	if filepath.Base(path) != "flows.jsonl" {
+		return false
+	}
+	if _, err := os.Stat(filepath.Join(filepath.Dir(path), "session.json")); err == nil {
+		return true
+	}
+	return false
+}
+
+func inclusionOptionsEnabled(opts spec.InclusionOptions) bool {
+	return opts.IncludeThirdParty || len(opts.IncludeCategories) > 0 || len(opts.IncludeHosts) > 0
+}
+
+func countOpenAPIOperations(doc map[string]any) (int, int) {
+	pathsMap, ok := doc["paths"].(map[string]any)
+	if !ok {
+		return 0, 0
+	}
+	operations := 0
+	for _, rawPathItem := range pathsMap {
+		pathItem, ok := rawPathItem.(map[string]any)
+		if !ok {
+			continue
 		}
-		return nil
-	}
-	total := 0
-	for _, count := range summary.Summary {
-		total += count
-	}
-	fmt.Fprintf(w, "replayed %d flows", total)
-	if summary.Domain != "" {
-		fmt.Fprintf(w, " for %s", summary.Domain)
-	}
-	fmt.Fprintln(w)
-	for _, category := range []string{"match", "drift", "auth_expired", "blocked", "error"} {
-		if count := summary.Summary[category]; count > 0 {
-			fmt.Fprintf(w, "%s: %d\n", category, count)
+		for method := range pathItem {
+			switch strings.ToLower(method) {
+			case "get", "put", "post", "delete", "options", "head", "patch", "trace":
+				operations++
+			}
 		}
 	}
-	for _, result := range summary.Results {
-		fmt.Fprintf(w, "%s %s -> %s", result.Method, result.Path, result.Category)
-		if result.ReplayedStatus != 0 {
-			fmt.Fprintf(w, " (%d -> %d)", result.OriginalStatus, result.ReplayedStatus)
-		}
-		if result.Error != "" {
-			fmt.Fprintf(w, ": %s", result.Error)
-		}
-		fmt.Fprintln(w)
-	}
-	return nil
+	return len(pathsMap), operations
 }

@@ -236,7 +236,7 @@ func Marshal(doc map[string]any, format string) ([]byte, error) {
 func FilterAPIFlows(flows []model.CapturedFlow) []model.CapturedFlow {
 	out := make([]model.CapturedFlow, 0, len(flows))
 	for _, flow := range flows {
-		if IsAPIFlow(flow) || hasCategoryTag(flow, "business_api") || hasCategoryTag(flow, "auth") || hasCategoryTag(flow, "antibot") {
+		if IsAPIFlow(flow) || hasTag(flow, includedForSpecTag) || hasCategoryTag(flow, "business_api") || hasCategoryTag(flow, "auth") || hasCategoryTag(flow, "antibot") {
 			out = append(out, flow)
 		}
 	}
@@ -244,8 +244,12 @@ func FilterAPIFlows(flows []model.CapturedFlow) []model.CapturedFlow {
 }
 
 func hasCategoryTag(flow model.CapturedFlow, category string) bool {
+	return hasTag(flow, "category:"+category)
+}
+
+func hasTag(flow model.CapturedFlow, want string) bool {
 	for _, tag := range flow.Tags {
-		if tag == "category:"+category {
+		if tag == want {
 			return true
 		}
 	}
