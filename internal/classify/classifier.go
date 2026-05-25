@@ -4,6 +4,7 @@ import (
 	"net"
 	"net/url"
 	"strings"
+	"sync"
 
 	"github.com/4LAU/apisniff-go/internal/model"
 	"golang.org/x/net/publicsuffix"
@@ -28,6 +29,7 @@ type indicators struct {
 }
 
 type Classifier struct {
+	mu                 sync.Mutex
 	targetRD           string
 	relatedDomains     map[string]struct{}
 	allowlistDomains   []string
@@ -68,6 +70,8 @@ func Must(targetDomain string) *Classifier {
 }
 
 func (c *Classifier) Classify(flow model.CapturedFlow) (model.ClassifyResult, *model.CapturedFlow) {
+	c.mu.Lock()
+	defer c.mu.Unlock()
 	if flow.Method == "OPTIONS" {
 		return model.ClassifyResult{Action: "drop", Category: model.Options, Reason: "CORS preflight"}, nil
 	}
@@ -325,10 +329,31 @@ func isAPILike(flow model.CapturedFlow) bool {
 }
 
 func isAuthPath(path string) bool {
-	for _, fragment := range []string{"/auth", "/login", "/token", "/oauth", "/signup", "/register"} {
-		if strings.Contains(path, fragment) {
+	for _, segment := range []string{"auth", "login", "token", "oauth", "signup", "register"} {
+		if containsPathSegment(path, segment) {
 			return true
 		}
 	}
 	return false
+}
+
+func containsPathSegment(path, segment string) bool {
+	target := "/" + segment
+	start := 0
+	for {
+		idx := strings.Index(path[start:], target)
+		if idx < 0 {
+			return false
+		}
+		idx += start
+		end := idx + len(target)
+		if end >= len(path) {
+			return true
+		}
+		next := path[end]
+		if next == '/' || next == '?' || next == '#' {
+			return true
+		}
+		start = idx + 1
+	}
 }

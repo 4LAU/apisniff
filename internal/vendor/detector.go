@@ -68,10 +68,11 @@ func (d *Detector) Match(headers map[string]string, body []byte, status int) []m
 	}
 	lowerHeaders := normalizeHeaders(headers)
 	cookies := cookieNames(lowerHeaders)
-	bodyText := strings.ToLower(string(body))
-	if len(bodyText) > 500000 {
-		bodyText = bodyText[:500000]
+	truncated := body
+	if len(truncated) > 500000 {
+		truncated = truncated[:500000]
 	}
+	bodyText := strings.ToLower(string(truncated))
 
 	var matches []model.VendorMatch
 	for name, sig := range d.signatures {
@@ -85,7 +86,7 @@ func (d *Detector) Match(headers map[string]string, body []byte, status int) []m
 			for _, signal := range group {
 				if signal.matches(lowerHeaders, cookies, bodyText, status) {
 					signals[signal.label(confidence)] = struct{}{}
-					if betterConfidence(confidence, highest) {
+					if BetterConfidence(confidence, highest) {
 						highest = confidence
 					}
 				}
@@ -184,19 +185,37 @@ func cookieNames(headers map[string]string) map[string]struct{} {
 		if key != "set-cookie" && key != "cookie" {
 			continue
 		}
-		for _, part := range strings.Split(value, ";") {
-			name, _, _ := strings.Cut(strings.TrimSpace(part), "=")
-			if name != "" && !isCookieAttribute(name) {
-				out[strings.ToLower(name)] = struct{}{}
-			}
-		}
 		if key == "set-cookie" {
-			for _, cookie := range (&http.Response{Header: http.Header{"Set-Cookie": []string{value}}}).Cookies() {
+			individual := splitSetCookieValues(value)
+			resp := &http.Response{Header: http.Header{"Set-Cookie": individual}}
+			for _, cookie := range resp.Cookies() {
 				out[strings.ToLower(cookie.Name)] = struct{}{}
+			}
+		} else {
+			for _, part := range strings.Split(value, ";") {
+				name, _, _ := strings.Cut(strings.TrimSpace(part), "=")
+				if name != "" && !isCookieAttribute(name) {
+					out[strings.ToLower(name)] = struct{}{}
+				}
 			}
 		}
 	}
 	return out
+}
+
+func splitSetCookieValues(joined string) []string {
+	lines := strings.Split(joined, "\n")
+	var result []string
+	for _, line := range lines {
+		line = strings.TrimSpace(line)
+		if line != "" {
+			result = append(result, line)
+		}
+	}
+	if len(result) == 0 && joined != "" {
+		result = append(result, joined)
+	}
+	return result
 }
 
 func isCookieAttribute(name string) bool {
@@ -208,7 +227,7 @@ func isCookieAttribute(name string) bool {
 	}
 }
 
-func betterConfidence(next, current string) bool {
+func BetterConfidence(next, current string) bool {
 	rank := map[string]int{"low": 1, "medium": 2, "high": 3}
 	return rank[next] > rank[current]
 }

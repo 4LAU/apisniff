@@ -21,7 +21,20 @@ import (
 )
 
 var hopByHop = map[string]struct{}{"host": {}, "content-length": {}, "content-encoding": {}, "transfer-encoding": {}, "connection": {}, "keep-alive": {}}
-var authHeaders = map[string]struct{}{"authorization": {}, "cookie": {}, "x-api-key": {}, "api-key": {}, "apikey": {}}
+var authHeaderNames = map[string]struct{}{
+	"authorization":       {},
+	"proxy-authorization": {},
+	"cookie":              {},
+	"x-api-key":           {},
+	"api-key":             {},
+	"apikey":              {},
+	"x-auth-token":        {},
+	"x-access-token":      {},
+	"x-csrf-token":        {},
+	"x-xsrf-token":        {},
+	"csrf-token":          {},
+	"xsrf-token":          {},
+}
 var safeMethods = map[string]struct{}{"GET": {}, "HEAD": {}, "OPTIONS": {}}
 
 type Options struct {
@@ -34,6 +47,7 @@ type Options struct {
 	IncludeUnsafe  bool
 	Insecure       bool
 	DryRun         bool
+	ForwardAuth    bool
 }
 
 type Result struct {
@@ -132,7 +146,7 @@ func newHTTPClient(opts Options) (*surf.Client, error) {
 
 func ReplayOne(ctx context.Context, client *http.Client, flow model.CapturedFlow, opts Options, cookies []Cookie) Result {
 	start := time.Now()
-	req, err := buildRequest(ctx, flow, opts.Headers, cookies)
+	req, err := buildRequest(ctx, flow, opts.Headers, cookies, opts.ForwardAuth)
 	if err != nil {
 		return replayResult(flow, 0, nil, time.Since(start), err)
 	}
@@ -148,7 +162,7 @@ func ReplayOne(ctx context.Context, client *http.Client, flow model.CapturedFlow
 	return replayResult(flow, resp.StatusCode, body, time.Since(start), err)
 }
 
-func buildRequest(ctx context.Context, flow model.CapturedFlow, headers map[string]string, cookies []Cookie) (*http.Request, error) {
+func buildRequest(ctx context.Context, flow model.CapturedFlow, headers map[string]string, cookies []Cookie, forwardAuth ...bool) (*http.Request, error) {
 	host, err := requestHost(flow)
 	if err != nil {
 		return nil, err
@@ -161,9 +175,16 @@ func buildRequest(ctx context.Context, flow model.CapturedFlow, headers map[stri
 	if err != nil {
 		return nil, err
 	}
+	fwdAuth := len(forwardAuth) > 0 && forwardAuth[0]
 	for key, value := range flow.RequestHeaders {
-		if _, skip := hopByHop[strings.ToLower(key)]; skip {
+		lower := strings.ToLower(key)
+		if _, skip := hopByHop[lower]; skip {
 			continue
+		}
+		if !fwdAuth {
+			if isAuthHeader(lower) {
+				continue
+			}
 		}
 		req.Header.Set(key, value)
 	}
@@ -323,9 +344,23 @@ func firstNonEmpty(values ...string) string {
 
 func hasAuthHeaders(flow model.CapturedFlow) bool {
 	for key := range flow.RequestHeaders {
-		if _, ok := authHeaders[strings.ToLower(key)]; ok {
+		if isAuthHeader(key) {
 			return true
 		}
 	}
 	return false
+}
+
+func isAuthHeader(key string) bool {
+	lower := strings.ToLower(strings.TrimSpace(key))
+	if _, ok := authHeaderNames[lower]; ok {
+		return true
+	}
+	return strings.Contains(lower, "authorization") ||
+		strings.Contains(lower, "api-key") ||
+		strings.Contains(lower, "apikey") ||
+		strings.Contains(lower, "auth-token") ||
+		strings.Contains(lower, "access-token") ||
+		strings.Contains(lower, "csrf-token") ||
+		strings.Contains(lower, "xsrf-token")
 }

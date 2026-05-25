@@ -34,6 +34,22 @@ func TestInferSchemaObjectAndArray(t *testing.T) {
 	}
 }
 
+func TestInferSchemaArrayUsesOneOfForMixedScalarTypes(t *testing.T) {
+	schema := InferSchema([]any{float64(1), "two"}, false, "")
+	items := asMap(schema["items"])
+	oneOf, ok := items["oneOf"].([]any)
+	if !ok || len(oneOf) != 2 {
+		t.Fatalf("items schema = %#v", items)
+	}
+	types := map[any]bool{}
+	for _, option := range oneOf {
+		types[asMap(option)["type"]] = true
+	}
+	if !types["integer"] || !types["string"] {
+		t.Fatalf("oneOf = %#v", oneOf)
+	}
+}
+
 func TestGenerateOpenAPIBasicAndNormalize(t *testing.T) {
 	doc := Generate([]model.CapturedFlow{
 		specFlow("GET", "/api/v1/users", 200, []byte(`[{"id":1,"name":"Alice"}]`)),
@@ -91,6 +107,14 @@ func TestRequestBodies(t *testing.T) {
 	file := asMap(asMap(requestSchema(doc, "/api/v1/upload", "post", "multipart/form-data")["properties"])["file"])
 	if file["format"] != "binary" {
 		t.Fatalf("file schema = %#v", file)
+	}
+}
+
+func TestParseMultipartQuotedBoundary(t *testing.T) {
+	body := []byte("--bound\r\nContent-Disposition: form-data; name=\"username\"\r\n\r\nalice\r\n--bound--")
+	parsed := ParseMultipart(body, `multipart/form-data; boundary="bound"`)
+	if parsed["username"] != "alice" {
+		t.Fatalf("multipart fields = %#v", parsed)
 	}
 }
 

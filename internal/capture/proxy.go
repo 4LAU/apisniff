@@ -89,11 +89,13 @@ func CaptureProxy(ctx context.Context, cfg Config) (*Result, error) {
 			return req, nil
 		}
 		if req.Body != nil {
-			body, readErr := io.ReadAll(io.LimitReader(req.Body, proxyBodyLimit))
-			req.Body.Close()
-			req.Body = io.NopCloser(bytes.NewReader(body))
+			body, replayBody, truncated, readErr := captureBodyForReplay(req.Body, proxyBodyLimit)
+			req.Body = replayBody
 			if readErr == nil {
 				flow.RequestBody = body
+				if truncated {
+					flow.Tags = appendTag(flow.Tags, "request_body_truncated")
+				}
 			} else {
 				flow.Tags = appendTag(flow.Tags, "request_body_error")
 			}
@@ -112,11 +114,13 @@ func CaptureProxy(ctx context.Context, cfg Config) (*Result, error) {
 		flow.Tags = appendTag(flow.Tags, "request_proto:"+flowProto(pctx.Req))
 		flow.Tags = appendTag(flow.Tags, "upstream_response_proto:"+resp.Proto)
 		if resp.Body != nil {
-			body, readErr := io.ReadAll(io.LimitReader(resp.Body, proxyBodyLimit))
-			resp.Body.Close()
-			resp.Body = io.NopCloser(bytes.NewReader(body))
+			body, replayBody, truncated, readErr := captureBodyForReplay(resp.Body, proxyBodyLimit)
+			resp.Body = replayBody
 			if readErr == nil {
 				flow.ResponseBody = body
+				if truncated {
+					flow.Tags = appendTag(flow.Tags, "response_body_truncated")
+				}
 			} else {
 				flow.Tags = appendTag(flow.Tags, "response_body_error")
 			}
@@ -295,4 +299,64 @@ func headersToMap(headers http.Header) map[string]string {
 		out[strings.ToLower(key)] = strings.Join(values, "\n")
 	}
 	return out
+}
+
+type removeOnCloseFile struct {
+	*os.File
+	path string
+}
+
+func (f *removeOnCloseFile) Close() error {
+	closeErr := f.File.Close()
+	removeErr := os.Remove(f.path)
+	if closeErr != nil {
+		return closeErr
+	}
+	return removeErr
+}
+
+type limitedCaptureWriter struct {
+	buf       bytes.Buffer
+	limit     int64
+	truncated bool
+}
+
+func (w *limitedCaptureWriter) Write(p []byte) (int, error) {
+	if int64(w.buf.Len()) < w.limit {
+		remaining := int(w.limit - int64(w.buf.Len()))
+		if remaining > len(p) {
+			remaining = len(p)
+		}
+		if remaining > 0 {
+			_, _ = w.buf.Write(p[:remaining])
+		}
+		if remaining < len(p) {
+			w.truncated = true
+		}
+	} else if len(p) > 0 {
+		w.truncated = true
+	}
+	return len(p), nil
+}
+
+func captureBodyForReplay(body io.ReadCloser, limit int64) ([]byte, io.ReadCloser, bool, error) {
+	temp, err := os.CreateTemp("", "apisniff-proxy-body-*")
+	if err != nil {
+		return nil, body, false, err
+	}
+	defer body.Close()
+	capture := &limitedCaptureWriter{limit: limit}
+	if _, err := io.Copy(io.MultiWriter(temp, capture), body); err != nil {
+		name := temp.Name()
+		temp.Close()
+		os.Remove(name)
+		return nil, io.NopCloser(bytes.NewReader(nil)), false, err
+	}
+	if _, err := temp.Seek(0, 0); err != nil {
+		name := temp.Name()
+		temp.Close()
+		os.Remove(name)
+		return nil, io.NopCloser(bytes.NewReader(nil)), false, err
+	}
+	return append([]byte(nil), capture.buf.Bytes()...), &removeOnCloseFile{File: temp, path: temp.Name()}, capture.truncated, nil
 }

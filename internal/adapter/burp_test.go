@@ -44,3 +44,21 @@ func TestBurpConversion(t *testing.T) {
 		t.Fatalf("set-cookie = %q", flows[2].ResponseHeaders["set-cookie"])
 	}
 }
+
+func TestBurpSkipsItemsWithoutAbsoluteURL(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "burp.xml")
+	xml := `<?xml version="1.0"?><items>
+		<item><method>GET</method><url>/relative</url><status>200</status><request /><response /></item>
+		<item><method>GET</method><url>https://example.com/ok</url><status>200</status><request /><response /></item>
+	</items>`
+	if err := os.WriteFile(path, []byte(xml), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	flows, err := LoadBurp(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(flows) != 1 || flows[0].URL != "https://example.com/ok" {
+		t.Fatalf("flows = %#v", flows)
+	}
+}

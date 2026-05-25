@@ -5,6 +5,7 @@ import (
 	"crypto/tls"
 	"crypto/x509"
 	"encoding/json"
+	"io"
 	"net"
 	"net/http"
 	"net/http/httptest"
@@ -12,6 +13,7 @@ import (
 	"os"
 	"path/filepath"
 	"strconv"
+	"strings"
 	"testing"
 	"time"
 
@@ -245,6 +247,24 @@ func TestCaptureProxyUsesHTTP2UpstreamWhenAvailable(t *testing.T) {
 	}
 	if len(flows) != 1 || !hasTag(flows[0].Tags, "upstream_response_proto:HTTP/2.0") {
 		t.Fatalf("flows = %#v", flows)
+	}
+}
+
+func TestCaptureBodyForReplayDoesNotTruncateForwardedBody(t *testing.T) {
+	captured, replayBody, truncated, err := captureBodyForReplay(io.NopCloser(strings.NewReader("abcdef")), 3)
+	if err != nil {
+		t.Fatal(err)
+	}
+	forwarded, readErr := io.ReadAll(replayBody)
+	closeErr := replayBody.Close()
+	if readErr != nil {
+		t.Fatal(readErr)
+	}
+	if closeErr != nil {
+		t.Fatal(closeErr)
+	}
+	if string(captured) != "abc" || string(forwarded) != "abcdef" || !truncated {
+		t.Fatalf("captured=%q forwarded=%q truncated=%v", captured, forwarded, truncated)
 	}
 }
 

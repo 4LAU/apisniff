@@ -21,7 +21,8 @@ func ParseCookieFile(path string) ([]Cookie, error) {
 	var cookies []Cookie
 	scanner := bufio.NewScanner(file)
 	for scanner.Scan() {
-		line := strings.TrimRight(scanner.Text(), "\n")
+		line := strings.TrimRight(scanner.Text(), "\r\n")
+		line = strings.TrimPrefix(line, "#HttpOnly_")
 		if line == "" || strings.HasPrefix(line, "#") {
 			continue
 		}
@@ -35,19 +36,21 @@ func ParseCookieFile(path string) ([]Cookie, error) {
 }
 
 func CookiesForHost(cookies []Cookie, host string) string {
+	host = strings.ToLower(strings.TrimSuffix(host, "."))
 	var pairs []string
 	for _, cookie := range cookies {
-		if cookie.Domain == "" {
+		domain := strings.ToLower(strings.TrimSuffix(cookie.Domain, "."))
+		if domain == "" {
 			continue
 		}
-		if strings.HasPrefix(cookie.Domain, ".") {
-			suffix := strings.TrimPrefix(cookie.Domain, ".")
+		if strings.HasPrefix(domain, ".") {
+			suffix := strings.TrimPrefix(domain, ".")
 			if host == suffix || strings.HasSuffix(host, "."+suffix) {
 				pairs = append(pairs, cookie.Name+"="+cookie.Value)
 			}
 			continue
 		}
-		if host == cookie.Domain {
+		if host == domain {
 			pairs = append(pairs, cookie.Name+"="+cookie.Value)
 		}
 	}

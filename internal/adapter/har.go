@@ -57,7 +57,10 @@ func LoadHAR(path string) ([]model.CapturedFlow, error) {
 	}
 	flows := make([]model.CapturedFlow, 0, len(har.Log.Entries))
 	for _, entry := range har.Log.Entries {
-		parsed, _ := url.Parse(entry.Request.URL)
+		parsed, err := url.Parse(entry.Request.URL)
+		if err != nil || !isAbsoluteRequestURL(parsed) {
+			continue
+		}
 		path := parsed.EscapedPath()
 		if path == "" {
 			path = "/"
@@ -123,4 +126,8 @@ func firstNonEmpty(values ...string) string {
 		}
 	}
 	return ""
+}
+
+func isAbsoluteRequestURL(parsed *url.URL) bool {
+	return parsed != nil && parsed.Scheme != "" && parsed.Host != ""
 }

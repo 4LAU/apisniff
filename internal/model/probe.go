@@ -42,8 +42,15 @@ func (r ProbeResult) ElapsedMS() float64 {
 	return float64(r.Latency.Microseconds()) / 1000
 }
 
+func (r ProbeResult) IsConnError() bool {
+	return r.Error != "" && r.Status == 0
+}
+
 func (r ProbeResult) IsBlocked() bool {
-	if r.Error != "" || r.Status == 0 {
+	if r.IsConnError() {
+		return false
+	}
+	if r.Status == 0 {
 		return true
 	}
 	switch r.Status {
@@ -58,10 +65,11 @@ func (r ProbeResult) IsChallenge() bool {
 	if len(r.Body) == 0 {
 		return false
 	}
-	text := strings.ToLower(string(r.Body))
-	if len(text) > 50000 {
-		text = text[:50000]
+	truncated := r.Body
+	if len(truncated) > 50000 {
+		truncated = truncated[:50000]
 	}
+	text := strings.ToLower(string(truncated))
 	for _, marker := range []string{
 		"challenges.cloudflare.com",
 		"challenge-platform",

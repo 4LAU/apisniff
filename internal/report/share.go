@@ -44,7 +44,7 @@ func Share(opts ShareOptions) (ShareResult, error) {
 	inventory := BuildInventory(flows, domain)
 
 	files := []string{}
-	specDoc := spec.Generate(spec.FilterAPIFlows(flows), domain, auth.Detect(flows), spec.Options{InferSchemes: true, IncludeExamples: true})
+	specDoc := spec.Generate(spec.FilterAPIFlows(flows), domain, auth.Detect(flows), spec.Options{InferSchemes: true, IncludeExamples: false})
 	specData, err := spec.Marshal(specDoc, "yaml")
 	if err != nil {
 		return ShareResult{}, err

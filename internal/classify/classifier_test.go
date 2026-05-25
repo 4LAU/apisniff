@@ -147,6 +147,18 @@ func TestQueryStringBeaconNotDropped(t *testing.T) {
 	}
 }
 
+func TestAuthPathUsesSegmentBoundariesAcrossRepeatedMatches(t *testing.T) {
+	if isAuthPath("/authors") {
+		t.Fatalf("authors should not be an auth path")
+	}
+	if isAuthPath("/loginButton") {
+		t.Fatalf("loginButton should not be an auth path")
+	}
+	if !isAuthPath("/loginButton/login") {
+		t.Fatalf("later login segment was not detected")
+	}
+}
+
 func TestLocalhostPortIsSameSite(t *testing.T) {
 	result, kept := Must("127.0.0.1:8765").Classify(testFlow(func(f *model.CapturedFlow) {
 		f.Host = "127.0.0.1"

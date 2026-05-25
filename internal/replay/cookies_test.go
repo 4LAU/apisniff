@@ -11,6 +11,7 @@ func TestParseCookieFileAndMatchHosts(t *testing.T) {
 	data := "# Netscape HTTP Cookie File\n" +
 		".example.com\tTRUE\t/\tTRUE\t2147483647\tsid\tabc\n" +
 		"api.example.com\tFALSE\t/\tTRUE\t2147483647\tapi\tdef\n" +
+		"#HttpOnly_api.example.com\tFALSE\t/\tTRUE\t2147483647\thttp_only\tsecret\n" +
 		"other.example.com\tFALSE\t/\tTRUE\t2147483647\tother\tghi\n"
 	if err := os.WriteFile(path, []byte(data), 0o600); err != nil {
 		t.Fatal(err)
@@ -22,11 +23,14 @@ func TestParseCookieFileAndMatchHosts(t *testing.T) {
 	}
 
 	got := CookiesForHost(cookies, "api.example.com")
-	if got != "sid=abc; api=def" {
+	if got != "sid=abc; api=def; http_only=secret" {
 		t.Fatalf("cookie header = %q", got)
 	}
 	if got := CookiesForHost(cookies, "example.com"); got != "sid=abc" {
 		t.Fatalf("apex cookie header = %q", got)
+	}
+	if got := CookiesForHost(cookies, "API.EXAMPLE.COM."); got != "sid=abc; api=def; http_only=secret" {
+		t.Fatalf("case-insensitive cookie header = %q", got)
 	}
 	if got := CookiesForHost(cookies, "evil-example.com"); got != "" {
 		t.Fatalf("unexpected suffix cookie header = %q", got)

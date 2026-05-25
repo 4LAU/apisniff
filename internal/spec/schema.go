@@ -2,17 +2,25 @@ package spec
 
 import (
 	"encoding/json"
+	"reflect"
 	"regexp"
-	"strings"
 )
 
 const maxExampleLen = 200
 const fileSentinel = "__file__"
+const maxSchemaDepth = 20
 
-var secretRe = regexp.MustCompile(`(?i)(bearer |basic |eyj|sk_|pk_|api_|ghp_|gho_|ghs_|glpat-|xox[bpsar]-|AKIA)`)
-var sensitiveFieldRe = regexp.MustCompile(`(?i)(password|passwd|(^|_)secret(_|$)|credential|api_?key|private_?key|access_?token|refresh_?token|client_?secret|\bauth\b|auth_|(^|_)token(_|$)|ssn|social_?security)`)
+var secretRe = regexp.MustCompile(`(?i)(bearer |basic |eyj[A-Za-z0-9_-]{10,}|sk_|pk_|api_|ghp_|gho_|ghs_|glpat-|xox[bpsar]-|AKIA[0-9A-Z]{16}|wJalrX|-----BEGIN)`)
+var sensitiveFieldRe = regexp.MustCompile(`(?i)(password|passwd|(^|[_-])secret([_-]|$)|credential|api[_-]?key|private[_-]?key|access[_-]?token|refresh[_-]?token|client[_-]?secret|\bauth\b|authorization|auth[_-]|(^|[_-])token([_-]|$)|ssn|social[_-]?security|x-api-key|x-auth-token|x-access-token|x-csrf-token|x-xsrf-token)`)
 
 func InferSchema(value any, includeExamples bool, fieldName string) map[string]any {
+	return inferSchemaRecursive(value, includeExamples, fieldName, maxSchemaDepth)
+}
+
+func inferSchemaRecursive(value any, includeExamples bool, fieldName string, depth int) map[string]any {
+	if depth <= 0 {
+		return map[string]any{"type": "object"}
+	}
 	if value == nil {
 		return map[string]any{"type": "string", "nullable": true}
 	}
@@ -56,11 +64,15 @@ func InferSchema(value any, includeExamples bool, fieldName string) map[string]a
 		if len(typed) == 0 {
 			return map[string]any{"type": "array", "items": map[string]any{}}
 		}
-		return map[string]any{"type": "array", "items": InferSchema(typed[0], includeExamples, fieldName)}
+		merged := inferSchemaRecursive(typed[0], includeExamples, fieldName, depth-1)
+		for _, item := range typed[1:] {
+			merged = MergeSchemas(merged, inferSchemaRecursive(item, includeExamples, fieldName, depth-1))
+		}
+		return map[string]any{"type": "array", "items": merged}
 	case map[string]any:
 		props := map[string]any{}
 		for key, child := range typed {
-			props[key] = InferSchema(child, includeExamples, key)
+			props[key] = inferSchemaRecursive(child, includeExamples, key, depth-1)
 		}
 		return map[string]any{"type": "object", "properties": props}
 	default:
@@ -91,10 +103,7 @@ func MergeSchemas(existing, new map[string]any) map[string]any {
 	existingType, _ := existing["type"].(string)
 	newType, _ := new["type"].(string)
 	if existingType != newType {
-		if (newType == "object" || newType == "array") && existingType != "object" && existingType != "array" {
-			return new
-		}
-		return existing
+		return mergeOneOf(existing, new)
 	}
 	switch existingType {
 	case "object":
@@ -123,6 +132,42 @@ func MergeSchemas(existing, new map[string]any) map[string]any {
 	default:
 		return existing
 	}
+}
+
+func mergeOneOf(schemas ...map[string]any) map[string]any {
+	var options []any
+	for _, schema := range schemas {
+		if len(schema) == 0 {
+			continue
+		}
+		if oneOf, ok := schema["oneOf"].([]any); ok {
+			options = appendUniqueSchema(options, oneOf...)
+			continue
+		}
+		options = appendUniqueSchema(options, schema)
+	}
+	if len(options) == 1 {
+		if only, ok := options[0].(map[string]any); ok {
+			return only
+		}
+	}
+	return map[string]any{"oneOf": options}
+}
+
+func appendUniqueSchema(options []any, schemas ...any) []any {
+	for _, schema := range schemas {
+		duplicate := false
+		for _, existing := range options {
+			if reflect.DeepEqual(existing, schema) {
+				duplicate = true
+				break
+			}
+		}
+		if !duplicate {
+			options = append(options, schema)
+		}
+	}
+	return options
 }
 
 func addExample(schema map[string]any, value any, include bool, sensitive bool) {
@@ -163,8 +208,4 @@ func copyMap(in map[string]any) map[string]any {
 		out[key] = value
 	}
 	return out
-}
-
-func isSensitiveField(name string) bool {
-	return sensitiveFieldRe.MatchString(strings.ToLower(name))
 }

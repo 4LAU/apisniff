@@ -67,7 +67,7 @@ func Run(ctx context.Context, target string, opts Options) (*model.ProbeAssessme
 	for _, result := range results {
 		for _, match := range detector.Match(result.Headers, result.Body, result.Status) {
 			existing, ok := vendorsByName[match.Vendor]
-			if !ok || betterConfidence(match.Confidence, existing.Confidence) {
+			if !ok || vendor.BetterConfidence(match.Confidence, existing.Confidence) {
 				vendorsByName[match.Vendor] = match
 			}
 		}
@@ -97,6 +97,7 @@ func rawProbe(userAgent string) func(context.Context, string, Options) model.Pro
 		transport := &http.Transport{
 			TLSClientConfig: &tls.Config{InsecureSkipVerify: opts.Insecure}, //nolint:gosec
 		}
+		defer transport.CloseIdleConnections()
 		if opts.Proxy != "" {
 			proxyURL, err := url.Parse(opts.Proxy)
 			if err != nil {
@@ -171,7 +172,8 @@ func Classify(results []model.ProbeResult, vendors []model.VendorMatch) (model.P
 	tlsOnly := byName["tls_only"]
 
 	allBlocked := naked.IsBlocked() && impersonated.IsBlocked() && tlsOnly.IsBlocked()
-	allPass := !naked.IsBlocked() && !impersonated.IsBlocked() && !tlsOnly.IsBlocked()
+	allConnError := naked.IsConnError() && impersonated.IsConnError() && tlsOnly.IsConnError()
+	allPass := naked.Status > 0 && impersonated.Status > 0 && tlsOnly.Status > 0 && !naked.IsBlocked() && !impersonated.IsBlocked() && !tlsOnly.IsBlocked()
 	allChallenge := naked.IsChallenge() && impersonated.IsChallenge() && tlsOnly.IsChallenge()
 	anyChallenge := naked.IsChallenge() || impersonated.IsChallenge() || tlsOnly.IsChallenge()
 	vendorPrefix := ""
@@ -183,7 +185,9 @@ func Classify(results []model.ProbeResult, vendors []model.VendorMatch) (model.P
 		vendorPrefix = strings.Join(names, ", ") + ": "
 	}
 
-	if allPass {
+	if allConnError {
+		return model.ClientDependent, vendorPrefix + "all probe attempts failed with network errors; verify target URL, DNS, proxy, or connectivity."
+	} else if allPass {
 		return model.NoProtection, vendorPrefix + "no active defenses detected; raw HTTP requests sufficient."
 	}
 	if allChallenge {
@@ -207,7 +211,12 @@ func Classify(results []model.ProbeResult, vendors []model.VendorMatch) (model.P
 func flattenHeaders(headers http.Header) map[string]string {
 	out := make(map[string]string, len(headers))
 	for key, values := range headers {
-		out[strings.ToLower(key)] = strings.Join(values, ", ")
+		lower := strings.ToLower(key)
+		if lower == "set-cookie" {
+			out[lower] = strings.Join(values, "\n")
+		} else {
+			out[lower] = strings.Join(values, ", ")
+		}
 	}
 	return out
 }
@@ -217,9 +226,4 @@ func normalizeTargetURL(raw string) string {
 		return raw
 	}
 	return "https://" + raw
-}
-
-func betterConfidence(next, current string) bool {
-	rank := map[string]int{"low": 1, "medium": 2, "high": 3}
-	return rank[next] > rank[current]
 }

@@ -42,6 +42,24 @@ func TestHARConversion(t *testing.T) {
 	}
 }
 
+func TestHARSkipsEntriesWithoutAbsoluteURL(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "traffic.har")
+	har := `{"log":{"entries":[
+		{"request":{"method":"GET","url":"/relative","headers":[]},"response":{"status":200,"headers":[],"content":{"text":"bad"}}},
+		{"request":{"method":"GET","url":"https://api.example.com/ok","headers":[]},"response":{"status":200,"headers":[],"content":{"text":"ok"}}}
+	]}}`
+	if err := os.WriteFile(path, []byte(har), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	flows, err := LoadHAR(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(flows) != 1 || flows[0].URL != "https://api.example.com/ok" {
+		t.Fatalf("flows = %#v", flows)
+	}
+}
+
 func TestDetectFormats(t *testing.T) {
 	dir := t.TempDir()
 	harPath := filepath.Join(dir, "traffic.har")

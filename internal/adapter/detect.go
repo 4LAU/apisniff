@@ -11,6 +11,8 @@ import (
 
 const maxImportBytes = 200 * 1024 * 1024
 
+var harLogRe = regexp.MustCompile(`^\{\s*"log"\s*:`)
+
 func Detect(path string) (string, error) {
 	info, err := os.Stat(path)
 	if err != nil {
@@ -27,7 +29,7 @@ func Detect(path string) (string, error) {
 	buf := make([]byte, 1024)
 	n, _ := file.Read(buf)
 	head := strings.TrimSpace(string(buf[:n]))
-	if regexp.MustCompile(`^\{\s*"log"\s*:`).MatchString(head) {
+	if harLogRe.MatchString(head) {
 		return "har", nil
 	}
 	if strings.Contains(head, "<items") {

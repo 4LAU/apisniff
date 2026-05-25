@@ -42,7 +42,10 @@ func LoadBurp(path string) ([]model.CapturedFlow, error) {
 	}
 	flows := make([]model.CapturedFlow, 0, len(root.Items))
 	for _, item := range root.Items {
-		parsed, _ := url.Parse(strings.TrimSpace(item.URL))
+		parsed, err := url.Parse(strings.TrimSpace(item.URL))
+		if err != nil || !isAbsoluteRequestURL(parsed) {
+			continue
+		}
 		path := parsed.EscapedPath()
 		if path == "" {
 			path = "/"

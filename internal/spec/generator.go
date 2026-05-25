@@ -113,8 +113,6 @@ func addResponses(operation map[string]any, flows []model.CapturedFlow, opts Opt
 	responses := asMap(operation["responses"])
 	responseSchemas := map[string]map[string]any{}
 	for _, flow := range flows {
-		statusKey := json.Number(string(rune(0)))
-		_ = statusKey
 		key := intString(flow.ResponseStatus)
 		if _, ok := responses[key]; !ok {
 			responses[key] = map[string]any{"description": "Observed response"}

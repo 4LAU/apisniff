@@ -22,6 +22,7 @@ apisniff replay BUNDLE|DOMAIN|FLOWS_JSONL [flags]
 | `--include-unsafe` | `false` | Include non-GET/HEAD/OPTIONS methods |
 | `--insecure` | `false` | Skip TLS verification |
 | `--impersonate` | `chrome` | Surf profile: `chrome` or `firefox` |
+| `--forward-auth` | `false` | Forward auth headers captured in flows |
 
 ## Examples
 
@@ -33,7 +34,7 @@ apisniff replay example.com --cookie-file cookies.txt -H "Authorization: Bearer 
 apisniff replay example.com --include-unsafe --json -o replay.json
 ```
 
-By default, replay sends only safe methods: `GET`, `HEAD`, and `OPTIONS`.
+By default, replay sends only safe methods: `GET`, `HEAD`, and `OPTIONS`, and strips auth headers captured in flows. Use `--header` or `--cookie-file` to provide fresh credentials, or `--forward-auth` to replay captured auth headers deliberately.
 
 ---
 

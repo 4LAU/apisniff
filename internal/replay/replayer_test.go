@@ -64,6 +64,46 @@ func TestBuildRequestRemovesHopByHopAndAddsCookies(t *testing.T) {
 	}
 }
 
+func TestBuildRequestStripsCapturedAuthHeadersByDefault(t *testing.T) {
+	flow := replayFlow("GET", "https://api.example.com/v1/users", "/v1/users", 200, nil)
+	flow.Host = "api.example.com"
+	flow.RequestHeaders = map[string]string{
+		"Authorization":      "Bearer captured",
+		"Cookie":             "sid=captured",
+		"X-Auth-Token":       "auth-token",
+		"X-Px-Authorization": "px-token",
+		"X-Trace":            "1",
+	}
+	req, err := buildRequest(context.Background(), flow, nil, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, header := range []string{"authorization", "cookie", "x-auth-token", "x-px-authorization"} {
+		if req.Header.Get(header) != "" {
+			t.Fatalf("%s was forwarded: %#v", header, req.Header)
+		}
+	}
+	if req.Header.Get("x-trace") != "1" {
+		t.Fatalf("non-auth header missing: %#v", req.Header)
+	}
+}
+
+func TestBuildRequestForwardAuthKeepsCapturedAuthHeaders(t *testing.T) {
+	flow := replayFlow("GET", "https://api.example.com/v1/users", "/v1/users", 200, nil)
+	flow.Host = "api.example.com"
+	flow.RequestHeaders = map[string]string{
+		"Authorization": "Bearer captured",
+		"Cookie":        "sid=captured",
+	}
+	req, err := buildRequest(context.Background(), flow, nil, nil, true)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if req.Header.Get("authorization") != "Bearer captured" || req.Header.Get("cookie") != "sid=captured" {
+		t.Fatalf("captured auth headers not forwarded: %#v", req.Header)
+	}
+}
+
 func TestRunDryRunSummarizesSafeAndUnsafe(t *testing.T) {
 	dir := t.TempDir()
 	flowsPath := filepath.Join(dir, "flows.jsonl")

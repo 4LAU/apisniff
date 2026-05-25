@@ -205,6 +205,7 @@ func newReplayCommand() *cobra.Command {
 		includeUnsafe bool
 		insecure      bool
 		impersonate   string
+		forwardAuth   bool
 	)
 	cmd := &cobra.Command{
 		Use:   "replay BUNDLE|DOMAIN|FLOWS_JSONL",
@@ -225,6 +226,7 @@ func newReplayCommand() *cobra.Command {
 				IncludeUnsafe:  includeUnsafe,
 				Insecure:       insecure,
 				DryRun:         dryRun,
+				ForwardAuth:    forwardAuth,
 			})
 			if err != nil {
 				return err
@@ -254,6 +256,7 @@ func newReplayCommand() *cobra.Command {
 	cmd.Flags().BoolVar(&includeUnsafe, "include-unsafe", false, "include non-GET/HEAD/OPTIONS methods")
 	cmd.Flags().BoolVar(&insecure, "insecure", false, "skip TLS verification")
 	cmd.Flags().StringVar(&impersonate, "impersonate", "chrome", "TLS profile: chrome or firefox")
+	cmd.Flags().BoolVar(&forwardAuth, "forward-auth", false, "forward auth headers captured in flows")
 	return cmd
 }
 

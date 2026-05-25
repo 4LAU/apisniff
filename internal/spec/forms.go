@@ -1,6 +1,7 @@
 package spec
 
 import (
+	"mime"
 	"net/url"
 	"regexp"
 	"strings"
@@ -32,20 +33,33 @@ func ParseMultipart(body []byte, contentType string) map[string]any {
 	if len(body) == 0 {
 		return nil
 	}
-	boundary := ""
-	for _, part := range strings.Split(contentType, ";") {
-		part = strings.TrimSpace(part)
-		if strings.HasPrefix(strings.ToLower(part), "boundary=") {
-			boundary = strings.TrimPrefix(part, "boundary=")
-			break
+	_, params, err := mime.ParseMediaType(contentType)
+	boundary := params["boundary"]
+	if err != nil || boundary == "" {
+		for _, part := range strings.Split(contentType, ";") {
+			part = strings.TrimSpace(part)
+			if strings.HasPrefix(strings.ToLower(part), "boundary=") {
+				boundary = strings.Trim(strings.TrimPrefix(part, "boundary="), `"`)
+				break
+			}
 		}
 	}
 	if boundary == "" {
 		return nil
 	}
 	text := string(body)
+	delimiter := "--" + boundary
+	closing := delimiter + "--"
 	out := map[string]any{}
-	for _, segment := range strings.Split(text, "--"+boundary) {
+	for _, segment := range strings.Split(text, delimiter) {
+		segment = strings.TrimPrefix(segment, "\r\n")
+		segment = strings.TrimPrefix(segment, "\n")
+		if segment == "" || segment == "--" || segment == "--\r\n" || segment == "--\n" || strings.HasPrefix(segment, "--") {
+			continue
+		}
+		if strings.Contains(segment, closing) {
+			segment = strings.SplitN(segment, closing, 2)[0]
+		}
 		nameMatch := multipartNameRe.FindStringSubmatch(segment)
 		if len(nameMatch) < 2 {
 			continue
@@ -61,7 +75,7 @@ func ParseMultipart(body []byte, contentType string) map[string]any {
 		} else if parts := strings.SplitN(segment, "\n\n", 2); len(parts) == 2 {
 			value = parts[1]
 		}
-		value = strings.TrimSpace(strings.TrimSuffix(value, "-"))
+		value = strings.TrimSpace(value)
 		out[name] = value
 	}
 	if len(out) == 0 {
