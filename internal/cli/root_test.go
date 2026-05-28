@@ -21,6 +21,27 @@ func TestReplayCommandExposesForwardAuthFlag(t *testing.T) {
 	}
 }
 
+func TestDefaultVersionIsDev(t *testing.T) {
+	if Version != "dev" {
+		t.Fatalf("Version = %q, want %q", Version, "dev")
+	}
+}
+
+func TestRootVersionFlagOutputsVersion(t *testing.T) {
+	previous := Version
+	t.Cleanup(func() { Version = previous })
+	Version = "1.2.3-test"
+
+	stdout, stderr, err := executeForTest(newRootCommand(), "--version")
+	if err != nil {
+		t.Fatalf("--version returned error: %v", err)
+	}
+	if stderr != "" {
+		t.Fatalf("stderr = %q, want empty", stderr)
+	}
+	assertContains(t, stdout, "apisniff version", Version)
+}
+
 func TestAnalyzeHumanWritesOnlyStderrAndBundle(t *testing.T) {
 	input := writeTestFlows(t, t.TempDir())
 	outputDir := filepath.Join(t.TempDir(), "bundle")

@@ -29,6 +29,8 @@ func Execute() error {
 	return root.Execute()
 }
 
+var Version = "dev"
+
 var captureRun = capture.Capture
 
 type headerFlags []string
@@ -45,6 +47,7 @@ func newRootCommand() *cobra.Command {
 		Use:          "apisniff",
 		Short:        "One tool for API recon",
 		SilenceUsage: true,
+		Version:      Version,
 	}
 	root.AddCommand(newProbeCommand())
 	root.AddCommand(newReconCommand())

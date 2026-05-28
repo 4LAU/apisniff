@@ -1,0 +1,62 @@
+version: 2
+
+project_name: apisniff
+
+builds:
+  - id: apisniff
+    main: ./cmd/apisniff
+    binary: apisniff
+    env:
+      - CGO_ENABLED=0
+    goos:
+      - darwin
+      - linux
+      - windows
+    goarch:
+      - amd64
+      - arm64
+    ignore:
+      - goos: windows
+        goarch: arm64
+    ldflags:
+      - -s -w -X github.com/4LAU/apisniff/internal/cli.Version={{.Version}}
+
+archives:
+  - id: apisniff
+    ids:
+      - apisniff
+    formats:
+      - tar.gz
+    format_overrides:
+      - goos: windows
+        formats:
+          - zip
+    name_template: "{{ .ProjectName }}_{{ .Version }}_{{ .Os }}_{{ .Arch }}"
+
+checksum:
+  name_template: checksums.txt
+
+brews:
+  - name: apisniff
+    ids:
+      - apisniff
+    repository:
+      owner: 4LAU
+      name: homebrew-tap
+      token: "{{ .Env.HOMEBREW_TAP_TOKEN }}"
+    directory: Formula
+    homepage: https://github.com/4LAU/apisniff
+    description: "API recon: preflight defenses, traffic capture, and spec extraction"
+    license: MIT
+    skip_upload: auto
+    install: |
+      bin.install "apisniff"
+    test: |
+      assert_match "Usage", shell_output("#{bin}/apisniff --help")
+
+changelog:
+  use: github
+  filters:
+    exclude:
+      - "^docs:"
+      - "^chore:"

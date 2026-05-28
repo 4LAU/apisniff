@@ -31,7 +31,7 @@ func chromeTempDir(t *testing.T) string {
 
 func TestCDPCapturesLargeJSONResponseBody(t *testing.T) {
 	skipUnlessChrome(t)
-	t.Setenv("HOME", chromeTempDir(t))
+	setTestHome(t, chromeTempDir(t))
 	largePayload := strings.Repeat("a", 2*1024*1024)
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		switch r.URL.Path {
@@ -81,7 +81,7 @@ func TestCDPCapturesLargeJSONResponseBody(t *testing.T) {
 
 func TestCDPCapturesWebSocketFrames(t *testing.T) {
 	skipUnlessChrome(t)
-	t.Setenv("HOME", chromeTempDir(t))
+	setTestHome(t, chromeTempDir(t))
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		switch r.URL.Path {
 		case "/":

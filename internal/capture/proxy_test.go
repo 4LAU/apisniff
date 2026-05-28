@@ -21,7 +21,7 @@ import (
 )
 
 func TestCaptureProxyCapturesHTTPFlow(t *testing.T) {
-	t.Setenv("HOME", t.TempDir())
+	setTestHome(t, t.TempDir())
 	backend := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if r.URL.Path != "/api/data" {
 			http.NotFound(w, r)
@@ -98,7 +98,7 @@ func TestCaptureProxyCapturesHTTPFlow(t *testing.T) {
 }
 
 func TestCaptureProxyCapturesHTTPSMITMFlow(t *testing.T) {
-	t.Setenv("HOME", t.TempDir())
+	setTestHome(t, t.TempDir())
 	caPath, err := EnsureProxyCA()
 	if err != nil {
 		t.Fatal(err)
@@ -166,7 +166,7 @@ func TestCaptureProxyCapturesHTTPSMITMFlow(t *testing.T) {
 }
 
 func TestCaptureProxyUsesHTTP2UpstreamWhenAvailable(t *testing.T) {
-	t.Setenv("HOME", t.TempDir())
+	setTestHome(t, t.TempDir())
 	caPath, err := EnsureProxyCA()
 	if err != nil {
 		t.Fatal(err)

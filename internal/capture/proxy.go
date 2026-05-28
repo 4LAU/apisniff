@@ -21,7 +21,6 @@ import (
 	"strings"
 	"sync"
 	"sync/atomic"
-	"syscall"
 	"time"
 
 	"github.com/4LAU/apisniff/internal/classify"
@@ -155,7 +154,7 @@ func CaptureProxy(ctx context.Context, cfg Config) (*Result, error) {
 	if err != nil {
 		return nil, err
 	}
-	runCtx, stopSignals := signal.NotifyContext(ctx, os.Interrupt, syscall.SIGTERM)
+	runCtx, stopSignals := signal.NotifyContext(ctx, gracefulSignals...)
 	defer stopSignals()
 	runCtx, cancelTimeout := context.WithTimeout(runCtx, cfg.Timeout)
 	defer cancelTimeout()

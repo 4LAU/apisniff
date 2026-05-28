@@ -10,6 +10,7 @@ permissions:
 jobs:
   release:
     runs-on: ubuntu-latest
+    timeout-minutes: 20
     steps:
       - uses: actions/checkout@v4
         with:
@@ -19,82 +20,12 @@ jobs:
           go-version: '1.26'
       - name: Test
         run: go test ./... -v -count=1
-      - name: Build binaries
-        run: |
-          VERSION="${GITHUB_REF_NAME#v}"
-          for GOOS in darwin linux; do
-            for GOARCH in amd64 arm64; do
-              NAME="apisniff_${VERSION}_${GOOS}_${GOARCH}"
-              echo "Building ${NAME}..."
-              CGO_ENABLED=0 GOOS=$GOOS GOARCH=$GOARCH \
-                go build -ldflags="-s -w" -o "dist/${NAME}/apisniff" ./cmd/apisniff
-              tar -czf "dist/${NAME}.tar.gz" -C "dist/${NAME}" apisniff
-            done
-          done
-          cd dist && shasum -a 256 *.tar.gz > checksums.txt && cat checksums.txt
-      - name: Create release
+      - name: Release
+        uses: goreleaser/goreleaser-action@v6
+        with:
+          distribution: goreleaser
+          version: '~> v2'
+          args: release --clean --verbose
         env:
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        run: |
-          gh release create "$GITHUB_REF_NAME" dist/*.tar.gz dist/checksums.txt \
-            --title "$GITHUB_REF_NAME" \
-            --generate-notes
-      - name: Update Homebrew tap
-        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           HOMEBREW_TAP_TOKEN: ${{ secrets.HOMEBREW_TAP_TOKEN }}
-        run: |
-          VERSION="${GITHUB_REF_NAME#v}"
-          DARWIN_ARM64_SHA=$(grep "darwin_arm64" dist/checksums.txt | awk '{print $1}')
-          DARWIN_AMD64_SHA=$(grep "darwin_amd64" dist/checksums.txt | awk '{print $1}')
-          LINUX_ARM64_SHA=$(grep "linux_arm64" dist/checksums.txt | awk '{print $1}')
-          LINUX_AMD64_SHA=$(grep "linux_amd64" dist/checksums.txt | awk '{print $1}')
-          BASE_URL="https://github.com/4LAU/apisniff/releases/download/${GITHUB_REF_NAME}"
-
-          FORMULA=$(cat <<RUBY
-          # frozen_string_literal: true
-
-          class Apisniff < Formula
-            desc "API recon: preflight defenses, traffic capture, and spec extraction"
-            homepage "https://github.com/4LAU/apisniff"
-            license "MIT"
-            version "${VERSION}"
-
-            on_macos do
-              if Hardware::CPU.arm?
-                url "${BASE_URL}/apisniff_${VERSION}_darwin_arm64.tar.gz"
-                sha256 "${DARWIN_ARM64_SHA}"
-              else
-                url "${BASE_URL}/apisniff_${VERSION}_darwin_amd64.tar.gz"
-                sha256 "${DARWIN_AMD64_SHA}"
-              end
-            end
-
-            on_linux do
-              if Hardware::CPU.arm?
-                url "${BASE_URL}/apisniff_${VERSION}_linux_arm64.tar.gz"
-                sha256 "${LINUX_ARM64_SHA}"
-              else
-                url "${BASE_URL}/apisniff_${VERSION}_linux_amd64.tar.gz"
-                sha256 "${LINUX_AMD64_SHA}"
-              end
-            end
-
-            def install
-              bin.install "apisniff"
-            end
-
-            test do
-              assert_match "Usage", shell_output("#{bin}/apisniff --help")
-            end
-          end
-          RUBY
-          )
-
-          git clone "https://x-access-token:${HOMEBREW_TAP_TOKEN}@github.com/4LAU/homebrew-tap.git" /tmp/tap
-          echo "$FORMULA" > /tmp/tap/Formula/apisniff.rb
-          cd /tmp/tap
-          git config user.name "github-actions[bot]"
-          git config user.email "github-actions[bot]@users.noreply.github.com"
-          git add Formula/apisniff.rb
-          git commit -m "Update apisniff to ${VERSION}"
-          git push

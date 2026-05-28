@@ -6,7 +6,6 @@ import (
 	"fmt"
 	"io"
 	"net/url"
-	"os"
 	"os/signal"
 	"path/filepath"
 	"sort"
@@ -14,7 +13,6 @@ import (
 	"strings"
 	"sync"
 	"sync/atomic"
-	"syscall"
 	"time"
 
 	"github.com/4LAU/apisniff/internal/classify"
@@ -100,7 +98,7 @@ func Capture(ctx context.Context, cfg Config) (*Result, error) {
 		return nil, err
 	}
 
-	signalCtx, stopSignals := signal.NotifyContext(ctx, os.Interrupt, syscall.SIGTERM)
+	signalCtx, stopSignals := signal.NotifyContext(ctx, gracefulSignals...)
 	defer stopSignals()
 	runCtx, cancelTimeout := context.WithTimeout(signalCtx, cfg.Timeout)
 	defer cancelTimeout()
