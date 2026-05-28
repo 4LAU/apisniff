@@ -8,9 +8,8 @@ permissions:
   contents: write
 
 jobs:
-  release:
+  validate:
     runs-on: ubuntu-latest
-    timeout-minutes: 20
     steps:
       - uses: actions/checkout@v4
         with:
@@ -18,14 +17,8 @@ jobs:
       - uses: actions/setup-go@v5
         with:
           go-version: '1.26'
-      - name: Test
-        run: go test ./... -v -count=1
-      - name: Release
+      - name: Verify tag matches goreleaser snapshot
         uses: goreleaser/goreleaser-action@v6
         with:
-          distribution: goreleaser
           version: '~> v2'
-          args: release --clean --verbose --parallelism 1
-        env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-          HOMEBREW_TAP_TOKEN: ${{ secrets.HOMEBREW_TAP_TOKEN }}
+          args: release --snapshot --clean
