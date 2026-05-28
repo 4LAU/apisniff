@@ -1,17 +1,17 @@
-__pycache__/
-*.pyc
-*.egg-info/
-dist/
-build/
-.venv/
-venv/
-.pytest_cache/
-.ruff_cache/
-.worktrees/
-.ignore-dump/
-scripts/
-.env*
+# Build
+apisniff
+
+# IDE
+.idea/
+.vscode/
+
+# OS
+.DS_Store
+
+# Project
 .plans/
+.security/
+.worktrees/
+scripts/
 .claude/
 testing-policy.md
-.security/
