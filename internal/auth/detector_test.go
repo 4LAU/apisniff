@@ -41,6 +41,102 @@ func TestDetectAuthPatterns(t *testing.T) {
 	}
 }
 
+func TestDetectBearer(t *testing.T) {
+	patterns := Detect([]model.CapturedFlow{
+		authFlow(func(f *model.CapturedFlow) {
+			f.RequestHeaders = map[string]string{"authorization": "Bearer eyJhbGc..."}
+		}),
+	})
+	if !hasPattern(patterns, "bearer", "authorization: bearer", 1) {
+		t.Fatalf("patterns = %+v", patterns)
+	}
+}
+
+func TestDetectBasicAuth(t *testing.T) {
+	patterns := Detect([]model.CapturedFlow{
+		authFlow(func(f *model.CapturedFlow) {
+			f.RequestHeaders = map[string]string{"Authorization": "Basic dXNlcjpwYXNz"}
+		}),
+	})
+	if !hasPattern(patterns, "basic", "authorization: basic", 1) {
+		t.Fatalf("patterns = %+v", patterns)
+	}
+}
+
+func TestDetectAPIKeyHeader(t *testing.T) {
+	patterns := Detect([]model.CapturedFlow{
+		authFlow(func(f *model.CapturedFlow) { f.RequestHeaders = map[string]string{"X-API-Key": "abc123"} }),
+	})
+	if !hasPattern(patterns, "api_key_header", "x-api-key", 1) {
+		t.Fatalf("patterns = %+v", patterns)
+	}
+}
+
+func TestDetectAPIKeyQuery(t *testing.T) {
+	patterns := Detect([]model.CapturedFlow{
+		authFlow(func(f *model.CapturedFlow) { f.Path = "/api/data?api_key=abc123" }),
+	})
+	if !hasPattern(patterns, "api_key_query", "api_key", 1) {
+		t.Fatalf("patterns = %+v", patterns)
+	}
+}
+
+func TestDetectSessionCookie(t *testing.T) {
+	patterns := Detect([]model.CapturedFlow{
+		authFlow(func(f *model.CapturedFlow) {
+			f.RequestHeaders = map[string]string{"cookie": "PHPSESSID=abc123; other=val"}
+		}),
+	})
+	if !hasPattern(patterns, "session_cookie", "phpsessid", 1) {
+		t.Fatalf("patterns = %+v", patterns)
+	}
+}
+
+func TestDetectOAuthTokenEndpoint(t *testing.T) {
+	patterns := Detect([]model.CapturedFlow{
+		authFlow(func(f *model.CapturedFlow) { f.Path = "/oauth/token/" }),
+	})
+	if !hasPattern(patterns, "token_endpoint", "/oauth/token", 1) {
+		t.Fatalf("patterns = %+v", patterns)
+	}
+}
+
+func TestDetectMultipleAuthDedupAndCount(t *testing.T) {
+	patterns := Detect([]model.CapturedFlow{
+		authFlow(func(f *model.CapturedFlow) { f.RequestHeaders = map[string]string{"authorization": "Bearer token1"} }),
+		authFlow(func(f *model.CapturedFlow) { f.RequestHeaders = map[string]string{"authorization": "Bearer token2"} }),
+		authFlow(func(f *model.CapturedFlow) { f.RequestHeaders = map[string]string{"x-api-key": "key1"} }),
+	})
+	if !hasPattern(patterns, "bearer", "authorization: bearer", 2) {
+		t.Fatalf("patterns = %+v", patterns)
+	}
+	if patterns[0].FlowCount < patterns[len(patterns)-1].FlowCount {
+		t.Fatalf("patterns are not sorted by descending count: %+v", patterns)
+	}
+}
+
+func TestDetectAuthNoAuth(t *testing.T) {
+	patterns := Detect([]model.CapturedFlow{authFlow(nil)})
+	if len(patterns) != 0 {
+		t.Fatalf("patterns = %+v, want none", patterns)
+	}
+}
+
+func TestDetectAuthEdgeCasesDoNotFalsePositive(t *testing.T) {
+	patterns := Detect([]model.CapturedFlow{
+		authFlow(func(f *model.CapturedFlow) {
+			f.Path = "/api/data?monkey=abc"
+			f.RequestHeaders = map[string]string{
+				"authorization": "Token abc",
+				"cookie":        "theme=dark; nonsession=abc",
+			}
+		}),
+	})
+	if len(patterns) != 0 {
+		t.Fatalf("patterns = %+v, want none", patterns)
+	}
+}
+
 func TestExtractCookiesAndCookiejar(t *testing.T) {
 	cookies := ExtractCookies([]model.CapturedFlow{
 		authFlow(func(f *model.CapturedFlow) {
@@ -66,4 +162,13 @@ func TestExtractCookiesAndCookiejar(t *testing.T) {
 	if strings.Contains(jar, "session") {
 		t.Fatalf("request cookie leaked into jar: %q", jar)
 	}
+}
+
+func hasPattern(patterns []Pattern, authType, detail string, flowCount int) bool {
+	for _, pattern := range patterns {
+		if pattern.AuthType == authType && pattern.Detail == detail && pattern.FlowCount == flowCount {
+			return true
+		}
+	}
+	return false
 }

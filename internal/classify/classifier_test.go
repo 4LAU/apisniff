@@ -35,6 +35,38 @@ func TestAPIFlowKept(t *testing.T) {
 	}
 }
 
+func TestAuthPathKeptAsAuthCategory(t *testing.T) {
+	result, kept := Must("example.com").Classify(testFlow(func(f *model.CapturedFlow) {
+		f.Path = "/oauth/token"
+		f.URL = "https://example.com/oauth/token"
+		f.Method = "POST"
+	}))
+	if result.Action != "keep" || kept == nil {
+		t.Fatalf("result = %+v kept=%v", result, kept)
+	}
+	if result.Category != model.Auth {
+		t.Fatalf("category = %q, want %q", result.Category, model.Auth)
+	}
+}
+
+func TestKeptNonAPILikeFlowUsesUnknownAPILikeCategory(t *testing.T) {
+	result, kept := Must("example.com").Classify(testFlow(func(f *model.CapturedFlow) {
+		f.Path = "/dashboard"
+		f.URL = "https://example.com/dashboard"
+		f.ResponseHeaders = map[string]string{"content-type": "text/plain"}
+		f.ResponseBody = []byte("not an api response")
+	}))
+	if result.Action != "keep" || kept == nil {
+		t.Fatalf("result = %+v kept=%v", result, kept)
+	}
+	if result.APILike {
+		t.Fatalf("APILike = true, want false")
+	}
+	if result.Category != model.UnknownAPILike {
+		t.Fatalf("category = %q, want %q", result.Category, model.UnknownAPILike)
+	}
+}
+
 func TestCaptureTagsPreserved(t *testing.T) {
 	result, kept := Must("example.com").Classify(testFlow(func(f *model.CapturedFlow) {
 		f.Tags = []string{"websocket", "response_body_bytes:128"}
@@ -89,6 +121,36 @@ func TestRelatedDomainViaReferer(t *testing.T) {
 	}
 }
 
+func TestRelatedDomainLearnedFromCSP(t *testing.T) {
+	classifier := Must("example.com")
+	first, firstKept := classifier.Classify(testFlow(func(f *model.CapturedFlow) {
+		f.ResponseHeaders = map[string]string{
+			"content-type":            "application/json",
+			"content-security-policy": "connect-src 'self' https://api.example-cdn.net https://google-analytics.com",
+		}
+	}))
+	if first.Action != "keep" || firstKept == nil {
+		t.Fatalf("first result = %+v kept=%v", first, firstKept)
+	}
+
+	result, kept := classifier.Classify(testFlow(func(f *model.CapturedFlow) {
+		f.Host = "api.example-cdn.net"
+		f.URL = "https://api.example-cdn.net/api/v1/users"
+	}))
+	if result.Action != "keep" || kept == nil || result.HostRole != "same_site" {
+		t.Fatalf("result = %+v kept=%v", result, kept)
+	}
+
+	noiseResult, _ := classifier.Classify(testFlow(func(f *model.CapturedFlow) {
+		f.Host = "google-analytics.com"
+		f.Path = "/api/v1/collect"
+		f.URL = "https://google-analytics.com/api/v1/collect"
+	}))
+	if noiseResult.Action != "drop" || noiseResult.Reason != "noise_domain" {
+		t.Fatalf("noise CSP domain should not be learned as related: %+v", noiseResult)
+	}
+}
+
 func TestStaticAssetDropped(t *testing.T) {
 	result, _ := Must("example.com").Classify(testFlow(func(f *model.CapturedFlow) {
 		f.Path = "/static/app.js"
@@ -100,6 +162,22 @@ func TestStaticAssetDropped(t *testing.T) {
 	}
 }
 
+func TestAllowlistBypassesTelemetryAndStaticDrops(t *testing.T) {
+	result, kept := Must("example.com").Classify(testFlow(func(f *model.CapturedFlow) {
+		f.Host = "challenges.cloudflare.com"
+		f.Path = "/rum.gif"
+		f.URL = "https://challenges.cloudflare.com/rum.gif"
+		f.ResponseHeaders = map[string]string{"content-type": "application/javascript"}
+		f.ResponseBody = []byte("console.log('challenge telemetry')")
+	}))
+	if result.Action != "keep" || kept == nil || !hasTag(kept.Tags, "allowlisted") {
+		t.Fatalf("result = %+v kept=%+v", result, kept)
+	}
+	if result.Category != model.Antibot {
+		t.Fatalf("category = %q, want %q", result.Category, model.Antibot)
+	}
+}
+
 func TestAntibotJSKept(t *testing.T) {
 	result, kept := Must("example.com").Classify(testFlow(func(f *model.CapturedFlow) {
 		f.Path = "/static/security.js"
@@ -107,6 +185,28 @@ func TestAntibotJSKept(t *testing.T) {
 		f.ResponseBody = []byte("var x = navigator.webdriver; bmak.init(); sensor_data = {};")
 	}))
 	if result.Action != "keep" || kept == nil || !hasTag(kept.Tags, "antibot_js") {
+		t.Fatalf("result = %+v kept=%+v", result, kept)
+	}
+}
+
+func TestSensorDataRequestDroppedAsAntibot(t *testing.T) {
+	result, kept := Must("example.com").Classify(testFlow(func(f *model.CapturedFlow) {
+		f.Method = "POST"
+		f.Path = "/api/v1/events"
+		f.RequestBody = []byte(`{"sensor_data":{"ua":"webdriver"}}`)
+	}))
+	if kept != nil || result.Action != "drop" || result.Category != model.Antibot || !hasTag(result.Signals, "sensor_data") {
+		t.Fatalf("result = %+v kept=%+v", result, kept)
+	}
+}
+
+func TestTelemetrySubdomainDropped(t *testing.T) {
+	result, kept := Must("example.com").Classify(testFlow(func(f *model.CapturedFlow) {
+		f.Host = "analytics.example.com"
+		f.URL = "https://analytics.example.com/api/v1/events"
+		f.Path = "/api/v1/events"
+	}))
+	if kept != nil || result.Action != "drop" || result.Category != model.Telemetry || !hasTag(result.Signals, "telemetry_subdomain") {
 		t.Fatalf("result = %+v kept=%+v", result, kept)
 	}
 }

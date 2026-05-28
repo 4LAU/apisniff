@@ -3,11 +3,17 @@ package replay
 import (
 	"context"
 	"encoding/json"
+	"io"
+	"net/http"
+	"net/http/httptest"
+	"net/url"
 	"os"
 	"path/filepath"
 	"reflect"
 	"strings"
+	"sync/atomic"
 	"testing"
+	"time"
 
 	"github.com/4LAU/apisniff/internal/model"
 )
@@ -124,6 +130,210 @@ func TestRunDryRunSummarizesSafeAndUnsafe(t *testing.T) {
 	}
 }
 
+func TestRunReplaysHermeticGETAndPOSTWhenUnsafeIncluded(t *testing.T) {
+	var sawGET atomic.Bool
+	var sawPOST atomic.Bool
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch r.Method + " " + r.URL.Path {
+		case "GET /api/get":
+			sawGET.Store(true)
+			w.Header().Set("content-type", "application/json")
+			w.WriteHeader(http.StatusOK)
+			w.Write([]byte(`{"ok":false,"id":2}`))
+		case "POST /api/post":
+			body, err := io.ReadAll(r.Body)
+			if err != nil {
+				t.Errorf("read POST body: %v", err)
+			}
+			if string(body) != `{"name":"alice"}` {
+				t.Errorf("POST body = %q", body)
+			}
+			sawPOST.Store(true)
+			w.Header().Set("content-type", "application/json")
+			w.WriteHeader(http.StatusCreated)
+			w.Write([]byte(`{"created":false,"id":2}`))
+		default:
+			t.Errorf("unexpected request: %s %s", r.Method, r.URL.Path)
+			w.WriteHeader(http.StatusNotFound)
+		}
+	}))
+	defer server.Close()
+
+	dir := t.TempDir()
+	flowsPath := filepath.Join(dir, "flows.jsonl")
+	writeFlows(t, flowsPath, []model.CapturedFlow{
+		serverFlow(server.URL, "GET", "/api/get", http.StatusOK, nil, []byte(`{"ok":true,"id":1}`), nil),
+		serverFlow(server.URL, "POST", "/api/post", http.StatusCreated, []byte(`{"name":"alice"}`), []byte(`{"created":true,"id":1}`), map[string]string{"Content-Type": "application/json"}),
+	})
+
+	summary, err := Run(context.Background(), Options{BundleOrDomain: flowsPath, IncludeUnsafe: true, Timeout: time.Second})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if summary.Summary["match"] != 2 || len(summary.Results) != 2 {
+		t.Fatalf("summary = %#v", summary)
+	}
+	if !sawGET.Load() || !sawPOST.Load() {
+		t.Fatalf("server saw GET=%v POST=%v", sawGET.Load(), sawPOST.Load())
+	}
+}
+
+func TestReplayOneStripsCapturedAuthHeadersBeforeNetwork(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if got := r.Header.Get("authorization"); got != "" {
+			t.Errorf("authorization forwarded: %q", got)
+		}
+		if got := r.Header.Get("cookie"); got != "" {
+			t.Errorf("cookie forwarded: %q", got)
+		}
+		if got := r.Header.Get("x-api-key"); got != "" {
+			t.Errorf("x-api-key forwarded: %q", got)
+		}
+		if got := r.Header.Get("x-trace"); got != "1" {
+			t.Errorf("x-trace = %q, want 1", got)
+		}
+		w.Header().Set("content-type", "application/json")
+		w.WriteHeader(http.StatusOK)
+		w.Write([]byte(`{"ok":false}`))
+	}))
+	defer server.Close()
+
+	flow := serverFlow(server.URL, "GET", "/api/auth", http.StatusOK, nil, []byte(`{"ok":true}`), map[string]string{
+		"Authorization": "Bearer captured",
+		"Cookie":        "sid=captured",
+		"X-Api-Key":     "captured-key",
+		"X-Trace":       "1",
+	})
+
+	result := ReplayOne(context.Background(), server.Client(), flow, Options{}, nil)
+	if result.Category != "match" {
+		t.Fatalf("result = %#v", result)
+	}
+}
+
+func TestRunAppliesGlobFilterBeforeReplay(t *testing.T) {
+	var users atomic.Int32
+	var posts atomic.Int32
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch r.URL.Path {
+		case "/api/users":
+			users.Add(1)
+			w.Write([]byte(`{"ok":true}`))
+		case "/api/posts":
+			posts.Add(1)
+			w.Write([]byte(`{"ok":true}`))
+		default:
+			w.WriteHeader(http.StatusNotFound)
+		}
+	}))
+	defer server.Close()
+
+	dir := t.TempDir()
+	flowsPath := filepath.Join(dir, "flows.jsonl")
+	writeFlows(t, flowsPath, []model.CapturedFlow{
+		serverFlow(server.URL, "GET", "/api/users", http.StatusOK, nil, []byte(`{"ok":true}`), nil),
+		serverFlow(server.URL, "GET", "/api/posts", http.StatusOK, nil, []byte(`{"ok":true}`), nil),
+	})
+
+	summary, err := Run(context.Background(), Options{BundleOrDomain: flowsPath, Filter: "/api/users*", Timeout: time.Second})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(summary.Results) != 1 || summary.Results[0].Path != "/api/users" {
+		t.Fatalf("results = %#v", summary.Results)
+	}
+	if users.Load() != 1 || posts.Load() != 0 {
+		t.Fatalf("users requests = %d, posts requests = %d", users.Load(), posts.Load())
+	}
+}
+
+func TestReplayOneDetectsMatchDriftAuthExpiredAndBlocked(t *testing.T) {
+	tests := []struct {
+		name           string
+		originalStatus int
+		originalBody   []byte
+		requestHeaders map[string]string
+		replayStatus   int
+		replayBody     []byte
+		wantCategory   string
+		wantBodyMatch  bool
+	}{
+		{
+			name:           "match",
+			originalStatus: http.StatusOK,
+			originalBody:   []byte(`{"id":1,"name":"alice"}`),
+			replayStatus:   http.StatusOK,
+			replayBody:     []byte(`{"id":2,"name":"bob"}`),
+			wantCategory:   "match",
+			wantBodyMatch:  true,
+		},
+		{
+			name:           "drift",
+			originalStatus: http.StatusOK,
+			originalBody:   []byte(`{"id":1,"name":"alice"}`),
+			replayStatus:   http.StatusOK,
+			replayBody:     []byte(`{"id":2,"name":"bob","extra":true}`),
+			wantCategory:   "drift",
+			wantBodyMatch:  false,
+		},
+		{
+			name:           "auth expired",
+			originalStatus: http.StatusOK,
+			originalBody:   []byte(`{"ok":true}`),
+			requestHeaders: map[string]string{"Authorization": "Bearer stale"},
+			replayStatus:   http.StatusUnauthorized,
+			replayBody:     []byte(`{"error":"unauthorized"}`),
+			wantCategory:   "auth_expired",
+			wantBodyMatch:  false,
+		},
+		{
+			name:           "blocked",
+			originalStatus: http.StatusOK,
+			originalBody:   []byte(`{"ok":true}`),
+			replayStatus:   http.StatusTooManyRequests,
+			replayBody:     []byte(`rate limited`),
+			wantCategory:   "blocked",
+			wantBodyMatch:  false,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				w.WriteHeader(tt.replayStatus)
+				w.Write(tt.replayBody)
+			}))
+			defer server.Close()
+
+			flow := serverFlow(server.URL, "GET", "/api/test", tt.originalStatus, nil, tt.originalBody, tt.requestHeaders)
+			result := ReplayOne(context.Background(), server.Client(), flow, Options{}, nil)
+			if result.Category != tt.wantCategory {
+				t.Fatalf("category = %q, want %q; result = %#v", result.Category, tt.wantCategory, result)
+			}
+			if result.BodyShapeMatch != tt.wantBodyMatch {
+				t.Fatalf("body shape match = %v, want %v; diff = %#v", result.BodyShapeMatch, tt.wantBodyMatch, result.BodyShapeDiff)
+			}
+		})
+	}
+}
+
+func TestReplayOneTimeoutReturnsErrorCategory(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		time.Sleep(50 * time.Millisecond)
+		w.WriteHeader(http.StatusOK)
+	}))
+	defer server.Close()
+
+	client := server.Client()
+	client.Timeout = 10 * time.Millisecond
+	flow := serverFlow(server.URL, "GET", "/slow", http.StatusOK, nil, []byte(`{"ok":true}`), nil)
+
+	result := ReplayOne(context.Background(), client, flow, Options{}, nil)
+	if result.Category != "error" || result.Error == "" {
+		t.Fatalf("result = %#v, want timeout error", result)
+	}
+}
+
 func TestGoldenDryRunFixture(t *testing.T) {
 	path := filepath.Join("..", "..", "testdata", "golden", "phase5", "replay", "flows.jsonl")
 	expectedPath := filepath.Join("..", "..", "testdata", "golden", "phase5", "replay", "expected-dry-run.json")
@@ -142,6 +352,29 @@ func TestGoldenDryRunFixture(t *testing.T) {
 	}
 	if !reflect.DeepEqual(summary, expected) {
 		t.Fatalf("summary = %#v, want %#v", summary, expected)
+	}
+}
+
+func serverFlow(baseURL, method, path string, status int, requestBody, responseBody []byte, requestHeaders map[string]string) model.CapturedFlow {
+	parsed, err := url.Parse(baseURL)
+	if err != nil {
+		panic(err)
+	}
+	if requestHeaders == nil {
+		requestHeaders = map[string]string{}
+	}
+	return model.CapturedFlow{
+		Method:          method,
+		Host:            parsed.Hostname(),
+		Path:            path,
+		URL:             strings.TrimRight(baseURL, "/") + path,
+		RequestHeaders:  requestHeaders,
+		RequestBody:     requestBody,
+		ResponseStatus:  status,
+		ResponseHeaders: map[string]string{"content-type": "application/json"},
+		ResponseBody:    responseBody,
+		BodyEncoding:    "base64",
+		Timestamp:       1,
 	}
 }
 

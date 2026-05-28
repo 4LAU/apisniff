@@ -68,6 +68,19 @@ func TestWriteAnalyzeHumanNoColor(t *testing.T) {
 	)
 }
 
+func TestWriteAnalyzeEmptyEndpointsShowsNone(t *testing.T) {
+	var buf bytes.Buffer
+	result := AnalyzeResult{Domain: "api.example.com", TotalFlows: 0}
+
+	if err := WriteAnalyze(testConfig(t, &buf), result); err != nil {
+		t.Fatalf("WriteAnalyze returned error: %v", err)
+	}
+
+	got := buf.String()
+	assertNoANSI(t, got)
+	assertContains(t, got, "apisniff analyze", "flows:", "0", "Top endpoints", "none")
+}
+
 func TestWriteProbeHumanNoColor(t *testing.T) {
 	var buf bytes.Buffer
 	assessment := &model.ProbeAssessment{
@@ -154,6 +167,48 @@ func TestWriteReplayHumanNoColor(t *testing.T) {
 		"/v1/orders",
 		"[200 -> 403]",
 	)
+}
+
+func TestWriteReplayDryRunHumanNoColor(t *testing.T) {
+	var buf bytes.Buffer
+	summary := replay.Summary{
+		Domain:    "api.example.com",
+		Mode:      "dry_run",
+		Summary:   map[string]int{"safe": 2, "unsafe": 1, "total": 3},
+		Endpoints: []string{"GET /v1/users", "POST /v1/orders"},
+	}
+
+	if err := WriteReplay(testConfig(t, &buf), summary); err != nil {
+		t.Fatalf("WriteReplay returned error: %v", err)
+	}
+
+	got := buf.String()
+	assertNoANSI(t, got)
+	assertContains(t, got,
+		"apisniff replay dry run",
+		"safe:",
+		"2",
+		"unsafe:",
+		"1",
+		"total:",
+		"3",
+		"Endpoints",
+		"GET /v1/users",
+	)
+}
+
+func TestWriteProbeRejectsNilAssessment(t *testing.T) {
+	var buf bytes.Buffer
+	err := WriteProbe(testConfig(t, &buf), nil)
+	if err == nil {
+		t.Fatalf("expected error")
+	}
+	if !strings.Contains(err.Error(), "probe assessment is nil") {
+		t.Fatalf("error = %v", err)
+	}
+	if buf.String() != "" {
+		t.Fatalf("buffer = %q, want empty", buf.String())
+	}
 }
 
 func TestWriteMiscHumanNoColor(t *testing.T) {

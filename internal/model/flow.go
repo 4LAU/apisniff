@@ -276,7 +276,10 @@ func decodeBody(value *string, encoding string) ([]byte, error) {
 	if value == nil || *value == "" {
 		return nil, nil
 	}
-	if encoding == "" || encoding == "base64" {
+	if encoding == "" {
+		return []byte(*value), nil
+	}
+	if encoding == "base64" {
 		return base64.StdEncoding.DecodeString(*value)
 	}
 	return []byte(*value), nil
