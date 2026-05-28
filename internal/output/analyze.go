@@ -2,6 +2,7 @@ package output
 
 import (
 	"fmt"
+	"strings"
 
 	"github.com/4LAU/apisniff/internal/auth"
 	"github.com/4LAU/apisniff/internal/model"
@@ -26,46 +27,68 @@ type EndpointSummary struct {
 
 func WriteAnalyze(cfg Config, result AnalyzeResult) error {
 	s := newStyles(cfg)
-	lines := []string{s.title("apisniff analyze")}
-	if result.Domain != "" {
-		lines = append(lines, s.summary("domain", result.Domain))
+	lines := []string{
+		s.headerBox("apisniff analyze", result.Domain),
+		"",
+		analyzeSummary(s, result),
 	}
-	lines = append(lines,
-		s.summary("flows", fmt.Sprintf("%d", result.TotalFlows)),
-		s.summary("top endpoints", fmt.Sprintf("%d", len(result.TopEndpoints))),
-		s.summary("auth patterns", fmt.Sprintf("%d", len(result.AuthPatterns))),
-		s.summary("cookies", fmt.Sprintf("%d", len(result.Cookies))),
-	)
 	if result.BundleDir != "" {
-		lines = append(lines, s.summary("bundle", result.BundleDir))
+		lines = append(lines, s.kv("bundle", s.faint(result.BundleDir)))
 	}
-	lines = append(lines, "", s.header("Top endpoints"))
-	if len(result.TopEndpoints) == 0 {
-		lines = append(lines, s.empty("none"))
-	} else {
+	if len(result.TopEndpoints) > 0 {
+		rows := make([][]string, 0, len(result.TopEndpoints))
 		for _, endpoint := range result.TopEndpoints {
-			lines = append(lines, s.row(
+			rows = append(rows, []string{
 				s.methodBadge(endpoint.Method),
 				endpoint.Path,
 				fmt.Sprintf("%d", endpoint.Count),
-			))
+			})
 		}
+		lines = append(lines, "", s.section("Top endpoints"), s.simpleTable([]string{"Method", "Path", "Count"}, rows))
 	}
 	if len(result.AuthPatterns) > 0 {
-		lines = append(lines, "", s.header("Auth patterns"))
+		rows := make([][]string, 0, len(result.AuthPatterns))
 		for _, pattern := range result.AuthPatterns {
-			lines = append(lines, s.row(
+			rows = append(rows, []string{
 				pattern.AuthType,
 				pattern.Detail,
-				fmt.Sprintf("%d flows", pattern.FlowCount),
-			))
+				fmt.Sprintf("%d", pattern.FlowCount),
+			})
 		}
+		lines = append(lines, "", s.section("Auth patterns"), s.simpleTable([]string{"Type", "Detail", "Flows"}, rows))
 	}
 	if len(result.Cookies) > 0 {
-		lines = append(lines, "", s.header("Cookies"))
+		rows := make([][]string, 0, len(result.Cookies))
 		for _, cookie := range result.Cookies {
-			lines = append(lines, s.row(cookie.Name, cookie.Domain+cookie.Path, cookie.Source))
+			rows = append(rows, []string{
+				cookie.Name,
+				cookie.Domain + cookie.Path,
+				cookie.Source,
+			})
 		}
+		lines = append(lines, "", s.section("Cookies"), s.simpleTable([]string{"Name", "Domain", "Source"}, rows))
 	}
 	return s.writeLines(lines...)
+}
+
+func analyzeSummary(s styles, result AnalyzeResult) string {
+	if s.cfg.Width < 60 {
+		return strings.Join([]string{
+			s.kv("flows", fmt.Sprintf("%d", result.TotalFlows)),
+			s.kv("endpoints", fmt.Sprintf("%d", len(result.TopEndpoints))),
+			s.kv("auth types", fmt.Sprintf("%d", len(result.AuthPatterns))),
+			s.kv("cookies", fmt.Sprintf("%d", len(result.Cookies))),
+		}, "\n")
+	}
+	parts := []string{
+		compactKV(s, "flows", fmt.Sprintf("%d", result.TotalFlows)),
+		compactKV(s, "endpoints", fmt.Sprintf("%d", len(result.TopEndpoints))),
+		compactKV(s, "auth types", fmt.Sprintf("%d", len(result.AuthPatterns))),
+		compactKV(s, "cookies", fmt.Sprintf("%d", len(result.Cookies))),
+	}
+	return "  " + strings.Join(parts, "    ")
+}
+
+func compactKV(s styles, label, value string) string {
+	return s.faint(label) + " " + value
 }

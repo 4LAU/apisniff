@@ -7,6 +7,7 @@ import (
 	"io"
 	"os"
 	"path/filepath"
+	"runtime"
 	"sort"
 	"strings"
 	"time"
@@ -20,6 +21,7 @@ import (
 	"github.com/4LAU/apisniff/internal/replay"
 	"github.com/4LAU/apisniff/internal/report"
 	"github.com/4LAU/apisniff/internal/spec"
+	"github.com/charmbracelet/colorprofile"
 	"github.com/charmbracelet/x/term"
 	"github.com/spf13/cobra"
 )
@@ -530,10 +532,13 @@ func summarizeEndpoints(flows []model.CapturedFlow, limit int) []output.Endpoint
 }
 
 func humanOutputConfig(cmd *cobra.Command) output.Config {
+	w := cmd.ErrOrStderr()
+	profile := colorprofile.Detect(w, os.Environ())
 	return output.Config{
-		Color:  useColor(cmd.ErrOrStderr()),
-		Width:  terminalWidth(cmd.ErrOrStderr()),
-		Writer: cmd.ErrOrStderr(),
+		Color:   profile > colorprofile.ASCII,
+		Unicode: useUnicode(),
+		Width:   terminalWidth(w),
+		Writer:  colorprofile.NewWriter(w, os.Environ()),
 	}
 }
 
@@ -553,16 +558,22 @@ func terminalWidth(w io.Writer) int {
 	return width
 }
 
-func useColor(w io.Writer) bool {
-	if os.Getenv("NO_COLOR") != "" {
+func useUnicode() bool {
+	localeSet := false
+	for _, key := range []string{"LC_ALL", "LC_CTYPE", "LANG"} {
+		value := strings.ToLower(os.Getenv(key))
+		if value == "" {
+			continue
+		}
+		localeSet = true
+		if strings.Contains(value, "utf-8") || strings.Contains(value, "utf8") {
+			return true
+		}
+	}
+	if localeSet {
 		return false
 	}
-	file, ok := w.(*os.File)
-	if !ok {
-		return false
-	}
-	info, err := file.Stat()
-	return err == nil && info.Mode()&os.ModeCharDevice != 0
+	return runtime.GOOS == "darwin" || runtime.GOOS == "linux"
 }
 
 func writeJSON(w io.Writer, value any) error {

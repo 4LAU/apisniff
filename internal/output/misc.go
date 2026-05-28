@@ -26,45 +26,43 @@ type ShareResult struct {
 
 func WriteRecon(cfg Config, result ReconResult) error {
 	s := newStyles(cfg)
-	lines := []string{
-		s.title("apisniff recon"),
-		s.summary("captured", fmt.Sprintf("%d flows", result.KeptFlows)),
-	}
+	completion := fmt.Sprintf("%s captured %d flows", s.successIcon(), result.KeptFlows)
 	if result.TotalFlows > 0 && result.TotalFlows != result.KeptFlows {
-		lines = append(lines, s.summary("observed", fmt.Sprintf("%d flows", result.TotalFlows)))
+		completion = fmt.Sprintf("%s (%d observed)", completion, result.TotalFlows)
 	}
-	if result.Domain != "" {
-		lines = append(lines, s.summary("domain", result.Domain))
-	}
-	lines = append(lines,
+
+	lines := []string{
+		s.headerBox("apisniff recon", result.Domain),
+		completion,
 		"",
-		s.header("Bundle"),
-		s.summary("directory", result.BundleDir),
-		s.summary("flows", result.FlowsPath),
-	)
+		s.section("Bundle"),
+		s.kv("directory", result.BundleDir),
+		s.kv("flows", result.FlowsPath),
+	}
 	return s.writeLines(lines...)
 }
 
 func WriteSpecStatus(cfg Config, result SpecStatusResult) error {
 	s := newStyles(cfg)
-	lines := []string{s.title("apisniff spec")}
-	if result.Domain != "" {
-		lines = append(lines, s.summary("domain", result.Domain))
-	}
-	if result.Format != "" {
-		lines = append(lines, s.summary("format", result.Format))
+	lines := []string{
+		s.headerBox("apisniff spec", result.Domain),
 	}
 	if result.OutputPath != "" {
-		lines = append(lines, s.summary("wrote", result.OutputPath))
+		lines = append(lines, fmt.Sprintf("%s wrote %s", s.successIcon(), result.OutputPath))
+	} else {
+		lines = append(lines, fmt.Sprintf("%s generated spec", s.successIcon()))
+	}
+	if result.Format != "" {
+		lines = append(lines, s.kv("format", result.Format))
 	}
 	if result.SurfaceOutputPath != "" {
-		lines = append(lines, s.summary("surface", result.SurfaceOutputPath))
+		lines = append(lines, s.kv("surface", result.SurfaceOutputPath))
 	}
 	if result.Paths > 0 {
-		lines = append(lines, s.summary("paths", fmt.Sprintf("%d", result.Paths)))
+		lines = append(lines, s.kv("paths", fmt.Sprintf("%d", result.Paths)))
 	}
 	if result.Operations > 0 {
-		lines = append(lines, s.summary("operations", fmt.Sprintf("%d", result.Operations)))
+		lines = append(lines, s.kv("operations", fmt.Sprintf("%d", result.Operations)))
 	}
 	return s.writeLines(lines...)
 }
@@ -72,11 +70,11 @@ func WriteSpecStatus(cfg Config, result SpecStatusResult) error {
 func WriteShare(cfg Config, result ShareResult) error {
 	s := newStyles(cfg)
 	lines := []string{
-		s.title("apisniff share"),
-		s.summary("output", result.OutputDir),
+		s.headerBox("apisniff share", result.OutputDir),
+		fmt.Sprintf("%s exported %d files", s.successIcon(), len(result.Files)),
 	}
 	if len(result.Files) > 0 {
-		lines = append(lines, "", s.header("Files"))
+		lines = append(lines, "")
 		for _, file := range result.Files {
 			lines = append(lines, "  "+file)
 		}

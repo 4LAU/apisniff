@@ -2,6 +2,9 @@ package output
 
 import (
 	"bytes"
+	"fmt"
+	"io"
+	"regexp"
 	"strings"
 	"testing"
 	"time"
@@ -14,7 +17,7 @@ import (
 func testConfig(t *testing.T, buf *bytes.Buffer) Config {
 	t.Helper()
 	t.Setenv("NO_COLOR", "1")
-	return Config{Color: false, Width: 72, Writer: buf}
+	return Config{Color: false, Unicode: true, Width: 72, Writer: buf}
 }
 
 func assertContains(t *testing.T, got string, values ...string) {
@@ -30,6 +33,33 @@ func assertNoANSI(t *testing.T, got string) {
 	t.Helper()
 	if strings.Contains(got, "\x1b[") {
 		t.Fatalf("output contains ANSI escapes:\n%q", got)
+	}
+}
+
+var ansiPattern = regexp.MustCompile(`\x1b\[[0-?]*[ -/]*[@-~]`)
+
+func stripANSIForTest(value string) string {
+	return ansiPattern.ReplaceAllString(value, "")
+}
+
+func assertLinesWithinWidth(t *testing.T, got string, width int) {
+	t.Helper()
+	for _, line := range strings.Split(stripANSIForTest(got), "\n") {
+		if line == "" {
+			continue
+		}
+		if w := len([]rune(line)); w > width {
+			t.Fatalf("line width = %d, want <= %d:\n%s\nfull output:\n%s", w, width, line, got)
+		}
+	}
+}
+
+func assertASCIIOnly(t *testing.T, got string) {
+	t.Helper()
+	for _, r := range got {
+		if r > 127 {
+			t.Fatalf("output contains non-ASCII rune %q:\n%s", r, got)
+		}
 	}
 }
 
@@ -54,9 +84,8 @@ func TestWriteAnalyzeHumanNoColor(t *testing.T) {
 	assertNoANSI(t, got)
 	assertContains(t, got,
 		"apisniff analyze",
-		"domain:",
 		"api.example.com",
-		"flows:",
+		"flows",
 		"3",
 		"Top endpoints",
 		"[GET]",
@@ -78,7 +107,10 @@ func TestWriteAnalyzeEmptyEndpointsShowsNone(t *testing.T) {
 
 	got := buf.String()
 	assertNoANSI(t, got)
-	assertContains(t, got, "apisniff analyze", "flows:", "0", "Top endpoints", "none")
+	assertContains(t, got, "apisniff analyze", "flows", "0", "endpoints", "0")
+	if strings.Contains(got, "Top endpoints") || strings.Contains(got, "none") {
+		t.Fatalf("empty sections should be omitted:\n%s", got)
+	}
 }
 
 func TestWriteProbeHumanNoColor(t *testing.T) {
@@ -110,15 +142,14 @@ func TestWriteProbeHumanNoColor(t *testing.T) {
 	assertContains(t, got,
 		"apisniff probe",
 		"https://api.example.com",
-		"[client_dependent]",
-		"cloudflare(high)",
+		"[CLIENT DEPENDENT]",
+		"cloudflare (high)",
 		"introspection=true",
 		"block_status=429",
-		"Probe variants",
 		"browser",
-		"[200]",
+		"200",
 		"raw",
-		"[403]",
+		"403",
 		"Recommendation",
 	)
 
@@ -126,7 +157,7 @@ func TestWriteProbeHumanNoColor(t *testing.T) {
 
 func TestStyleWidthClampAndTruncate(t *testing.T) {
 	var buf bytes.Buffer
-	s := newStyles(Config{Color: false, Width: 500, Writer: &buf})
+	s := newStyles(Config{Color: false, Unicode: true, Width: 500, Writer: &buf})
 	if s.cfg.Width != 120 {
 		t.Fatalf("width = %d, want 120", s.cfg.Width)
 	}
@@ -160,12 +191,11 @@ func TestWriteReplayHumanNoColor(t *testing.T) {
 		"apisniff replay",
 		"api.example.com",
 		"Summary",
-		"match:",
-		"blocked:",
-		"Results",
+		"match",
+		"blocked",
 		"[GET]",
 		"/v1/orders",
-		"[200 -> 403]",
+		"200 → 403",
 	)
 }
 
@@ -186,11 +216,11 @@ func TestWriteReplayDryRunHumanNoColor(t *testing.T) {
 	assertNoANSI(t, got)
 	assertContains(t, got,
 		"apisniff replay dry run",
-		"safe:",
+		"safe",
 		"2",
-		"unsafe:",
+		"unsafe",
 		"1",
-		"total:",
+		"total",
 		"3",
 		"Endpoints",
 		"GET /v1/users",
@@ -241,14 +271,139 @@ func TestWriteMiscHumanNoColor(t *testing.T) {
 	assertNoANSI(t, got)
 	assertContains(t, got,
 		"apisniff recon",
-		"captured:",
+		"✓ captured",
 		"8 flows",
 		"apisniff spec",
-		"wrote:",
+		"✓ wrote",
 		"spec.yaml",
-		"operations:",
+		"operations",
 		"6",
 		"apisniff share",
 		"inventory.json",
 	)
+}
+
+func TestProbeCompactTableAtNarrowWidthPreservesLatency(t *testing.T) {
+	var buf bytes.Buffer
+	assessment := &model.ProbeAssessment{
+		URL:     "https://api.example.com",
+		Verdict: model.FullBlock,
+		Results: []model.ProbeResult{
+			{Variant: "naked", Status: 403, Latency: 999 * time.Millisecond},
+			{Variant: "impersonated", Status: 200, Latency: 226 * time.Millisecond},
+		},
+	}
+
+	cfg := testConfig(t, &buf)
+	cfg.Width = 40
+	if err := WriteProbe(cfg, assessment); err != nil {
+		t.Fatalf("WriteProbe returned error: %v", err)
+	}
+
+	got := buf.String()
+	assertNoANSI(t, got)
+	assertLinesWithinWidth(t, got, 40)
+	assertContains(t, got, "Result", "999ms", "226ms")
+	if strings.Contains(got, "Latency") {
+		t.Fatalf("compact table should collapse latency column:\n%s", got)
+	}
+}
+
+func TestUnicodeFalseUsesASCIIFallbacks(t *testing.T) {
+	var buf bytes.Buffer
+	cfg := Config{Color: false, Unicode: false, Width: 72, Writer: &buf}
+	if err := WriteShare(cfg, ShareResult{OutputDir: "/tmp/share", Files: []string{"spec.yaml"}}); err != nil {
+		t.Fatalf("WriteShare returned error: %v", err)
+	}
+
+	got := buf.String()
+	assertNoANSI(t, got)
+	assertASCIIOnly(t, got)
+	assertContains(t, got, "[OK] exported 1 files", "+", "|")
+}
+
+func TestLatencyBarAndResultIconFallbacks(t *testing.T) {
+	s := newStyles(Config{Color: false, Unicode: true, Width: 80, Writer: io.Discard})
+	if got := s.resultIcon(false, false); got != "✓ passed" {
+		t.Fatalf("resultIcon passed = %q", got)
+	}
+	if got := s.resultIcon(true, false); got != "✗ blocked" {
+		t.Fatalf("resultIcon blocked = %q", got)
+	}
+	if got := s.resultIcon(true, true); got != "⚡ challenge" {
+		t.Fatalf("resultIcon challenge = %q", got)
+	}
+	if got := s.latencyBar(50, 100, 10); !strings.Contains(got, "50ms") || !strings.Contains(got, "█") {
+		t.Fatalf("latencyBar = %q", got)
+	}
+
+	ascii := newStyles(Config{Color: false, Unicode: false, Width: 80, Writer: io.Discard})
+	if got := ascii.resultIcon(true, false); got != "BLOCKED" {
+		t.Fatalf("ASCII resultIcon = %q", got)
+	}
+	if got := ascii.latencyBar(50, 100, 10); !strings.Contains(got, "#") || strings.Contains(got, "█") {
+		t.Fatalf("ASCII latencyBar = %q", got)
+	}
+}
+
+func TestProbeWithColorEmitsANSI(t *testing.T) {
+	var buf bytes.Buffer
+	assessment := &model.ProbeAssessment{
+		URL:     "https://api.example.com",
+		Verdict: model.FullBlock,
+		Results: []model.ProbeResult{
+			{Variant: "naked", Status: 403, Latency: 500 * time.Millisecond},
+		},
+	}
+	cfg := Config{Color: true, Unicode: true, Width: 80, Writer: &buf}
+	if err := WriteProbe(cfg, assessment); err != nil {
+		t.Fatalf("WriteProbe returned error: %v", err)
+	}
+	got := buf.String()
+	if !strings.Contains(got, "\x1b[") {
+		t.Fatalf("Color=true output missing ANSI escapes:\n%s", got)
+	}
+	assertContains(t, got, "apisniff probe", "naked")
+}
+
+func TestReplayUnicodeFalseUsesASCIIArrows(t *testing.T) {
+	var buf bytes.Buffer
+	summary := replay.Summary{
+		Domain:  "api.example.com",
+		Summary: map[string]int{"match": 1},
+		Results: []replay.Result{
+			{Method: "GET", Path: "/v1/users", OriginalStatus: 200, ReplayedStatus: 200, Category: "match"},
+		},
+	}
+	cfg := Config{Color: false, Unicode: false, Width: 72, Writer: &buf}
+	if err := WriteReplay(cfg, summary); err != nil {
+		t.Fatalf("WriteReplay returned error: %v", err)
+	}
+	got := buf.String()
+	assertNoANSI(t, got)
+	assertASCIIOnly(t, got)
+	assertContains(t, got, "200 -> 200", "ok match")
+}
+
+func TestLayoutAtBoundaryWidths(t *testing.T) {
+	for _, width := range []int{40, 80, 120} {
+		t.Run(fmt.Sprintf("width_%d", width), func(t *testing.T) {
+			var buf bytes.Buffer
+			cfg := Config{Color: false, Unicode: true, Width: width, Writer: &buf}
+			err := WriteAnalyze(cfg, AnalyzeResult{
+				Domain:     "api.example.com",
+				TotalFlows: 3,
+				TopEndpoints: []EndpointSummary{
+					{Method: "GET", Path: "/v1/users/{id}/with/a/long/path", Count: 2},
+					{Method: "POST", Path: "/v1/login", Count: 1},
+				},
+			})
+			if err != nil {
+				t.Fatalf("WriteAnalyze returned error: %v", err)
+			}
+			got := buf.String()
+			assertLinesWithinWidth(t, got, width)
+			assertContains(t, got, "Top endpoints", "Method", "Path", "Count")
+		})
+	}
 }

@@ -53,7 +53,7 @@ func TestAnalyzeHumanWritesOnlyStderrAndBundle(t *testing.T) {
 	if stdout != "" {
 		t.Fatalf("stdout = %q, want empty", stdout)
 	}
-	assertContains(t, stderr, "apisniff analyze", "bundle:", outputDir)
+	assertContains(t, stderr, "apisniff analyze", "bundle", outputDir)
 	for _, name := range []string{"session.json", "flows.jsonl", "report.md"} {
 		if _, err := os.Stat(filepath.Join(outputDir, name)); err != nil {
 			t.Fatalf("missing %s: %v", name, err)
@@ -255,7 +255,7 @@ func TestSpecWritesSpecToStdoutAndStatusToStderr(t *testing.T) {
 	if payload["openapi"] != "3.0.3" {
 		t.Fatalf("spec payload = %#v", payload)
 	}
-	assertContains(t, stderr, "apisniff spec", "paths:", "operations:")
+	assertContains(t, stderr, "apisniff spec", "paths", "operations")
 }
 
 func TestSpecDefaultFormatWritesYAMLToStdout(t *testing.T) {
@@ -269,7 +269,7 @@ func TestSpecDefaultFormatWritesYAMLToStdout(t *testing.T) {
 		t.Fatalf("stdout did not contain YAML OpenAPI version:\n%s", stdout)
 	}
 	assertContains(t, stdout, "paths:", "/api/users/{userId}:")
-	assertContains(t, stderr, "apisniff spec", "format:", "yaml")
+	assertContains(t, stderr, "apisniff spec", "format", "yaml")
 }
 
 func TestSpecOutputWritesOnlyStderrAndFiles(t *testing.T) {
@@ -285,7 +285,7 @@ func TestSpecOutputWritesOnlyStderrAndFiles(t *testing.T) {
 	if stdout != "" {
 		t.Fatalf("stdout = %q, want empty", stdout)
 	}
-	assertContains(t, stderr, "apisniff spec", "wrote:", specPath, "surface:", surfacePath)
+	assertContains(t, stderr, "apisniff spec", "wrote", specPath, "surface", surfacePath)
 	assertJSONFile(t, specPath)
 	assertJSONFile(t, surfacePath)
 }

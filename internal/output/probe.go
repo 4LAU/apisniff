@@ -13,39 +13,36 @@ func WriteProbe(cfg Config, assessment *model.ProbeAssessment) error {
 	}
 	s := newStyles(cfg)
 	lines := []string{
-		s.title("apisniff probe"),
-		s.summary("url", assessment.URL),
-		s.summary("verdict", s.verdictBadge(assessment.Verdict.String())),
+		s.headerBox("apisniff probe", assessment.URL),
+		"",
+		"  " + s.verdictBadge(assessment.Verdict.String()),
 	}
 	if len(assessment.Vendors) > 0 {
 		var names []string
 		for _, match := range assessment.Vendors {
-			names = append(names, match.Vendor+"("+match.Confidence+")")
+			names = append(names, match.Vendor+" ("+match.Confidence+")")
 		}
-		lines = append(lines, s.summary("vendors", strings.Join(names, ", ")))
+		lines = append(lines, s.kv("vendor", strings.Join(names, ", ")))
 	}
-	if assessment.GraphQL != nil {
-		lines = append(lines, s.summary("graphql", graphqlSummary(assessment.GraphQL)))
+	if assessment.GraphQL != nil && (assessment.GraphQL.Introspection || len(assessment.GraphQL.Endpoints) > 0) {
+		lines = append(lines, s.kv("graphql", graphqlSummary(assessment.GraphQL)))
 	}
 	if assessment.RateLimit != nil {
-		lines = append(lines, s.summary("rate limit", rateLimitSummary(assessment.RateLimit)))
+		lines = append(lines, s.kv("rate limit", rateLimitSummary(assessment.RateLimit)))
 	}
-	lines = append(lines, "", s.header("Probe variants"))
+	rows := make([]probeRow, 0, len(assessment.Results))
 	for _, result := range assessment.Results {
-		status := fmt.Sprint(result.Status)
-		if result.Status == 0 {
-			status = "-"
-		}
-		detail := fmt.Sprintf(
-			"elapsed=%.1fms blocked=%t challenge=%t",
-			result.ElapsedMS(),
-			result.IsBlocked(),
-			result.IsChallenge(),
-		)
-		if result.Error != "" {
-			detail += " error=" + result.Error
-		}
-		lines = append(lines, s.row(result.Variant, s.statusBadge(status), detail))
+		rows = append(rows, probeRow{
+			Variant:   result.Variant,
+			Status:    result.Status,
+			LatencyMS: result.ElapsedMS(),
+			Blocked:   result.IsBlocked(),
+			Challenge: result.IsChallenge(),
+			Error:     result.Error,
+		})
+	}
+	if len(rows) > 0 {
+		lines = append(lines, "", s.probeTable(rows))
 	}
 	if assessment.Recommendation != "" {
 		lines = append(lines, "", s.panel("Recommendation", assessment.Recommendation))
