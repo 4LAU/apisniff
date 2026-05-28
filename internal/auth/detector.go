@@ -5,7 +5,7 @@ import (
 	"sort"
 	"strings"
 
-	"github.com/4LAU/apisniff-go/internal/model"
+	"github.com/4LAU/apisniff/internal/model"
 )
 
 var sessionCookieNames = map[string]struct{}{

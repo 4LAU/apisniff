@@ -11,15 +11,15 @@ import (
 	"strings"
 	"time"
 
-	"github.com/4LAU/apisniff-go/internal/adapter"
-	"github.com/4LAU/apisniff-go/internal/auth"
-	"github.com/4LAU/apisniff-go/internal/capture"
-	"github.com/4LAU/apisniff-go/internal/model"
-	"github.com/4LAU/apisniff-go/internal/output"
-	"github.com/4LAU/apisniff-go/internal/probe"
-	"github.com/4LAU/apisniff-go/internal/replay"
-	"github.com/4LAU/apisniff-go/internal/report"
-	"github.com/4LAU/apisniff-go/internal/spec"
+	"github.com/4LAU/apisniff/internal/adapter"
+	"github.com/4LAU/apisniff/internal/auth"
+	"github.com/4LAU/apisniff/internal/capture"
+	"github.com/4LAU/apisniff/internal/model"
+	"github.com/4LAU/apisniff/internal/output"
+	"github.com/4LAU/apisniff/internal/probe"
+	"github.com/4LAU/apisniff/internal/replay"
+	"github.com/4LAU/apisniff/internal/report"
+	"github.com/4LAU/apisniff/internal/spec"
 	"github.com/charmbracelet/x/term"
 	"github.com/spf13/cobra"
 )
@@ -136,7 +136,6 @@ func newReconCommand() *cobra.Command {
 		mode       string
 		attachURL  string
 		headless   bool
-		wait       time.Duration
 	)
 	cmd := &cobra.Command{
 		Use:   "recon DOMAIN",
@@ -148,13 +147,13 @@ func newReconCommand() *cobra.Command {
 			}
 			domain, launchURL := normalizeTarget(args[0])
 			result, err := captureRun(cmd.Context(), capture.Config{
-				Domain:    domain,
-				URL:       launchURL,
-				Mode:      mode,
-				Port:      port,
-				AttachURL: attachURL,
-				Headless:  headless,
-				Wait:      wait,
+				Domain:       domain,
+				URL:          launchURL,
+				Mode:         mode,
+				Port:         port,
+				AttachURL:    attachURL,
+				Headless:     headless,
+				StatusWriter: cmd.ErrOrStderr(),
 			})
 			if err != nil {
 				return err
@@ -177,7 +176,6 @@ func newReconCommand() *cobra.Command {
 	cmd.Flags().StringVar(&mode, "mode", "cdp-launch", "capture mode: cdp-launch, cdp-attach, proxy")
 	cmd.Flags().StringVar(&attachURL, "remote-url", "", "CDP URL for cdp-attach")
 	cmd.Flags().BoolVar(&headless, "headless", false, "launch Chrome headless")
-	cmd.Flags().DurationVar(&wait, "wait", 8*time.Second, "extra wait after navigation")
 	return cmd
 }
 
@@ -202,6 +200,16 @@ func newAnalyzeCommand() *cobra.Command {
 			}
 			if inputFormat == "unknown" {
 				return fmt.Errorf("unknown input format for %s", args[0])
+			}
+			if domain == "" {
+				detected := adapter.AutoDetectDomain(flows)
+				if detected.Domain == "" {
+					return errors.New("cannot determine domain; use --domain")
+				}
+				if detected.Ambiguous {
+					fmt.Fprintf(cmd.ErrOrStderr(), "Warning: ambiguous domain; top %q (%d) is not 2x second (%d). Use --domain to specify explicitly.\n", detected.Domain, detected.Count, detected.SecondCount)
+				}
+				domain = detected.Domain
 			}
 			result := output.AnalyzeResult{
 				SchemaVersion: 1,

@@ -7,8 +7,8 @@ import (
 	"sort"
 	"strings"
 
-	"github.com/4LAU/apisniff-go/internal/auth"
-	"github.com/4LAU/apisniff-go/internal/model"
+	"github.com/4LAU/apisniff/internal/auth"
+	"github.com/4LAU/apisniff/internal/model"
 )
 
 type Inventory struct {

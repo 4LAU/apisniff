@@ -4,7 +4,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/4LAU/apisniff-go/internal/model"
+	"github.com/4LAU/apisniff/internal/model"
 )
 
 func TestClassifyAllConnectionErrorsIsNotNoProtection(t *testing.T) {

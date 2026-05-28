@@ -13,8 +13,8 @@ import (
 	"testing"
 	"time"
 
-	"github.com/4LAU/apisniff-go/internal/adapter"
-	"github.com/4LAU/apisniff-go/internal/model"
+	"github.com/4LAU/apisniff/internal/adapter"
+	"github.com/4LAU/apisniff/internal/model"
 	"github.com/gobwas/ws"
 	"github.com/gobwas/ws/wsutil"
 )
@@ -39,15 +39,16 @@ func TestCDPCapturesLargeJSONResponseBody(t *testing.T) {
 	}))
 	defer server.Close()
 
-	result, err := Capture(context.Background(), Config{
+	ctx, cancel := context.WithTimeout(context.Background(), 20*time.Second)
+	defer cancel()
+	result, err := Capture(ctx, Config{
 		Domain:      "127.0.0.1",
 		URL:         server.URL,
 		Mode:        "cdp-launch",
 		Port:        freePort(t),
 		UserDataDir: t.TempDir(),
 		Headless:    true,
-		Wait:        2 * time.Second,
-		Timeout:     20 * time.Second,
+		Timeout:     10 * time.Second,
 	})
 	if err != nil {
 		t.Fatal(err)
@@ -97,15 +98,16 @@ func TestCDPCapturesWebSocketFrames(t *testing.T) {
 	}))
 	defer server.Close()
 
-	result, err := Capture(context.Background(), Config{
+	ctx, cancel := context.WithTimeout(context.Background(), 20*time.Second)
+	defer cancel()
+	result, err := Capture(ctx, Config{
 		Domain:      "127.0.0.1",
 		URL:         server.URL,
 		Mode:        "cdp-launch",
 		Port:        freePort(t),
 		UserDataDir: t.TempDir(),
 		Headless:    true,
-		Wait:        2 * time.Second,
-		Timeout:     20 * time.Second,
+		Timeout:     10 * time.Second,
 	})
 	if err != nil {
 		t.Fatal(err)

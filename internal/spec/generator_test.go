@@ -3,8 +3,8 @@ package spec
 import (
 	"testing"
 
-	"github.com/4LAU/apisniff-go/internal/auth"
-	"github.com/4LAU/apisniff-go/internal/model"
+	"github.com/4LAU/apisniff/internal/auth"
+	"github.com/4LAU/apisniff/internal/model"
 )
 
 func specFlow(method, path string, status int, body []byte) model.CapturedFlow {
@@ -34,19 +34,15 @@ func TestInferSchemaObjectAndArray(t *testing.T) {
 	}
 }
 
-func TestInferSchemaArrayUsesOneOfForMixedScalarTypes(t *testing.T) {
+func TestInferSchemaArrayFallsBackToStringForMixedScalarTypes(t *testing.T) {
 	schema := InferSchema([]any{float64(1), "two"}, false, "")
 	items := asMap(schema["items"])
-	oneOf, ok := items["oneOf"].([]any)
-	if !ok || len(oneOf) != 2 {
+	if items["type"] != "string" {
 		t.Fatalf("items schema = %#v", items)
 	}
-	types := map[any]bool{}
-	for _, option := range oneOf {
-		types[asMap(option)["type"]] = true
-	}
-	if !types["integer"] || !types["string"] {
-		t.Fatalf("oneOf = %#v", oneOf)
+	observed, ok := items["x-apisniff-observed-types"].([]any)
+	if !ok || len(observed) != 2 || observed[0] != "integer" || observed[1] != "string" {
+		t.Fatalf("observed types = %#v", observed)
 	}
 }
 
@@ -57,7 +53,7 @@ func TestGenerateOpenAPIBasicAndNormalize(t *testing.T) {
 		specFlow("POST", "/api/v1/users", 200, []byte(`{"id":124}`)),
 	}, "example.com", nil, Options{})
 	paths := asMap(doc["paths"])
-	if doc["openapi"] != "3.0.3" || paths["/api/v1/users"] == nil || paths["/api/v1/users/{id}"] == nil {
+	if doc["openapi"] != "3.0.3" || paths["/api/v1/users"] == nil || paths["/api/v1/users/{userId}"] == nil {
 		t.Fatalf("doc = %#v", doc)
 	}
 }

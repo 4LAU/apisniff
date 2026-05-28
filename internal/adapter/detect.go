@@ -6,7 +6,7 @@ import (
 	"regexp"
 	"strings"
 
-	"github.com/4LAU/apisniff-go/internal/model"
+	"github.com/4LAU/apisniff/internal/model"
 )
 
 const maxImportBytes = 200 * 1024 * 1024
@@ -37,6 +37,9 @@ func Detect(path string) (string, error) {
 	}
 	if strings.HasPrefix(head, "{") {
 		firstLine := strings.SplitN(head, "\n", 2)[0]
+		if strings.Contains(firstLine, `"method"`) {
+			return "jsonl", nil
+		}
 		var obj map[string]any
 		if json.Unmarshal([]byte(firstLine), &obj) == nil {
 			if _, ok := obj["method"]; ok {

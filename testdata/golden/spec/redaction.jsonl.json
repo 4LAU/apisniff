@@ -1,0 +1,296 @@
+{
+  "info": {
+    "description": "Auto-generated from captured traffic for example.com",
+    "title": "example.com API",
+    "version": "0.1.0"
+  },
+  "openapi": "3.0.3",
+  "paths": {
+    "/api/config": {
+      "get": {
+        "operationId": "getApiConfig",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "properties": {
+                    "aws_secret": {
+                      "type": "string"
+                    },
+                    "region": {
+                      "type": "string"
+                    }
+                  },
+                  "type": "object"
+                }
+              }
+            },
+            "description": "OK"
+          }
+        },
+        "tags": [
+          "config"
+        ],
+        "x-apisniff-observed": {
+          "content_types": [
+            "application/json"
+          ],
+          "flow_count": 1,
+          "hosts": [
+            "example.com"
+          ],
+          "methods": [
+            "GET"
+          ],
+          "status_codes": [
+            200
+          ]
+        }
+      }
+    },
+    "/api/lookup": {
+      "get": {
+        "operationId": "getApiLookup",
+        "parameters": [
+          {
+            "in": "query",
+            "name": "api_key",
+            "required": false,
+            "schema": {
+              "type": "string"
+            },
+            "x-apisniff-observed": {
+              "confidence": "observed",
+              "distinct_value_count": 1,
+              "inferred_type": "string",
+              "present_count": 1,
+              "total_count": 1
+            }
+          },
+          {
+            "in": "query",
+            "name": "email",
+            "required": false,
+            "schema": {
+              "type": "string"
+            },
+            "x-apisniff-observed": {
+              "confidence": "observed",
+              "distinct_value_count": 1,
+              "inferred_type": "string",
+              "present_count": 1,
+              "total_count": 1
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "properties": {
+                    "found": {
+                      "type": "boolean"
+                    }
+                  },
+                  "type": "object"
+                }
+              }
+            },
+            "description": "OK"
+          }
+        },
+        "tags": [
+          "lookup"
+        ],
+        "x-apisniff-observed": {
+          "content_types": [
+            "application/json"
+          ],
+          "flow_count": 1,
+          "hosts": [
+            "example.com"
+          ],
+          "methods": [
+            "GET"
+          ],
+          "status_codes": [
+            200
+          ]
+        }
+      }
+    },
+    "/api/me": {
+      "get": {
+        "operationId": "getApiMe",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "properties": {
+                    "id": {
+                      "type": "integer"
+                    },
+                    "refresh_token": {
+                      "type": "string"
+                    }
+                  },
+                  "type": "object"
+                }
+              }
+            },
+            "description": "OK"
+          }
+        },
+        "tags": [
+          "me"
+        ],
+        "x-apisniff-observed": {
+          "content_types": [
+            "application/json"
+          ],
+          "flow_count": 1,
+          "hosts": [
+            "example.com"
+          ],
+          "methods": [
+            "GET"
+          ],
+          "status_codes": [
+            200
+          ]
+        }
+      }
+    },
+    "/api/payments": {
+      "post": {
+        "operationId": "postApiPayments",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "properties": {
+                  "amount": {
+                    "type": "integer"
+                  },
+                  "api_key": {
+                    "type": "string"
+                  }
+                },
+                "type": "object"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "properties": {
+                    "charge_id": {
+                      "type": "string"
+                    },
+                    "status": {
+                      "type": "string"
+                    }
+                  },
+                  "type": "object"
+                }
+              }
+            },
+            "description": "OK"
+          }
+        },
+        "tags": [
+          "payment"
+        ],
+        "x-apisniff-observed": {
+          "content_types": [
+            "application/json"
+          ],
+          "flow_count": 1,
+          "hosts": [
+            "example.com"
+          ],
+          "methods": [
+            "POST"
+          ],
+          "status_codes": [
+            200
+          ]
+        }
+      }
+    },
+    "/api/register": {
+      "post": {
+        "operationId": "postApiRegister",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "properties": {
+                  "email": {
+                    "type": "string"
+                  },
+                  "name": {
+                    "type": "string"
+                  },
+                  "password": {
+                    "type": "string"
+                  }
+                },
+                "type": "object"
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "properties": {
+                    "email": {
+                      "type": "string"
+                    },
+                    "id": {
+                      "type": "integer"
+                    }
+                  },
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Created"
+          }
+        },
+        "tags": [
+          "register"
+        ],
+        "x-apisniff-observed": {
+          "content_types": [
+            "application/json"
+          ],
+          "flow_count": 1,
+          "hosts": [
+            "example.com"
+          ],
+          "methods": [
+            "POST"
+          ],
+          "status_codes": [
+            201
+          ]
+        }
+      }
+    }
+  },
+  "servers": [
+    {
+      "url": "https://example.com"
+    }
+  ]
+}

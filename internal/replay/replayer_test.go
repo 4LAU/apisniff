@@ -9,7 +9,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/4LAU/apisniff-go/internal/model"
+	"github.com/4LAU/apisniff/internal/model"
 )
 
 func replayFlow(method, rawURL, path string, status int, body []byte) model.CapturedFlow {

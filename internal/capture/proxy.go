@@ -20,11 +20,12 @@ import (
 	"path/filepath"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"syscall"
 	"time"
 
-	"github.com/4LAU/apisniff-go/internal/classify"
-	"github.com/4LAU/apisniff-go/internal/model"
+	"github.com/4LAU/apisniff/internal/classify"
+	"github.com/4LAU/apisniff/internal/model"
 	"github.com/elazarl/goproxy"
 )
 
@@ -39,7 +40,7 @@ func CaptureProxy(ctx context.Context, cfg Config) (*Result, error) {
 		cfg.Port = 8080
 	}
 	if cfg.Timeout == 0 {
-		cfg.Timeout = 2 * time.Minute
+		cfg.Timeout = 30 * time.Minute
 	}
 	start := time.Now()
 	bundle, err := NewBundleDir(cfg.Domain, start)
@@ -68,6 +69,7 @@ func CaptureProxy(ctx context.Context, cfg Config) (*Result, error) {
 	}
 
 	var mu sync.Mutex
+	var flowCount atomic.Int64
 	stats := model.SessionStats{
 		Domain:    cfg.Domain,
 		StartedAt: start.UTC().Format(time.RFC3339),
@@ -130,6 +132,7 @@ func CaptureProxy(ctx context.Context, cfg Config) (*Result, error) {
 		mu.Lock()
 		defer mu.Unlock()
 		stats.TotalFlows++
+		flowCount.Add(1)
 		if classification.Action == "drop" || kept == nil {
 			dropKey := classification.Reason
 			if dropKey == "" {
@@ -161,7 +164,17 @@ func CaptureProxy(ctx context.Context, cfg Config) (*Result, error) {
 	go func() {
 		errCh <- server.Serve(listener)
 	}()
-	<-runCtx.Done()
+	showStatus := cfg.StatusWriter != nil && isTerminal(cfg.StatusWriter)
+	if showStatus {
+		fmt.Fprintf(cfg.StatusWriter, "MITM proxy listening on %s\n", server.Addr)
+		status := newStatusLine(cfg.StatusWriter, "Capturing traffic", &flowCount)
+		status.start()
+		<-runCtx.Done()
+		status.stop()
+		fmt.Fprintln(cfg.StatusWriter, "MITM proxy stopped")
+	} else {
+		<-runCtx.Done()
+	}
 	shutdownCtx, cancelShutdown := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancelShutdown()
 	if err := server.Shutdown(shutdownCtx); err != nil {

@@ -3,7 +3,7 @@ package output
 import (
 	"fmt"
 
-	"github.com/4LAU/apisniff-go/internal/replay"
+	"github.com/4LAU/apisniff/internal/replay"
 )
 
 func WriteReplay(cfg Config, summary replay.Summary) error {

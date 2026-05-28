@@ -6,7 +6,7 @@ import (
 	"fmt"
 	"os"
 
-	"github.com/4LAU/apisniff-go/internal/model"
+	"github.com/4LAU/apisniff/internal/model"
 )
 
 func LoadJSONL(path string) ([]model.CapturedFlow, error) {

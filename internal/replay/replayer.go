@@ -14,9 +14,9 @@ import (
 	"strings"
 	"time"
 
-	"github.com/4LAU/apisniff-go/internal/adapter"
-	"github.com/4LAU/apisniff-go/internal/capture"
-	"github.com/4LAU/apisniff-go/internal/model"
+	"github.com/4LAU/apisniff/internal/adapter"
+	"github.com/4LAU/apisniff/internal/capture"
+	"github.com/4LAU/apisniff/internal/model"
 	"github.com/enetx/surf"
 )
 

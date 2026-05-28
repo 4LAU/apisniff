@@ -6,9 +6,9 @@ import (
 	"testing"
 	"time"
 
-	"github.com/4LAU/apisniff-go/internal/auth"
-	"github.com/4LAU/apisniff-go/internal/model"
-	"github.com/4LAU/apisniff-go/internal/replay"
+	"github.com/4LAU/apisniff/internal/auth"
+	"github.com/4LAU/apisniff/internal/model"
+	"github.com/4LAU/apisniff/internal/replay"
 )
 
 func testConfig(t *testing.T, buf *bytes.Buffer) Config {

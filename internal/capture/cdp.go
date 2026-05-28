@@ -4,30 +4,37 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"io"
 	"net/url"
+	"os"
+	"os/signal"
 	"path/filepath"
 	"sort"
 	"strconv"
 	"strings"
 	"sync"
+	"sync/atomic"
+	"syscall"
 	"time"
 
-	"github.com/4LAU/apisniff-go/internal/classify"
-	"github.com/4LAU/apisniff-go/internal/model"
+	"github.com/4LAU/apisniff/internal/classify"
+	"github.com/4LAU/apisniff/internal/model"
+	"github.com/chromedp/cdproto/cdp"
 	"github.com/chromedp/cdproto/network"
+	"github.com/chromedp/cdproto/target"
 	"github.com/chromedp/chromedp"
 )
 
 type Config struct {
-	Domain      string
-	URL         string
-	Mode        string
-	Port        int
-	UserDataDir string
-	AttachURL   string
-	Headless    bool
-	Wait        time.Duration
-	Timeout     time.Duration
+	Domain       string
+	URL          string
+	Mode         string
+	Port         int
+	UserDataDir  string
+	AttachURL    string
+	Headless     bool
+	Timeout      time.Duration
+	StatusWriter io.Writer
 }
 
 type Result struct {
@@ -46,11 +53,12 @@ type partialFlow struct {
 }
 
 type recorder struct {
-	mu      sync.Mutex
-	flows   map[network.RequestID]*partialFlow
-	order   []network.RequestID
-	bodyWG  sync.WaitGroup
-	dropped map[string]int
+	mu        sync.Mutex
+	flows     map[network.RequestID]*partialFlow
+	order     []network.RequestID
+	bodyWG    sync.WaitGroup
+	dropped   map[string]int
+	flowCount atomic.Int64
 }
 
 type webSocketFrameCapture struct {
@@ -75,11 +83,8 @@ func Capture(ctx context.Context, cfg Config) (*Result, error) {
 	if cfg.Port == 0 {
 		cfg.Port = DefaultPort()
 	}
-	if cfg.Wait == 0 {
-		cfg.Wait = 5 * time.Second
-	}
 	if cfg.Timeout == 0 {
-		cfg.Timeout = 2 * time.Minute
+		cfg.Timeout = 30 * time.Minute
 	}
 	if cfg.URL == "" {
 		cfg.URL = "https://" + cfg.Domain
@@ -95,7 +100,9 @@ func Capture(ctx context.Context, cfg Config) (*Result, error) {
 		return nil, err
 	}
 
-	runCtx, cancelTimeout := context.WithTimeout(ctx, cfg.Timeout)
+	signalCtx, stopSignals := signal.NotifyContext(ctx, os.Interrupt, syscall.SIGTERM)
+	defer stopSignals()
+	runCtx, cancelTimeout := context.WithTimeout(signalCtx, cfg.Timeout)
 	defer cancelTimeout()
 	browserCtx, cancelBrowser, err := NewBrowserContext(runCtx, cfg.Mode, cfg.Port, cfg.UserDataDir, cfg.AttachURL, cfg.Headless)
 	if err != nil {
@@ -108,14 +115,87 @@ func Capture(ctx context.Context, cfg Config) (*Result, error) {
 	if err != nil {
 		return nil, err
 	}
+
+	showStatus := cfg.StatusWriter != nil && isTerminal(cfg.StatusWriter)
+	var status *statusLine
+	if showStatus {
+		status = newStatusLine(cfg.StatusWriter, "Capturing traffic", &rec.flowCount)
+		status.start()
+	}
+
 	chromedp.ListenTarget(browserCtx, rec.listen(browserCtx))
 	runErr := chromedp.Run(browserCtx,
 		network.Enable().
 			WithMaxTotalBufferSize(100*1024*1024).
 			WithMaxResourceBufferSize(25*1024*1024),
 		chromedp.Navigate(cfg.URL),
-		chromedp.Sleep(cfg.Wait),
 	)
+	if runErr == nil {
+		tabClosed := make(chan struct{}, 1)
+		signalClose := func() {
+			select {
+			case tabClosed <- struct{}{}:
+			default:
+			}
+		}
+		go func() {
+			<-browserCtx.Done()
+			signalClose()
+		}()
+		if cfg.Mode == "cdp-launch" {
+			go func() {
+				c := chromedp.FromContext(browserCtx)
+				if c == nil || c.Browser == nil {
+					return
+				}
+				consecutiveEmptyOrError := 0
+				ticker := time.NewTicker(500 * time.Millisecond)
+				defer ticker.Stop()
+				for {
+					select {
+					case <-runCtx.Done():
+						return
+					case <-ticker.C:
+						pollCtx, pollCancel := context.WithTimeout(runCtx, 2*time.Second)
+						pollExec := cdp.WithExecutor(pollCtx, c.Browser)
+						infos, err := target.GetTargets().Do(pollExec)
+						pollCancel()
+						if err != nil {
+							consecutiveEmptyOrError++
+							if consecutiveEmptyOrError >= 3 {
+								signalClose()
+								return
+							}
+							continue
+						}
+						pages := 0
+						for _, info := range infos {
+							if info.Type == "page" && !strings.HasPrefix(info.URL, "chrome://") {
+								pages++
+							}
+						}
+						if pages == 0 {
+							consecutiveEmptyOrError++
+							if consecutiveEmptyOrError >= 3 {
+								signalClose()
+								return
+							}
+						} else {
+							consecutiveEmptyOrError = 0
+						}
+					}
+				}
+			}()
+		}
+		select {
+		case <-tabClosed:
+		case <-runCtx.Done():
+		}
+	}
+	cancelBrowser()
+	if status != nil {
+		status.stop()
+	}
 	rec.bodyWG.Wait()
 	for _, flow := range rec.snapshotFlows() {
 		classification, kept := classifier.Classify(flow)
@@ -191,8 +271,16 @@ func (r *recorder) requestWillBeSent(ctx context.Context, ev *network.EventReque
 	flow := model.NewCapturedFlow(ev.Request.Method, rawURL, host, path)
 	flow.RequestHeaders = headersToStrings(ev.Request.Headers)
 	r.mu.Lock()
-	if _, exists := r.flows[ev.RequestID]; !exists {
+	if existing, ok := r.flows[ev.RequestID]; ok && ev.RedirectResponse != nil {
+		existing.flow.ResponseStatus = int(ev.RedirectResponse.Status)
+		existing.flow.ResponseHeaders = headersToStrings(ev.RedirectResponse.Headers)
+		existing.flow.Tags = appendTag(existing.flow.Tags, "redirected")
+		redirectID := network.RequestID(fmt.Sprintf("%s.r%d", ev.RequestID, len(r.order)))
+		r.flows[redirectID] = existing
+		r.order = append(r.order, redirectID)
+	} else if !ok {
 		r.order = append(r.order, ev.RequestID)
+		r.flowCount.Add(1)
 	}
 	r.flows[ev.RequestID] = &partialFlow{flow: flow}
 	r.mu.Unlock()

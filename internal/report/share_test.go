@@ -7,7 +7,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/4LAU/apisniff-go/internal/model"
+	"github.com/4LAU/apisniff/internal/model"
 )
 
 func TestBuildInventoryRedactsCookies(t *testing.T) {
@@ -29,7 +29,7 @@ func TestBuildInventoryRedactsCookies(t *testing.T) {
 	if inventory.Categories["business_api"] != 1 {
 		t.Fatalf("categories = %#v", inventory.Categories)
 	}
-	if inventory.TopEndpoints[0].Path != "/api/users/{id}" {
+	if inventory.TopEndpoints[0].Path != "/api/users/{userId}" {
 		t.Fatalf("endpoint = %#v", inventory.TopEndpoints[0])
 	}
 }

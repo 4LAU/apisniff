@@ -25,11 +25,18 @@ func NewBrowserContext(ctx context.Context, mode string, port int, userDataDir s
 			allocCancel()
 		}, nil
 	case "cdp-launch", "":
+		tempProfile := false
 		if userDataDir == "" {
-			userDataDir = defaultUserDataDir()
-		}
-		if err := os.MkdirAll(userDataDir, 0o700); err != nil {
-			return nil, nil, err
+			dir, err := os.MkdirTemp("", "apisniff-chrome-*")
+			if err != nil {
+				return nil, nil, err
+			}
+			userDataDir = dir
+			tempProfile = true
+		} else {
+			if err := os.MkdirAll(userDataDir, 0o700); err != nil {
+				return nil, nil, err
+			}
 		}
 		opts := append(chromedp.DefaultExecAllocatorOptions[:],
 			chromedp.ExecPath(FindChrome()),
@@ -44,6 +51,9 @@ func NewBrowserContext(ctx context.Context, mode string, port int, userDataDir s
 		return browserCtx, func() {
 			browserCancel()
 			allocCancel()
+			if tempProfile {
+				os.RemoveAll(userDataDir)
+			}
 		}, nil
 	default:
 		return nil, nil, fmt.Errorf("unsupported recon mode %q", mode)
@@ -82,13 +92,6 @@ func FindChrome() string {
 	return "google-chrome"
 }
 
-func defaultUserDataDir() string {
-	home, err := os.UserHomeDir()
-	if err != nil {
-		return filepath.Join(os.TempDir(), "apisniff-chrome-profile")
-	}
-	return filepath.Join(home, ".apisniff", "chrome-profile")
-}
 
 func DefaultPort() int {
 	return 9222 + int(time.Now().UnixNano()%1000)

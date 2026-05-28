@@ -1,0 +1,327 @@
+{
+  "info": {
+    "description": "Auto-generated from captured traffic for example.com",
+    "title": "example.com API",
+    "version": "0.1.0"
+  },
+  "openapi": "3.0.3",
+  "paths": {
+    "/api/dashboard": {
+      "get": {
+        "operationId": "getApiDashboard",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "properties": {
+                    "widgets": {
+                      "type": "integer"
+                    }
+                  },
+                  "type": "object"
+                }
+              }
+            },
+            "description": "OK"
+          }
+        },
+        "tags": [
+          "dashboard"
+        ],
+        "x-apisniff-observed": {
+          "content_types": [
+            "application/json"
+          ],
+          "flow_count": 1,
+          "hosts": [
+            "example.com"
+          ],
+          "methods": [
+            "GET"
+          ],
+          "status_codes": [
+            200
+          ]
+        }
+      }
+    },
+    "/api/data": {
+      "get": {
+        "operationId": "getApiData",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "properties": {
+                    "data": {
+                      "items": {
+                        "type": "integer"
+                      },
+                      "type": "array"
+                    }
+                  },
+                  "type": "object"
+                }
+              }
+            },
+            "description": "OK"
+          }
+        },
+        "tags": [
+          "data"
+        ],
+        "x-apisniff-observed": {
+          "content_types": [
+            "application/json"
+          ],
+          "flow_count": 1,
+          "hosts": [
+            "example.com"
+          ],
+          "methods": [
+            "GET"
+          ],
+          "status_codes": [
+            200
+          ]
+        }
+      }
+    },
+    "/api/legacy/status": {
+      "get": {
+        "operationId": "getApiLegacyStatus",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "properties": {
+                    "status": {
+                      "type": "string"
+                    }
+                  },
+                  "type": "object"
+                }
+              }
+            },
+            "description": "OK"
+          }
+        },
+        "tags": [
+          "legacy"
+        ],
+        "x-apisniff-observed": {
+          "content_types": [
+            "application/json"
+          ],
+          "flow_count": 1,
+          "hosts": [
+            "example.com"
+          ],
+          "methods": [
+            "GET"
+          ],
+          "status_codes": [
+            200
+          ]
+        }
+      }
+    },
+    "/api/profile": {
+      "get": {
+        "operationId": "getApiProfile",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "properties": {
+                    "id": {
+                      "type": "integer"
+                    },
+                    "name": {
+                      "type": "string"
+                    }
+                  },
+                  "type": "object"
+                }
+              }
+            },
+            "description": "OK"
+          }
+        },
+        "tags": [
+          "profile"
+        ],
+        "x-apisniff-observed": {
+          "content_types": [
+            "application/json"
+          ],
+          "flow_count": 1,
+          "hosts": [
+            "example.com"
+          ],
+          "methods": [
+            "GET"
+          ],
+          "status_codes": [
+            200
+          ]
+        }
+      }
+    },
+    "/api/search": {
+      "get": {
+        "operationId": "getApiSearch",
+        "parameters": [
+          {
+            "in": "query",
+            "name": "api_key",
+            "required": false,
+            "schema": {
+              "type": "string"
+            },
+            "x-apisniff-observed": {
+              "confidence": "observed",
+              "distinct_value_count": 1,
+              "inferred_type": "string",
+              "present_count": 1,
+              "total_count": 1
+            }
+          },
+          {
+            "in": "query",
+            "name": "q",
+            "required": false,
+            "schema": {
+              "type": "string"
+            },
+            "x-apisniff-observed": {
+              "confidence": "observed",
+              "distinct_value_count": 1,
+              "inferred_type": "string",
+              "present_count": 1,
+              "total_count": 1
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "properties": {
+                    "results": {
+                      "items": {
+                        "properties": {
+                          "id": {
+                            "type": "integer"
+                          }
+                        },
+                        "type": "object"
+                      },
+                      "type": "array"
+                    }
+                  },
+                  "type": "object"
+                }
+              }
+            },
+            "description": "OK"
+          }
+        },
+        "tags": [
+          "search"
+        ],
+        "x-apisniff-observed": {
+          "content_types": [
+            "application/json"
+          ],
+          "flow_count": 1,
+          "hosts": [
+            "example.com"
+          ],
+          "methods": [
+            "GET"
+          ],
+          "status_codes": [
+            200
+          ]
+        }
+      }
+    },
+    "/oauth/token": {
+      "post": {
+        "operationId": "postOauthToken",
+        "requestBody": {
+          "content": {
+            "application/x-www-form-urlencoded": {
+              "schema": {
+                "properties": {
+                  "client_id": {
+                    "type": "string"
+                  },
+                  "client_secret": {
+                    "type": "string"
+                  },
+                  "grant_type": {
+                    "type": "string"
+                  }
+                },
+                "type": "object"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "properties": {
+                    "access_token": {
+                      "type": "string"
+                    },
+                    "expires_in": {
+                      "type": "integer"
+                    },
+                    "token_type": {
+                      "type": "string"
+                    }
+                  },
+                  "type": "object"
+                }
+              }
+            },
+            "description": "OK"
+          }
+        },
+        "tags": [
+          "oauth"
+        ],
+        "x-apisniff-observed": {
+          "content_types": [
+            "application/json"
+          ],
+          "flow_count": 1,
+          "hosts": [
+            "example.com"
+          ],
+          "methods": [
+            "POST"
+          ],
+          "status_codes": [
+            200
+          ]
+        }
+      }
+    }
+  },
+  "servers": [
+    {
+      "url": "https://example.com"
+    }
+  ]
+}

@@ -17,7 +17,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/4LAU/apisniff-go/internal/adapter"
+	"github.com/4LAU/apisniff/internal/adapter"
 )
 
 func TestCaptureProxyCapturesHTTPFlow(t *testing.T) {

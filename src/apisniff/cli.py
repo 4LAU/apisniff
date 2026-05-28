@@ -15,7 +15,10 @@ from apisniff import __version__
 
 app = typer.Typer(
     name="apisniff",
-    help="One tool for API recon: preflight defenses, capture real traffic, extract a usable spec.",
+    help=(
+        "apisniff has moved to Go. "
+        "Install via: brew install 4LAU/tap/apisniff"
+    ),
     no_args_is_help=True,
 )
 

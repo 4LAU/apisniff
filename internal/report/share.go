@@ -7,10 +7,10 @@ import (
 	"sort"
 	"strings"
 
-	"github.com/4LAU/apisniff-go/internal/adapter"
-	"github.com/4LAU/apisniff-go/internal/auth"
-	"github.com/4LAU/apisniff-go/internal/capture"
-	"github.com/4LAU/apisniff-go/internal/spec"
+	"github.com/4LAU/apisniff/internal/adapter"
+	"github.com/4LAU/apisniff/internal/auth"
+	"github.com/4LAU/apisniff/internal/capture"
+	"github.com/4LAU/apisniff/internal/spec"
 )
 
 type ShareOptions struct {

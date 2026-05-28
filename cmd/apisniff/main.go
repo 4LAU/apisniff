@@ -4,7 +4,7 @@ import (
 	"fmt"
 	"os"
 
-	"github.com/4LAU/apisniff-go/internal/cli"
+	"github.com/4LAU/apisniff/internal/cli"
 )
 
 func main() {

@@ -5,8 +5,8 @@ import (
 	"net/url"
 	"strings"
 
-	"github.com/4LAU/apisniff-go/internal/classify"
-	"github.com/4LAU/apisniff-go/internal/model"
+	"github.com/4LAU/apisniff/internal/classify"
+	"github.com/4LAU/apisniff/internal/model"
 )
 
 const includedForSpecTag = "spec:included"

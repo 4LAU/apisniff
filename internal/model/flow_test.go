@@ -39,10 +39,10 @@ func TestCapturedFlowJSONLBase64Bodies(t *testing.T) {
 }
 
 func TestNormalizeAndReplayDedupKey(t *testing.T) {
-	if got := NormalizePath("/v1/users/123/orders/550e8400-e29b-41d4-a716-446655440000"); got != "/v1/users/{id}/orders/{id}" {
+	if got := NormalizePath("/v1/users/123/orders/550e8400-e29b-41d4-a716-446655440000"); got != "/v1/users/{userId}/orders/{orderId}" {
 		t.Fatalf("NormalizePath = %q", got)
 	}
-	if got := ReplayDedupKey("/v1/users/123?b=2&a=1&a=3"); got != "/v1/users/{id}?a={v}&b={v}" {
+	if got := ReplayDedupKey("/v1/users/123?b=2&a=1&a=3"); got != "/v1/users/{userId}?a={v}&b={v}" {
 		t.Fatalf("ReplayDedupKey = %q", got)
 	}
 }

@@ -17,7 +17,6 @@ apisniff recon DOMAIN [flags]
 | `--mode` | `cdp-launch` | `cdp-launch`, `cdp-attach`, or `proxy` |
 | `--remote-url` | | Chrome DevTools URL for `cdp-attach` |
 | `--headless` | `false` | Launch Chrome headless in `cdp-launch` |
-| `--wait` | `8s` | Extra wait after CDP navigation |
 | `--proxy` | | Reserved for future upstream proxy chaining |
 
 ## Examples
@@ -26,8 +25,8 @@ apisniff recon DOMAIN [flags]
 # Launch Chrome and capture via CDP
 apisniff recon example.com
 
-# Launch headless Chrome
-apisniff recon example.com --headless --wait 5s
+# Launch headless Chrome (Ctrl+C to stop)
+apisniff recon example.com --headless
 
 # Attach to an existing Chrome DevTools endpoint
 apisniff recon example.com --mode cdp-attach --remote-url http://127.0.0.1:9222

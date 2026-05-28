@@ -4,97 +4,24 @@ on:
   push:
     tags: ["v*"]
 
+permissions:
+  contents: write
+
 jobs:
-  publish:
+  release:
     runs-on: ubuntu-latest
-    permissions:
-      contents: write
     steps:
       - uses: actions/checkout@v4
-
-      - name: Install uv
-        uses: astral-sh/setup-uv@v5
-
-      - name: Set up Python
-        run: uv python install 3.12
-
-      - name: Install dependencies
-        run: uv sync
-
-      - name: Lint
-        run: uv run ruff check .
-
-      - name: Test
-        run: uv run pytest -v
-
-      - name: Build
-        run: uv build
-
-      - name: Publish to PyPI
-        run: uv publish
-        env:
-          UV_PUBLISH_TOKEN: ${{ secrets.PYPI_TOKEN }}
-
-      - name: Extract changelog
-        id: changelog
-        env:
-          TAG_NAME: ${{ github.ref_name }}
-        run: |
-          VERSION="${TAG_NAME#v}"
-          NOTES=$(awk "/^## \[${VERSION}\]/{found=1; next} /^## \[/{if(found) exit} found{print}" CHANGELOG.md)
-          echo "notes<<EOF" >> "$GITHUB_OUTPUT"
-          echo "$NOTES" >> "$GITHUB_OUTPUT"
-          echo "EOF" >> "$GITHUB_OUTPUT"
-
-      - name: Create GitHub Release
-        uses: softprops/action-gh-release@v2
         with:
-          body: ${{ steps.changelog.outputs.notes }}
-          files: dist/*
-
-      - name: Dispatch Homebrew formula update
+          fetch-depth: 0
+      - uses: actions/setup-go@v5
+        with:
+          go-version: '1.26'
+      - name: Test
+        run: go test ./... -v -count=1
+      - uses: goreleaser/goreleaser-action@v6
+        with:
+          version: '~> v2'
+          args: release --clean
         env:
-          TAG_NAME: ${{ github.ref_name }}
-          GH_TOKEN: ${{ secrets.HOMEBREW_TAP_TOKEN }}
-        run: |
-          if [ -z "$GH_TOKEN" ]; then
-            echo "::error::Set HOMEBREW_TAP_TOKEN with Actions read/write access to 4LAU/homebrew-tap."
-            exit 1
-          fi
-
-          request_id="apisniff-${TAG_NAME}-${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}"
-          expected_title="Update apisniff for ${TAG_NAME} (${request_id})"
-
-          gh workflow run update-python-formula.yml \
-            --repo 4LAU/homebrew-tap \
-            --ref main \
-            -f formula=apisniff \
-            -f tag="$TAG_NAME" \
-            -f repository="${{ github.repository }}" \
-            -f request_id="$request_id"
-
-          run_id=""
-          for _ in {1..30}; do
-            run_id=$(gh run list \
-              --repo 4LAU/homebrew-tap \
-              --workflow update-python-formula.yml \
-              --branch main \
-              --event workflow_dispatch \
-              --limit 20 \
-              --json databaseId,displayTitle \
-              --jq ".[] | select(.displayTitle == \"$expected_title\") | .databaseId" | head -n1)
-            if [ -n "$run_id" ]; then
-              break
-            fi
-            sleep 5
-          done
-
-          if [ -z "$run_id" ]; then
-            echo "::error::Could not find tap workflow run with title: $expected_title"
-            exit 1
-          fi
-
-          gh run watch "$run_id" \
-            --repo 4LAU/homebrew-tap \
-            --exit-status \
-            --interval 10
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

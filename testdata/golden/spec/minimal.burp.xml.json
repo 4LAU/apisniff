@@ -1,0 +1,246 @@
+{
+  "info": {
+    "description": "Auto-generated from captured traffic for example.com",
+    "title": "example.com API",
+    "version": "0.1.0"
+  },
+  "openapi": "3.0.3",
+  "paths": {
+    "/analytics/track": {
+      "post": {
+        "operationId": "postAnalyticsTrack",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "properties": {
+                  "event": {
+                    "type": "string"
+                  },
+                  "page": {
+                    "type": "string"
+                  }
+                },
+                "type": "object"
+              }
+            }
+          }
+        },
+        "responses": {
+          "204": {
+            "description": "No Content"
+          }
+        },
+        "tags": [
+          "analytic"
+        ],
+        "x-apisniff-observed": {
+          "content_types": [
+            "application/json"
+          ],
+          "flow_count": 1,
+          "hosts": [
+            "example.com"
+          ],
+          "methods": [
+            "POST"
+          ],
+          "status_codes": [
+            204
+          ]
+        }
+      }
+    },
+    "/api/users": {
+      "get": {
+        "operationId": "getApiUsers",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "items": {
+                    "properties": {
+                      "id": {
+                        "type": "integer"
+                      },
+                      "name": {
+                        "type": "string"
+                      }
+                    },
+                    "type": "object"
+                  },
+                  "type": "array"
+                }
+              }
+            },
+            "description": "OK"
+          }
+        },
+        "tags": [
+          "user"
+        ],
+        "x-apisniff-observed": {
+          "content_types": [
+            "application/json"
+          ],
+          "flow_count": 1,
+          "hosts": [
+            "example.com"
+          ],
+          "methods": [
+            "GET"
+          ],
+          "status_codes": [
+            200
+          ]
+        }
+      },
+      "post": {
+        "operationId": "postApiUsers",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "properties": {
+                  "name": {
+                    "type": "string"
+                  }
+                },
+                "type": "object"
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "properties": {
+                    "id": {
+                      "type": "integer"
+                    },
+                    "name": {
+                      "type": "string"
+                    }
+                  },
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Created"
+          }
+        },
+        "tags": [
+          "user"
+        ],
+        "x-apisniff-observed": {
+          "content_types": [
+            "application/json"
+          ],
+          "flow_count": 1,
+          "hosts": [
+            "example.com"
+          ],
+          "methods": [
+            "POST"
+          ],
+          "status_codes": [
+            201
+          ]
+        }
+      }
+    },
+    "/auth/login": {
+      "post": {
+        "operationId": "postAuthLogin",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "properties": {
+                  "password": {
+                    "type": "string"
+                  },
+                  "username": {
+                    "type": "string"
+                  }
+                },
+                "type": "object"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "properties": {
+                    "token": {
+                      "type": "string"
+                    }
+                  },
+                  "type": "object"
+                }
+              }
+            },
+            "description": "OK"
+          }
+        },
+        "tags": [
+          "auth"
+        ],
+        "x-apisniff-observed": {
+          "content_types": [
+            "application/json"
+          ],
+          "flow_count": 1,
+          "hosts": [
+            "example.com"
+          ],
+          "methods": [
+            "POST"
+          ],
+          "status_codes": [
+            200
+          ]
+        }
+      }
+    },
+    "/style.css": {
+      "get": {
+        "operationId": "getStyleCss",
+        "responses": {
+          "200": {
+            "description": "OK"
+          }
+        },
+        "tags": [
+          "style.css"
+        ],
+        "x-apisniff-observed": {
+          "content_types": [
+            "text/css"
+          ],
+          "flow_count": 1,
+          "hosts": [
+            "example.com"
+          ],
+          "methods": [
+            "GET"
+          ],
+          "status_codes": [
+            200
+          ]
+        }
+      }
+    }
+  },
+  "servers": [
+    {
+      "url": "https://example.com"
+    }
+  ]
+}

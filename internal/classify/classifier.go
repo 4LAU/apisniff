@@ -6,7 +6,7 @@ import (
 	"strings"
 	"sync"
 
-	"github.com/4LAU/apisniff-go/internal/model"
+	"github.com/4LAU/apisniff/internal/model"
 	"golang.org/x/net/publicsuffix"
 	"gopkg.in/yaml.v3"
 )
@@ -185,6 +185,9 @@ func (c *Classifier) learnCSP(flow model.CapturedFlow) {
 	}
 	for _, directive := range strings.Split(csp, ";") {
 		parts := strings.Fields(strings.TrimSpace(directive))
+		if len(parts) < 2 {
+			continue
+		}
 		for _, token := range parts[1:] {
 			token = strings.Trim(token, "'\"")
 			if token == "" || !strings.Contains(token, ".") {

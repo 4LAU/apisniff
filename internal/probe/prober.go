@@ -11,8 +11,8 @@ import (
 	"sync"
 	"time"
 
-	"github.com/4LAU/apisniff-go/internal/model"
-	"github.com/4LAU/apisniff-go/internal/vendor"
+	"github.com/4LAU/apisniff/internal/model"
+	"github.com/4LAU/apisniff/internal/vendor"
 	"github.com/enetx/g"
 	"github.com/enetx/surf"
 )

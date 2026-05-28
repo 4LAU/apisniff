@@ -9,8 +9,8 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/4LAU/apisniff-go/internal/capture"
-	"github.com/4LAU/apisniff-go/internal/model"
+	"github.com/4LAU/apisniff/internal/capture"
+	"github.com/4LAU/apisniff/internal/model"
 	"github.com/spf13/cobra"
 )
 
@@ -57,6 +57,42 @@ func TestAnalyzeJSONStdoutIsPure(t *testing.T) {
 	if payload["schema_version"].(float64) != 1 {
 		t.Fatalf("payload = %#v", payload)
 	}
+}
+
+func TestAnalyzeAutoDetectsDomain(t *testing.T) {
+	input := writeFlows(t, t.TempDir(),
+		`{"method":"GET","host":"api.mysite.com","path":"/v1/users","url":"https://api.mysite.com/v1/users","request_headers":{},"response_status":200,"response_headers":{"content-type":"application/json"},"_body_encoding":"base64","tags":[],"timestamp":1}`,
+		`{"method":"GET","host":"cdn.mysite.com","path":"/asset.png","url":"https://cdn.mysite.com/asset.png","request_headers":{},"response_status":200,"response_headers":{"content-type":"image/png"},"_body_encoding":"base64","tags":[],"timestamp":1}`,
+	)
+
+	stdout, stderr, err := executeForTest(newAnalyzeCommand(), input, "--json")
+	if err != nil {
+		t.Fatalf("analyze --json returned error: %v", err)
+	}
+	if stderr != "" {
+		t.Fatalf("stderr = %q, want empty", stderr)
+	}
+	var payload map[string]any
+	if err := json.Unmarshal([]byte(stdout), &payload); err != nil {
+		t.Fatalf("stdout was not JSON: %v\n%s", err, stdout)
+	}
+	if payload["domain"] != "mysite.com" {
+		t.Fatalf("domain = %v", payload["domain"])
+	}
+}
+
+func TestAnalyzeWarnsForAmbiguousAutoDetectedDomain(t *testing.T) {
+	input := writeFlows(t, t.TempDir(),
+		`{"method":"GET","host":"api.aaa.com","path":"/v1/x","url":"https://api.aaa.com/v1/x","request_headers":{},"response_status":200,"response_headers":{"content-type":"application/json"},"_body_encoding":"base64","tags":[],"timestamp":1}`,
+		`{"method":"GET","host":"api.bbb.com","path":"/v1/x","url":"https://api.bbb.com/v1/x","request_headers":{},"response_status":200,"response_headers":{"content-type":"application/json"},"_body_encoding":"base64","tags":[],"timestamp":1}`,
+	)
+
+	stdout, stderr, err := executeForTest(newAnalyzeCommand(), input, "--json")
+	if err != nil {
+		t.Fatalf("analyze --json returned error: %v", err)
+	}
+	assertPureJSON(t, stdout)
+	assertContains(t, stderr, "ambiguous domain", "aaa.com")
 }
 
 func TestAnalyzeFetchGraphQLRequiresOutputDir(t *testing.T) {

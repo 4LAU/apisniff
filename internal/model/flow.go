@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"regexp"
 	"sort"
+	"strconv"
 	"strings"
 	"time"
 )
@@ -28,6 +29,11 @@ type CapturedFlow struct {
 	BodyEncoding    string            `json:"_body_encoding"`
 	Tags            []string          `json:"tags"`
 	Timestamp       float64           `json:"timestamp"`
+}
+
+type PathParam struct {
+	Name          string
+	ObservedValue string
 }
 
 type flowJSON struct {
@@ -137,18 +143,97 @@ func GetHeader(headers map[string]string, name string) string {
 }
 
 func NormalizePath(path string) string {
+	normalized, _ := NormalizePathWithParams(path)
+	return normalized
+}
+
+func NormalizePathWithParams(path string) (string, []PathParam) {
 	pathPart := strings.SplitN(path, "?", 2)[0]
 	parts := strings.Split(pathPart, "/")
+	params := []PathParam{}
+	nameCounts := map[string]int{}
+	previousStatic := ""
 	for i, part := range parts {
-		if IsDynamicSegment(part) {
-			parts[i] = "{id}"
+		if part == "" {
+			continue
 		}
+		if IsDynamicSegment(part) {
+			prefix := pathParamPrefix(previousStatic)
+			baseName := "id"
+			if prefix != "id" {
+				baseName = prefix + "Id"
+			}
+			name := dedupeParamName(baseName, nameCounts)
+			parts[i] = "{" + name + "}"
+			params = append(params, PathParam{Name: name, ObservedValue: part})
+			continue
+		}
+		previousStatic = part
 	}
-	return strings.Join(parts, "/")
+	normalized := strings.Join(parts, "/")
+	if normalized == "" {
+		normalized = "/"
+	}
+	return normalized, params
 }
 
 func IsDynamicSegment(part string) bool {
 	return uuidRe.MatchString(part) || numericRe.MatchString(part) || hexRe.MatchString(part)
+}
+
+func pathParamPrefix(previousStatic string) string {
+	if previousStatic == "" {
+		return "id"
+	}
+	prefix := SingularizeSegment(previousStatic)
+	if len(prefix) < 3 {
+		prefix = previousStatic
+	}
+	return CamelName(prefix)
+}
+
+func dedupeParamName(base string, counts map[string]int) string {
+	counts[base]++
+	if counts[base] == 1 {
+		return base
+	}
+	return base + strconv.Itoa(counts[base])
+}
+
+func SingularizeSegment(segment string) string {
+	lower := strings.ToLower(segment)
+	switch {
+	case lower == "statuses":
+		return "status"
+	case strings.HasSuffix(lower, "sses") && len(segment) > 4:
+		return segment[:len(segment)-2]
+	case strings.HasSuffix(lower, "ies") && len(segment) > 4:
+		return segment[:len(segment)-3] + "y"
+	case strings.HasSuffix(lower, "s") && !strings.HasSuffix(lower, "ss") && !strings.HasSuffix(lower, "us") && len(segment) > 3:
+		return segment[:len(segment)-1]
+	default:
+		return segment
+	}
+}
+
+var nonAlnumRe = regexp.MustCompile(`[^0-9A-Za-z]+`)
+
+func CamelName(value string) string {
+	rawParts := nonAlnumRe.Split(value, -1)
+	parts := make([]string, 0, len(rawParts))
+	for _, part := range rawParts {
+		if part != "" {
+			parts = append(parts, part)
+		}
+	}
+	if len(parts) == 0 {
+		return "param"
+	}
+	out := strings.ToLower(parts[0])
+	for _, part := range parts[1:] {
+		out += strings.ToUpper(part[:1]) + part[1:]
+	}
+	return out
 }
 
 func ReplayDedupKey(path string) string {

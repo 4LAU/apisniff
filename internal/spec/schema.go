@@ -2,8 +2,8 @@ package spec
 
 import (
 	"encoding/json"
-	"reflect"
 	"regexp"
+	"sort"
 )
 
 const maxExampleLen = 200
@@ -12,6 +12,7 @@ const maxSchemaDepth = 20
 
 var secretRe = regexp.MustCompile(`(?i)(bearer |basic |eyj[A-Za-z0-9_-]{10,}|sk_|pk_|api_|ghp_|gho_|ghs_|glpat-|xox[bpsar]-|AKIA[0-9A-Z]{16}|wJalrX|-----BEGIN)`)
 var sensitiveFieldRe = regexp.MustCompile(`(?i)(password|passwd|(^|[_-])secret([_-]|$)|credential|api[_-]?key|private[_-]?key|access[_-]?token|refresh[_-]?token|client[_-]?secret|\bauth\b|authorization|auth[_-]|(^|[_-])token([_-]|$)|ssn|social[_-]?security|x-api-key|x-auth-token|x-access-token|x-csrf-token|x-xsrf-token)`)
+var mapKeyRe = regexp.MustCompile(`(?i)^(\d+|[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12})$`)
 
 func InferSchema(value any, includeExamples bool, fieldName string) map[string]any {
 	return inferSchemaRecursive(value, includeExamples, fieldName, maxSchemaDepth)
@@ -64,12 +65,22 @@ func inferSchemaRecursive(value any, includeExamples bool, fieldName string, dep
 		if len(typed) == 0 {
 			return map[string]any{"type": "array", "items": map[string]any{}}
 		}
-		merged := inferSchemaRecursive(typed[0], includeExamples, fieldName, depth-1)
-		for _, item := range typed[1:] {
+		merged := map[string]any{}
+		for _, item := range typed {
 			merged = MergeSchemas(merged, inferSchemaRecursive(item, includeExamples, fieldName, depth-1))
 		}
 		return map[string]any{"type": "array", "items": merged}
 	case map[string]any:
+		if len(typed) > 0 && allMapKeys(typed) {
+			additional := map[string]any{}
+			for _, child := range typed {
+				additional = MergeSchemas(additional, inferSchemaRecursive(child, includeExamples, fieldName, depth-1))
+			}
+			if len(additional) == 0 {
+				return map[string]any{"type": "object", "additionalProperties": true}
+			}
+			return map[string]any{"type": "object", "additionalProperties": additional}
+		}
 		props := map[string]any{}
 		for key, child := range typed {
 			props[key] = inferSchemaRecursive(child, includeExamples, key, depth-1)
@@ -103,25 +114,59 @@ func MergeSchemas(existing, new map[string]any) map[string]any {
 	existingType, _ := existing["type"].(string)
 	newType, _ := new["type"].(string)
 	if existingType != newType {
-		return mergeOneOf(existing, new)
+		eitherNullable := truthy(existing["nullable"]) || truthy(new["nullable"])
+		if (newType == "object" || newType == "array") && existingType != "object" && existingType != "array" {
+			result := copyMap(new)
+			if eitherNullable && !truthy(result["nullable"]) {
+				result["nullable"] = true
+			}
+			return result
+		}
+		if (existingType == "object" || existingType == "array") && newType != "object" && newType != "array" {
+			result := copyMap(existing)
+			if eitherNullable && !truthy(result["nullable"]) {
+				result["nullable"] = true
+			}
+			return result
+		}
+		result := map[string]any{"type": "string"}
+		if eitherNullable {
+			result["nullable"] = true
+		}
+		if observed := observedTypes(existing, new); len(observed) > 0 {
+			result["x-apisniff-observed-types"] = observed
+		}
+		return result
 	}
 	switch existingType {
 	case "object":
+		result := copyMap(existing)
+		if truthy(existing["nullable"]) || truthy(new["nullable"]) {
+			result["nullable"] = true
+		}
+		if _, ok := existing["additionalProperties"]; ok || new["additionalProperties"] != nil {
+			result["additionalProperties"] = mergeAdditionalProperties(existing["additionalProperties"], new["additionalProperties"])
+			delete(result, "properties")
+			return result
+		}
 		mergedProps := copyMap(asMap(existing["properties"]))
-		for key, value := range asMap(new["properties"]) {
+		newProps := asMap(new["properties"])
+		for key, value := range newProps {
 			if current, ok := mergedProps[key]; ok {
 				mergedProps[key] = MergeSchemas(asMap(current), asMap(value))
 			} else {
 				mergedProps[key] = value
 			}
 		}
-		result := copyMap(existing)
 		result["properties"] = mergedProps
 		return result
 	case "array":
 		existingItems := asMap(existing["items"])
 		newItems := asMap(new["items"])
 		result := copyMap(existing)
+		if truthy(existing["nullable"]) || truthy(new["nullable"]) {
+			result["nullable"] = true
+		}
 		switch {
 		case len(existingItems) == 0 && len(newItems) > 0:
 			result["items"] = newItems
@@ -130,45 +175,123 @@ func MergeSchemas(existing, new map[string]any) map[string]any {
 		}
 		return result
 	default:
-		return existing
+		result := copyMap(existing)
+		if truthy(existing["nullable"]) || truthy(new["nullable"]) {
+			result["nullable"] = true
+		}
+		if example, ok := mergeExample(existing, new); ok {
+			result["example"] = example
+		}
+		if observed := observedTypes(existing, new); len(observed) > 1 {
+			result["x-apisniff-observed-types"] = observed
+		}
+		return result
 	}
 }
 
-func mergeOneOf(schemas ...map[string]any) map[string]any {
-	var options []any
-	for _, schema := range schemas {
-		if len(schema) == 0 {
-			continue
-		}
-		if oneOf, ok := schema["oneOf"].([]any); ok {
-			options = appendUniqueSchema(options, oneOf...)
-			continue
-		}
-		options = appendUniqueSchema(options, schema)
-	}
-	if len(options) == 1 {
-		if only, ok := options[0].(map[string]any); ok {
-			return only
+func allMapKeys(value map[string]any) bool {
+	for key := range value {
+		if !mapKeyRe.MatchString(key) {
+			return false
 		}
 	}
-	return map[string]any{"oneOf": options}
+	return true
 }
 
-func appendUniqueSchema(options []any, schemas ...any) []any {
+func truthy(value any) bool {
+	typed, _ := value.(bool)
+	return typed
+}
+
+func observedTypes(schemas ...map[string]any) []any {
+	seen := map[string]struct{}{}
 	for _, schema := range schemas {
-		duplicate := false
-		for _, existing := range options {
-			if reflect.DeepEqual(existing, schema) {
-				duplicate = true
-				break
+		if schemaType, ok := schema["type"].(string); ok && schemaType != "" {
+			seen[schemaType] = struct{}{}
+		}
+		for _, value := range toAnySlice(schema["x-apisniff-observed-types"]) {
+			if str, ok := value.(string); ok && str != "" {
+				seen[str] = struct{}{}
 			}
 		}
-		if !duplicate {
-			options = append(options, schema)
-		}
 	}
-	return options
+	keys := make([]string, 0, len(seen))
+	for key := range seen {
+		keys = append(keys, key)
+	}
+	sort.Strings(keys)
+	out := make([]any, 0, len(keys))
+	for _, key := range keys {
+		out = append(out, key)
+	}
+	return out
 }
+
+func toAnySlice(value any) []any {
+	switch typed := value.(type) {
+	case []any:
+		return typed
+	case []string:
+		out := make([]any, 0, len(typed))
+		for _, value := range typed {
+			out = append(out, value)
+		}
+		return out
+	default:
+		return nil
+	}
+}
+
+func mergeAdditionalProperties(existing, new any) any {
+	if existing == true || new == true {
+		if existingMap, ok := existing.(map[string]any); ok {
+			return existingMap
+		}
+		if newMap, ok := new.(map[string]any); ok {
+			return newMap
+		}
+		return true
+	}
+	existingMap, existingOK := existing.(map[string]any)
+	newMap, newOK := new.(map[string]any)
+	switch {
+	case existingOK && newOK:
+		return MergeSchemas(existingMap, newMap)
+	case existingOK:
+		return existingMap
+	case newOK:
+		return newMap
+	default:
+		return true
+	}
+}
+
+func mergeExample(existing, new map[string]any) (any, bool) {
+	existingExample, existingOK := existing["example"]
+	newExample, newOK := new["example"]
+	switch {
+	case existingOK && newOK:
+		if exampleSortKey(existingExample) <= exampleSortKey(newExample) {
+			return existingExample, true
+		}
+		return newExample, true
+	case existingOK:
+		return existingExample, true
+	case newOK:
+		return newExample, true
+	default:
+		return nil, false
+	}
+}
+
+func exampleSortKey(value any) string {
+	data, err := json.Marshal(value)
+	if err != nil {
+		return ""
+	}
+	return string(data)
+}
+
 
 func addExample(schema map[string]any, value any, include bool, sensitive bool) {
 	if !include {
