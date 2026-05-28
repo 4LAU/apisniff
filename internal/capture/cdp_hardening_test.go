@@ -172,6 +172,9 @@ func quoteJSON(value []byte) string {
 
 func skipUnlessChrome(t *testing.T) {
 	t.Helper()
+	if runtime.GOOS == "windows" {
+		t.Skip("CDP tests skipped on Windows: Chrome debug websocket not reliable on CI runners")
+	}
 	path := FindChrome()
 	if runtime.GOOS == "darwin" && strings.HasPrefix(path, "/") {
 		if _, err := os.Stat(path); err == nil {
