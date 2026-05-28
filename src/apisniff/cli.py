@@ -61,7 +61,10 @@ def main(
         bool, typer.Option("--version", callback=_version_callback, is_eager=True)
     ] = False,
 ) -> None:
-    pass
+    stderr.print(
+        "[yellow]⚠ apisniff (Python) is deprecated. "
+        "Install the Go version: brew install 4LAU/tap/apisniff[/yellow]"
+    )
 
 
 @app.command()
