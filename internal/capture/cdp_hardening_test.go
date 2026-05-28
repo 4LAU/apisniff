@@ -19,9 +19,19 @@ import (
 	"github.com/gobwas/ws/wsutil"
 )
 
+func chromeTempDir(t *testing.T) string {
+	t.Helper()
+	dir, err := os.MkdirTemp("", "cdp-test-*")
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { os.RemoveAll(dir) })
+	return dir
+}
+
 func TestCDPCapturesLargeJSONResponseBody(t *testing.T) {
 	skipUnlessChrome(t)
-	t.Setenv("HOME", t.TempDir())
+	t.Setenv("HOME", chromeTempDir(t))
 	largePayload := strings.Repeat("a", 2*1024*1024)
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		switch r.URL.Path {
@@ -46,7 +56,7 @@ func TestCDPCapturesLargeJSONResponseBody(t *testing.T) {
 		URL:         server.URL,
 		Mode:        "cdp-launch",
 		Port:        freePort(t),
-		UserDataDir: t.TempDir(),
+		UserDataDir: chromeTempDir(t),
 		Headless:    true,
 		Timeout:     10 * time.Second,
 	})
@@ -71,7 +81,7 @@ func TestCDPCapturesLargeJSONResponseBody(t *testing.T) {
 
 func TestCDPCapturesWebSocketFrames(t *testing.T) {
 	skipUnlessChrome(t)
-	t.Setenv("HOME", t.TempDir())
+	t.Setenv("HOME", chromeTempDir(t))
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		switch r.URL.Path {
 		case "/":
@@ -105,7 +115,7 @@ func TestCDPCapturesWebSocketFrames(t *testing.T) {
 		URL:         server.URL,
 		Mode:        "cdp-launch",
 		Port:        freePort(t),
-		UserDataDir: t.TempDir(),
+		UserDataDir: chromeTempDir(t),
 		Headless:    true,
 		Timeout:     10 * time.Second,
 	})
