@@ -36,6 +36,9 @@ archives:
 checksum:
   name_template: checksums.txt
 
+release:
+  prerelease: auto
+
 brews:
   - name: apisniff
     ids:
