@@ -186,7 +186,9 @@ func TestSafeNameReplacesPortColon(t *testing.T) {
 
 func setHome(t *testing.T) {
 	t.Helper()
-	t.Setenv("HOME", t.TempDir())
+	tmp := t.TempDir()
+	t.Setenv("HOME", tmp)
+	t.Setenv("USERPROFILE", tmp)
 }
 
 func makeBundle(t *testing.T, name, sessionJSON, flows string) string {

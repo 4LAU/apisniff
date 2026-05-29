@@ -8,6 +8,7 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/4LAU/apisniff/internal/capture"
 	"github.com/4LAU/apisniff/internal/model"
@@ -420,7 +421,12 @@ func TestReplayJSONStdoutIsPure(t *testing.T) {
 
 func TestReconJSONStdoutIsPure(t *testing.T) {
 	previous := captureRun
-	t.Cleanup(func() { captureRun = previous })
+	previousCount := bundleCountOlderThan
+	t.Cleanup(func() {
+		captureRun = previous
+		bundleCountOlderThan = previousCount
+	})
+	bundleCountOlderThan = func(time.Duration) (int, error) { return 0, nil }
 	captureRun = func(_ context.Context, _ capture.Config) (*capture.Result, error) {
 		return &capture.Result{
 			BundleDir: "/tmp/apisniff/example",
