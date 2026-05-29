@@ -98,6 +98,12 @@ func Capture(ctx context.Context, cfg Config) (*Result, error) {
 	if err != nil {
 		return nil, err
 	}
+	writerClosed := false
+	defer func() {
+		if !writerClosed {
+			_ = writer.Close()
+		}
+	}()
 
 	signalCtx, stopSignals := signal.NotifyContext(ctx, gracefulSignals...)
 	defer stopSignals()
@@ -240,6 +246,7 @@ func Capture(ctx context.Context, cfg Config) (*Result, error) {
 		filteredWriterClosed = true
 		filteredCloseOK = filteredWriter.Close() == nil
 	}
+	writerClosed = true
 	if err := writer.Close(); err != nil {
 		return nil, err
 	}
