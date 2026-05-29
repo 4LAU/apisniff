@@ -1,6 +1,7 @@
 package report
 
 import (
+	"errors"
 	"os"
 	"path/filepath"
 
@@ -69,18 +70,22 @@ func Share(opts ShareOptions) (ShareResult, error) {
 	}
 	files = append(files, "report.md")
 
-	if err := copySession(bundleDir, outputDir); err != nil {
+	if copied, err := copySession(bundleDir, outputDir); err != nil {
 		return ShareResult{}, err
+	} else if copied {
+		files = append(files, "session.json")
 	}
-	files = append(files, "session.json")
 
 	return ShareResult{OutputDir: outputDir, Files: files}, nil
 }
 
-func copySession(bundleDir string, outputDir string) error {
+func copySession(bundleDir string, outputDir string) (bool, error) {
 	data, err := os.ReadFile(filepath.Join(bundleDir, "session.json"))
 	if err != nil {
-		return err
+		if errors.Is(err, os.ErrNotExist) {
+			return false, nil
+		}
+		return false, err
 	}
-	return os.WriteFile(filepath.Join(outputDir, "session.json"), data, 0o600)
+	return true, os.WriteFile(filepath.Join(outputDir, "session.json"), data, 0o600)
 }

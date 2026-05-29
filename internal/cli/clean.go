@@ -52,14 +52,17 @@ func newCleanCommand() *cobra.Command {
 				All:       all,
 				Now:       nowUTC(),
 			})
-			result := output.CleanResult{
-				DryRun:  dryRun,
-				Deleted: make([]output.BundleSummary, 0, len(matches)),
-			}
+			planned := make([]output.BundleSummary, 0, len(matches))
+			var plannedSize int64
 			for _, match := range matches {
 				summary := bundleSummary(match)
-				result.Deleted = append(result.Deleted, summary)
-				result.TotalSizeBytes += summary.SizeBytes
+				planned = append(planned, summary)
+				plannedSize += summary.SizeBytes
+			}
+			preview := output.CleanResult{
+				DryRun:         dryRun,
+				Deleted:        planned,
+				TotalSizeBytes: plannedSize,
 			}
 
 			if len(matches) > 0 && !dryRun {
@@ -67,7 +70,7 @@ func newCleanCommand() *cobra.Command {
 					return errors.New("confirmation required; rerun with --yes or --dry-run")
 				}
 				if !yes {
-					if err := output.WriteCleanConfirmation(humanOutputConfig(cmd), result); err != nil {
+					if err := output.WriteCleanConfirmation(humanOutputConfig(cmd), preview); err != nil {
 						return err
 					}
 					ok, err := confirmClean(cmd.InOrStdin())
@@ -78,11 +81,23 @@ func newCleanCommand() *cobra.Command {
 						return errors.New("clean canceled")
 					}
 				}
-				for _, match := range matches {
+			}
+
+			result := output.CleanResult{
+				DryRun:  dryRun,
+				Deleted: make([]output.BundleSummary, 0, len(matches)),
+			}
+			if !dryRun {
+				for i, match := range matches {
 					if err := bundleDelete(match); err != nil {
 						return err
 					}
+					result.Deleted = append(result.Deleted, planned[i])
+					result.TotalSizeBytes += planned[i].SizeBytes
 				}
+			} else {
+				result.Deleted = planned
+				result.TotalSizeBytes = plannedSize
 			}
 			if jsonOutput {
 				return writeJSON(cmd.OutOrStdout(), result)

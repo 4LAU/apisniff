@@ -87,7 +87,10 @@ func Run(ctx context.Context, opts Options) (Summary, error) {
 	if err != nil {
 		return Summary{}, err
 	}
-	filtered := filterByPattern(deduplicate(flows), opts.Filter)
+	filtered, err := filterByPattern(deduplicate(flows), opts.Filter)
+	if err != nil {
+		return Summary{}, err
+	}
 	safe, unsafe := FilterFlows(filtered, opts.IncludeUnsafe)
 	if opts.DryRun {
 		endpoints := make([]string, 0, len(filtered))
@@ -282,9 +285,12 @@ func domainFromFlowsPath(path string) string {
 	return base
 }
 
-func filterByPattern(flows []model.CapturedFlow, pattern string) []model.CapturedFlow {
+func filterByPattern(flows []model.CapturedFlow, pattern string) ([]model.CapturedFlow, error) {
 	if pattern == "" {
-		return flows
+		return flows, nil
+	}
+	if _, err := filepath.Match(pattern, ""); err != nil {
+		return nil, fmt.Errorf("invalid filter pattern %q: %w", pattern, err)
 	}
 	out := make([]model.CapturedFlow, 0, len(flows))
 	for _, flow := range flows {
@@ -292,7 +298,7 @@ func filterByPattern(flows []model.CapturedFlow, pattern string) []model.Capture
 			out = append(out, flow)
 		}
 	}
-	return out
+	return out, nil
 }
 
 func deduplicate(flows []model.CapturedFlow) []model.CapturedFlow {

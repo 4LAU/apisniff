@@ -102,6 +102,11 @@ func Delete(bundle Bundle) error {
 	if bundle.Path == "" {
 		return fmt.Errorf("bundle path is required")
 	}
+	cleaned := filepath.Clean(bundle.Path)
+	prefix := filepath.Clean(Dir()) + string(filepath.Separator)
+	if !strings.HasPrefix(cleaned, prefix) {
+		return fmt.Errorf("refusing to delete %s: not inside captures directory %s", bundle.Path, Dir())
+	}
 	return os.RemoveAll(bundle.Path)
 }
 

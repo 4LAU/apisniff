@@ -3,6 +3,7 @@ package bundle
 import (
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 	"time"
 )
@@ -120,6 +121,21 @@ func TestDeleteRemovesDirectory(t *testing.T) {
 	}
 	if _, err := os.Stat(path); !os.IsNotExist(err) {
 		t.Fatalf("Stat deleted path error = %v, want not exist", err)
+	}
+}
+
+func TestDeleteRefusesPathOutsideCapturesDir(t *testing.T) {
+	setHome(t)
+	outside := t.TempDir()
+	err := Delete(Bundle{Path: outside})
+	if err == nil {
+		t.Fatal("Delete() should refuse paths outside captures directory")
+	}
+	if !strings.Contains(err.Error(), "refusing to delete") {
+		t.Fatalf("Delete() error = %q, want 'refusing to delete'", err.Error())
+	}
+	if _, statErr := os.Stat(outside); os.IsNotExist(statErr) {
+		t.Fatal("directory was deleted despite path guard")
 	}
 }
 

@@ -247,6 +247,22 @@ func TestRunAppliesGlobFilterBeforeReplay(t *testing.T) {
 	}
 }
 
+func TestRunRejectsInvalidFilterPattern(t *testing.T) {
+	dir := t.TempDir()
+	flowsPath := filepath.Join(dir, "flows.jsonl")
+	writeFlows(t, flowsPath, []model.CapturedFlow{
+		serverFlow("http://localhost", "GET", "/api", http.StatusOK, nil, nil, nil),
+	})
+
+	_, err := Run(context.Background(), Options{BundleOrDomain: flowsPath, Filter: "[", Timeout: time.Second})
+	if err == nil {
+		t.Fatal("expected error for invalid filter pattern")
+	}
+	if !strings.Contains(err.Error(), "invalid filter pattern") {
+		t.Fatalf("error = %q, want 'invalid filter pattern'", err.Error())
+	}
+}
+
 func TestReplayOneDetectsMatchDriftAuthExpiredAndBlocked(t *testing.T) {
 	tests := []struct {
 		name           string
