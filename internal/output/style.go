@@ -45,9 +45,9 @@ func newStyles(cfg Config) styles {
 		panelS:  lipgloss.NewStyle().PaddingLeft(2).Width(cfg.Width - 2),
 	}
 	if cfg.Color {
-		s.headerS = s.headerS.Bold(true).Foreground(lipgloss.ANSIColor(63))
+		s.headerS = s.headerS.Bold(true).Foreground(lipgloss.ANSIColor(37))
 		s.faintS = s.faintS.Foreground(lipgloss.ANSIColor(241))
-		s.panelS = s.panelS.BorderForeground(lipgloss.ANSIColor(63))
+		s.panelS = s.panelS.BorderForeground(lipgloss.ANSIColor(37))
 	}
 	s.panelS = s.panelS.Border(s.border(), false, false, false, true).PaddingLeft(1)
 	return s
@@ -94,7 +94,7 @@ func (s styles) headerBox(command, target string) string {
 		Width(width).
 		Padding(0, 1)
 	if s.cfg.Color {
-		style = style.BorderForeground(lipgloss.ANSIColor(63)).Foreground(lipgloss.ANSIColor(39))
+		style = style.BorderForeground(lipgloss.ANSIColor(37)).Foreground(lipgloss.ANSIColor(39))
 	}
 	return style.Render(truncate(title, width))
 }
@@ -126,7 +126,7 @@ func (s styles) table(headers []string, rows [][]string, styleFn table.StyleFunc
 	borderStyle := lipgloss.NewStyle()
 	headerStyle := lipgloss.NewStyle()
 	if s.cfg.Color {
-		borderStyle = borderStyle.Foreground(lipgloss.ANSIColor(63))
+		borderStyle = borderStyle.Foreground(lipgloss.ANSIColor(37))
 		headerStyle = headerStyle.Bold(true).Foreground(lipgloss.ANSIColor(39))
 	}
 	t = t.BorderStyle(borderStyle)

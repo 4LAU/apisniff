@@ -13,13 +13,14 @@ import (
 )
 
 func NewBrowserContext(ctx context.Context, mode string, port int, userDataDir string, attachURL string, headless bool) (context.Context, context.CancelFunc, error) {
+	silentLog := chromedp.WithLogf(func(string, ...interface{}) {})
 	switch mode {
 	case "cdp-attach":
 		if attachURL == "" {
 			attachURL = fmt.Sprintf("http://127.0.0.1:%d", port)
 		}
 		allocCtx, allocCancel := chromedp.NewRemoteAllocator(ctx, attachURL)
-		browserCtx, browserCancel := chromedp.NewContext(allocCtx)
+		browserCtx, browserCancel := chromedp.NewContext(allocCtx, silentLog)
 		return browserCtx, func() {
 			browserCancel()
 			allocCancel()
@@ -47,7 +48,7 @@ func NewBrowserContext(ctx context.Context, mode string, port int, userDataDir s
 			chromedp.NoDefaultBrowserCheck,
 		)
 		allocCtx, allocCancel := chromedp.NewExecAllocator(ctx, opts...)
-		browserCtx, browserCancel := chromedp.NewContext(allocCtx)
+		browserCtx, browserCancel := chromedp.NewContext(allocCtx, silentLog)
 		return browserCtx, func() {
 			browserCancel()
 			allocCancel()

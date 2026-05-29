@@ -7,6 +7,8 @@ import (
 	"strings"
 	"sync/atomic"
 	"time"
+
+	"github.com/charmbracelet/x/term"
 )
 
 type statusLine struct {
@@ -21,12 +23,18 @@ func newStatusLine(w io.Writer, message string, count *atomic.Int64) *statusLine
 	if w == nil {
 		w = io.Discard
 	}
+	width := 80
+	if file, ok := w.(*os.File); ok {
+		if cols, _, err := term.GetSize(file.Fd()); err == nil && cols > 0 {
+			width = cols
+		}
+	}
 	return &statusLine{
 		writer:  w,
 		message: message,
 		count:   count,
 		done:    make(chan struct{}),
-		width:   80,
+		width:   width,
 	}
 }
 
@@ -56,17 +64,15 @@ func (s *statusLine) stop() {
 func (s *statusLine) render(dots int) {
 	n := s.count.Load()
 	dotStr := strings.Repeat(".", dots) + strings.Repeat(" ", 3-dots)
-	line := fmt.Sprintf("\r%s%s %d flows", s.message, dotStr, n)
-	pad := s.width - len(line)
-	if pad > 0 {
-		line += strings.Repeat(" ", pad)
+	line := fmt.Sprintf("%s%s %d flows", s.message, dotStr, n)
+	if len(line) >= s.width {
+		line = line[:s.width-1]
 	}
-	fmt.Fprint(s.writer, line)
+	fmt.Fprintf(s.writer, "\033[2K\r%s", line)
 }
 
 func (s *statusLine) clear() {
-	// \r moves to start, then overwrite the full line (including any ^C the terminal echoed)
-	fmt.Fprintf(s.writer, "\r%s\r", strings.Repeat(" ", s.width))
+	fmt.Fprint(s.writer, "\033[2K\r")
 }
 
 func isTerminal(w io.Writer) bool {
