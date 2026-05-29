@@ -1,15 +1,12 @@
 package report
 
 import (
-	"fmt"
 	"os"
 	"path/filepath"
-	"sort"
-	"strings"
 
 	"github.com/4LAU/apisniff/internal/adapter"
 	"github.com/4LAU/apisniff/internal/auth"
-	"github.com/4LAU/apisniff/internal/capture"
+	"github.com/4LAU/apisniff/internal/bundle"
 	"github.com/4LAU/apisniff/internal/spec"
 )
 
@@ -25,10 +22,11 @@ type ShareResult struct {
 }
 
 func Share(opts ShareOptions) (ShareResult, error) {
-	bundleDir, err := resolveBundleDir(opts.BundleOrDomain)
+	resolved, err := bundle.Resolve(opts.BundleOrDomain)
 	if err != nil {
 		return ShareResult{}, err
 	}
+	bundleDir := resolved.Path
 	outputDir := opts.OutputDir
 	if outputDir == "" {
 		outputDir = filepath.Join(bundleDir, "share")
@@ -40,7 +38,14 @@ func Share(opts ShareOptions) (ShareResult, error) {
 	if err != nil {
 		return ShareResult{}, err
 	}
-	domain := domainFromSession(bundleDir, opts.Domain)
+	domain := opts.Domain
+	if domain == "" {
+		domain = resolved.Domain
+	}
+	if domain == "" {
+		domain = resolved.SafeName
+	}
+	domain = domainFromSession(bundleDir, domain)
 	inventory := BuildInventory(flows, domain)
 
 	files := []string{}
@@ -70,31 +75,6 @@ func Share(opts ShareOptions) (ShareResult, error) {
 	files = append(files, "session.json")
 
 	return ShareResult{OutputDir: outputDir, Files: files}, nil
-}
-
-func resolveBundleDir(bundleOrDomain string) (string, error) {
-	if bundleOrDomain == "" {
-		return "", fmt.Errorf("bundle or domain is required")
-	}
-	if info, err := os.Stat(bundleOrDomain); err == nil && info.IsDir() {
-		return bundleOrDomain, nil
-	}
-	safe := strings.NewReplacer(".", "-", "/", "-").Replace(bundleOrDomain)
-	matches, err := filepath.Glob(filepath.Join(capture.CapturesDir(), safe+"_*"))
-	if err != nil {
-		return "", err
-	}
-	var dirs []string
-	for _, match := range matches {
-		if info, err := os.Stat(match); err == nil && info.IsDir() {
-			dirs = append(dirs, match)
-		}
-	}
-	if len(dirs) == 0 {
-		return "", fmt.Errorf("no capture bundle found for %s", bundleOrDomain)
-	}
-	sort.Sort(sort.Reverse(sort.StringSlice(dirs)))
-	return dirs[0], nil
 }
 
 func copySession(bundleDir string, outputDir string) error {

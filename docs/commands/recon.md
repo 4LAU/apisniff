@@ -45,6 +45,8 @@ CDP capture records API responses, response body size metadata, and WebSocket ha
 
 `proxy` starts a local MITM proxy with HTTP/2 support. For HTTPS capture, route your client through `127.0.0.1:<port>` and trust `~/.apisniff/ca-cert.pem` in that client profile. The CA private key is stored at `~/.apisniff/ca-key.pem`.
 
+Raw capture bundles persist until explicitly cleaned. Passive recon warns when local bundles are older than 30 days so you can review them with `apisniff bundles` and delete unneeded bundles with `apisniff clean`.
+
 ---
 
 [All commands](../../README.md#commands) · [CLI spec](../spec.md)

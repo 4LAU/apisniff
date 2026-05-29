@@ -14,6 +14,7 @@ import (
 
 	"github.com/4LAU/apisniff/internal/adapter"
 	"github.com/4LAU/apisniff/internal/auth"
+	"github.com/4LAU/apisniff/internal/bundle"
 	"github.com/4LAU/apisniff/internal/capture"
 	"github.com/4LAU/apisniff/internal/model"
 	"github.com/4LAU/apisniff/internal/output"
@@ -34,6 +35,7 @@ func Execute() error {
 var Version = "dev"
 
 var captureRun = capture.Capture
+var bundleCountOlderThan = bundle.CountOlderThan
 
 type headerFlags []string
 
@@ -57,6 +59,8 @@ func newRootCommand() *cobra.Command {
 	root.AddCommand(newReplayCommand())
 	root.AddCommand(newSpecCommand())
 	root.AddCommand(newShareCommand())
+	root.AddCommand(newBundlesCommand())
+	root.AddCommand(newCleanCommand())
 	return root
 }
 
@@ -151,6 +155,9 @@ func newReconCommand() *cobra.Command {
 				return errors.New("--proxy as an upstream proxy is not implemented; use --mode proxy to run the apisniff MITM proxy")
 			}
 			domain, launchURL := normalizeTarget(args[0])
+			if oldBundles, err := bundleCountOlderThan(30 * 24 * time.Hour); err == nil && oldBundles > 0 {
+				fmt.Fprintf(cmd.ErrOrStderr(), "Warning: %d capture bundle(s) are older than 30 days; run apisniff clean --older-than 30d to remove stale captures.\n", oldBundles)
+			}
 			result, err := captureRun(cmd.Context(), capture.Config{
 				Domain:       domain,
 				URL:          launchURL,
@@ -349,11 +356,11 @@ func newSpecCommand() *cobra.Command {
 			domain := args[0]
 			path := inputFile
 			if path == "" {
-				latest, err := findLatestBundle(domain)
+				latest, err := bundle.Resolve(domain)
 				if err != nil {
 					return err
 				}
-				path = filepath.Join(latest, "flows.jsonl")
+				path = filepath.Join(latest.Path, "flows.jsonl")
 			}
 			flows, inputFormat, err := adapter.LoadFlows(path)
 			if err != nil {
@@ -461,26 +468,6 @@ func newShareCommand() *cobra.Command {
 	cmd.Flags().StringVar(&domain, "domain", "", "domain override")
 	cmd.Flags().BoolVar(&jsonOut, "json", false, "output as JSON")
 	return cmd
-}
-
-func findLatestBundle(domain string) (string, error) {
-	safe := strings.NewReplacer(".", "-", "/", "-").Replace(domain)
-	pattern := filepath.Join(capture.CapturesDir(), safe+"_*")
-	matches, err := filepath.Glob(pattern)
-	if err != nil {
-		return "", err
-	}
-	var dirs []string
-	for _, match := range matches {
-		if info, err := os.Stat(match); err == nil && info.IsDir() {
-			dirs = append(dirs, match)
-		}
-	}
-	if len(dirs) == 0 {
-		return "", fmt.Errorf("no captures found for %s; run recon first or pass --input", domain)
-	}
-	sort.Sort(sort.Reverse(sort.StringSlice(dirs)))
-	return dirs[0], nil
 }
 
 func parseHeaders(values []string) (map[string]string, error) {

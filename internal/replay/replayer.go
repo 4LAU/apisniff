@@ -15,7 +15,7 @@ import (
 	"time"
 
 	"github.com/4LAU/apisniff/internal/adapter"
-	"github.com/4LAU/apisniff/internal/capture"
+	"github.com/4LAU/apisniff/internal/bundle"
 	"github.com/4LAU/apisniff/internal/model"
 	"github.com/enetx/surf"
 )
@@ -79,7 +79,7 @@ func Run(ctx context.Context, opts Options) (Summary, error) {
 	if opts.Timeout == 0 {
 		opts.Timeout = 15 * time.Second
 	}
-	flowsPath, domain, err := resolveFlowsPath(opts.BundleOrDomain)
+	flowsPath, domain, err := resolveReplayInput(opts.BundleOrDomain)
 	if err != nil {
 		return Summary{}, err
 	}
@@ -241,31 +241,37 @@ func FilterFlows(flows []model.CapturedFlow, includeUnsafe bool) ([]model.Captur
 	return safe, unsafe
 }
 
-func resolveFlowsPath(bundleOrDomain string) (string, string, error) {
+func resolveReplayInput(bundleOrDomain string) (string, string, error) {
 	if bundleOrDomain == "" {
 		return "", "", fmt.Errorf("bundle or domain is required")
 	}
 	if fileExists(bundleOrDomain) {
 		return bundleOrDomain, domainFromFlowsPath(bundleOrDomain), nil
 	}
-	if abs, err := filepath.Abs(bundleOrDomain); err == nil {
-		flows := filepath.Join(abs, "flows.jsonl")
-		if fileExists(flows) {
-			return flows, filepath.Base(abs), nil
-		}
+	resolved, err := bundle.Resolve(bundleOrDomain)
+	if err != nil {
+		return "", bundleOrDomain, err
 	}
-	safe := strings.NewReplacer(".", "-", "/", "-").Replace(bundleOrDomain)
-	matches, _ := filepath.Glob(filepath.Join(capture.CapturesDir(), safe+"_*", "flows.jsonl"))
-	if len(matches) == 0 {
-		return "", bundleOrDomain, fmt.Errorf("no flows found for %s", bundleOrDomain)
+	flowsPath := filepath.Join(resolved.Path, "flows.jsonl")
+	if !fileExists(flowsPath) {
+		return "", bundleDomain(resolved, bundleOrDomain), fmt.Errorf("no flows found for %s", bundleOrDomain)
 	}
-	sort.Sort(sort.Reverse(sort.StringSlice(matches)))
-	return matches[0], bundleOrDomain, nil
+	return flowsPath, bundleDomain(resolved, bundleOrDomain), nil
 }
 
 func fileExists(path string) bool {
 	info, err := os.Stat(path)
 	return err == nil && !info.IsDir()
+}
+
+func bundleDomain(resolved bundle.Bundle, fallback string) string {
+	if resolved.Domain != "" {
+		return resolved.Domain
+	}
+	if resolved.SafeName != "" {
+		return resolved.SafeName
+	}
+	return fallback
 }
 
 func domainFromFlowsPath(path string) string {

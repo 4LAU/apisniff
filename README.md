@@ -44,6 +44,13 @@ apisniff spec example.com -o spec.yaml
 # Replay captured calls to detect drift
 apisniff replay example.com
 
+# List local capture bundles
+apisniff bundles
+
+# Remove old capture bundles after review
+apisniff clean --older-than 30d --dry-run
+apisniff clean --older-than 30d --yes
+
 # Export a safe, shareable summary
 apisniff share example.com
 ```
@@ -58,6 +65,8 @@ apisniff share example.com
 | [`replay`](docs/commands/replay.md) | Replay captured calls and detect API drift | [Reference →](docs/commands/replay.md) |
 | [`spec`](docs/commands/spec.md) | Generate OpenAPI 3.0.3 from captured traffic | [Reference →](docs/commands/spec.md) |
 | [`share`](docs/commands/share.md) | Export shareable summary (no raw traffic, no credentials) | [Reference →](docs/commands/share.md) |
+| `bundles` | List local capture bundles; add `--credentials` to opt into credential detection and `--json` for machine output | `apisniff bundles --help` |
+| `clean` | Explicitly delete local capture bundles with `--older-than`, `--domain`, `--all`, `--yes`, `--dry-run`, and `--json` | `apisniff clean --help` |
 
 Every command supports `--help` for full flag documentation. See the [CLI spec](docs/spec.md) for output format contracts and conventions.
 
@@ -81,6 +90,8 @@ Results reflect your IP's reputation. Residential IPs see fewer challenges than 
 
 `recon` and `analyze` capture **full HTTP traffic** including cookies, auth tokens, API keys, and form submissions. Raw bundles are stored locally with owner-only permissions and are **never safe to share, commit, or upload**.
 
+Raw capture bundles persist until you explicitly remove them. Use `apisniff bundles` for a metadata-only inventory, `apisniff bundles --credentials` when you intentionally want local credential detection, and `apisniff clean --dry-run` before deleting bundles with `apisniff clean --yes`. `clean` is explicit and does not auto-delete captures.
+
 Use `apisniff share` to create a safe export with only derived artifacts.
 
 ### Recon capture modes
@@ -100,6 +111,8 @@ CDP modes only record traffic from the Chrome session apisniff launches or attac
 Other apps, other browser windows, background services, and normal device traffic are not routed through apisniff unless you configure them for the same capture mode. apisniff does not turn on device-wide network capture, install a VPN, or monitor traffic outside the chosen session.
 
 Press **Ctrl+C** to end a proxy capture session. If you see a port-in-use error, another capture session is probably still running on that port.
+
+When passive recon finds capture bundles older than 30 days, apisniff warns so you can review and clean them deliberately.
 
 ## What to do with the spec
 
