@@ -36,10 +36,11 @@ type Config struct {
 }
 
 type Result struct {
-	BundleDir string             `json:"bundle_dir"`
-	FlowsPath string             `json:"flows_path"`
-	CAPath    string             `json:"ca_path,omitempty"`
-	Stats     model.SessionStats `json:"stats"`
+	BundleDir    string             `json:"bundle_dir"`
+	FlowsPath    string             `json:"flows_path"`
+	FilteredPath string             `json:"filtered_path,omitempty"`
+	CAPath       string             `json:"ca_path,omitempty"`
+	Stats        model.SessionStats `json:"stats"`
 }
 
 type partialFlow struct {
@@ -195,6 +196,15 @@ func Capture(ctx context.Context, cfg Config) (*Result, error) {
 		status.stop()
 	}
 	rec.bodyWG.Wait()
+	filteredPath := FilteredPath(bundle)
+	var filteredWriter *JSONLWriter
+	filteredWriterClosed := true
+	filteredWriterDisabled := false
+	defer func() {
+		if !filteredWriterClosed && filteredWriter != nil {
+			_ = filteredWriter.Close()
+		}
+	}()
 	for _, flow := range rec.snapshotFlows() {
 		classification, kept := classifier.Classify(flow)
 		if classification.Action == "drop" {
@@ -203,6 +213,18 @@ func Capture(ctx context.Context, cfg Config) (*Result, error) {
 				dropKey = string(classification.Category)
 			}
 			rec.dropped[dropKey]++
+			if filteredWriter == nil && !filteredWriterDisabled {
+				var err error
+				filteredWriter, err = NewJSONLWriter(filteredPath)
+				if err != nil {
+					filteredWriterDisabled = true
+				} else {
+					filteredWriterClosed = false
+				}
+			}
+			if filteredWriter != nil {
+				_ = filteredWriter.Write(prepareFilteredFlow(flow, classification))
+			}
 			continue
 		}
 		if kept == nil {
@@ -213,8 +235,17 @@ func Capture(ctx context.Context, cfg Config) (*Result, error) {
 			return nil, err
 		}
 	}
+	filteredCloseOK := false
+	if filteredWriter != nil {
+		filteredWriterClosed = true
+		filteredCloseOK = filteredWriter.Close() == nil
+	}
 	if err := writer.Close(); err != nil {
 		return nil, err
+	}
+	resultFilteredPath := ""
+	if filteredCloseOK && filteredWriter.Count() > 0 {
+		resultFilteredPath = filteredPath
 	}
 	stats := model.SessionStats{
 		Domain:          cfg.Domain,
@@ -230,7 +261,7 @@ func Capture(ctx context.Context, cfg Config) (*Result, error) {
 	if runErr != nil && writer.Count() == 0 {
 		return nil, runErr
 	}
-	return &Result{BundleDir: bundle, FlowsPath: flowsPath, Stats: stats}, nil
+	return &Result{BundleDir: bundle, FlowsPath: flowsPath, FilteredPath: resultFilteredPath, Stats: stats}, nil
 }
 
 func (r *recorder) listen(ctx context.Context) func(any) {

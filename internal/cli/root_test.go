@@ -450,6 +450,126 @@ func TestReconJSONStdoutIsPure(t *testing.T) {
 	}
 }
 
+func TestReconJSONIncludesFilteredPath(t *testing.T) {
+	previous := captureRun
+	previousCount := bundleCountOlderThan
+	t.Cleanup(func() {
+		captureRun = previous
+		bundleCountOlderThan = previousCount
+	})
+	bundleCountOlderThan = func(time.Duration) (int, error) { return 0, nil }
+	captureRun = func(_ context.Context, _ capture.Config) (*capture.Result, error) {
+		return &capture.Result{
+			BundleDir:    "/tmp/apisniff/example",
+			FlowsPath:    "/tmp/apisniff/example/flows.jsonl",
+			FilteredPath: "/tmp/apisniff/example/filtered.jsonl",
+			Stats: model.SessionStats{
+				Domain:     "example.com",
+				TotalFlows: 5,
+				KeptFlows:  2,
+				Dropped: map[string]int{
+					"telemetry": 2,
+					"static":    1,
+				},
+			},
+		}, nil
+	}
+
+	stdout, stderr, err := executeForTest(newReconCommand(), "example.com", "--json")
+	if err != nil {
+		t.Fatalf("recon --json returned error: %v", err)
+	}
+	if stderr != "" {
+		t.Fatalf("stderr = %q, want empty", stderr)
+	}
+	var payload map[string]any
+	if err := json.Unmarshal([]byte(stdout), &payload); err != nil {
+		t.Fatalf("stdout was not JSON: %v\n%s", err, stdout)
+	}
+	if payload["filtered_path"] != "/tmp/apisniff/example/filtered.jsonl" {
+		t.Fatalf("filtered_path = %v", payload["filtered_path"])
+	}
+}
+
+func TestReconJSONOmitsFilteredPathWhenWriterFailed(t *testing.T) {
+	previous := captureRun
+	previousCount := bundleCountOlderThan
+	t.Cleanup(func() {
+		captureRun = previous
+		bundleCountOlderThan = previousCount
+	})
+	bundleCountOlderThan = func(time.Duration) (int, error) { return 0, nil }
+	captureRun = func(_ context.Context, _ capture.Config) (*capture.Result, error) {
+		return &capture.Result{
+			BundleDir: "/tmp/apisniff/example",
+			FlowsPath: "/tmp/apisniff/example/flows.jsonl",
+			Stats: model.SessionStats{
+				Domain:     "example.com",
+				TotalFlows: 4,
+				KeptFlows:  1,
+				Dropped: map[string]int{
+					"telemetry": 3,
+				},
+			},
+		}, nil
+	}
+
+	stdout, stderr, err := executeForTest(newReconCommand(), "example.com", "--json")
+	if err != nil {
+		t.Fatalf("recon --json returned error: %v", err)
+	}
+	if stderr != "" {
+		t.Fatalf("stderr = %q, want empty", stderr)
+	}
+	var payload map[string]any
+	if err := json.Unmarshal([]byte(stdout), &payload); err != nil {
+		t.Fatalf("stdout was not JSON: %v\n%s", err, stdout)
+	}
+	if _, ok := payload["filtered_path"]; ok {
+		t.Fatalf("filtered_path present when capture result left it empty: %#v", payload)
+	}
+	stats := payload["stats"].(map[string]any)
+	dropped := stats["dropped"].(map[string]any)
+	if int(dropped["telemetry"].(float64)) != 3 {
+		t.Fatalf("dropped telemetry = %v, want 3", dropped["telemetry"])
+	}
+}
+
+func TestReconHumanReportsFilteredCountAndPath(t *testing.T) {
+	previous := captureRun
+	previousCount := bundleCountOlderThan
+	t.Cleanup(func() {
+		captureRun = previous
+		bundleCountOlderThan = previousCount
+	})
+	bundleCountOlderThan = func(time.Duration) (int, error) { return 0, nil }
+	captureRun = func(_ context.Context, _ capture.Config) (*capture.Result, error) {
+		return &capture.Result{
+			BundleDir:    "/tmp/apisniff/example",
+			FlowsPath:    "/tmp/apisniff/example/flows.jsonl",
+			FilteredPath: "/tmp/apisniff/example/filtered.jsonl",
+			Stats: model.SessionStats{
+				Domain:     "example.com",
+				TotalFlows: 5,
+				KeptFlows:  2,
+				Dropped: map[string]int{
+					"telemetry": 2,
+					"static":    1,
+				},
+			},
+		}, nil
+	}
+
+	stdout, stderr, err := executeForTest(newReconCommand(), "example.com")
+	if err != nil {
+		t.Fatalf("recon returned error: %v", err)
+	}
+	if stdout != "" {
+		t.Fatalf("stdout = %q, want empty", stdout)
+	}
+	assertContains(t, stderr, "3 filtered", "/tmp/apisniff/example/filtered.jsonl")
+}
+
 func executeForTest(cmd *cobra.Command, args ...string) (string, string, error) {
 	var stdout bytes.Buffer
 	var stderr bytes.Buffer

@@ -29,6 +29,15 @@ func assertContains(t *testing.T, got string, values ...string) {
 	}
 }
 
+func assertNotContains(t *testing.T, got string, values ...string) {
+	t.Helper()
+	for _, value := range values {
+		if strings.Contains(got, value) {
+			t.Fatalf("output contains %q:\n%s", value, got)
+		}
+	}
+}
+
 func assertNoANSI(t *testing.T, got string) {
 	t.Helper()
 	if strings.Contains(got, "\x1b[") {
@@ -281,6 +290,71 @@ func TestWriteMiscHumanNoColor(t *testing.T) {
 		"apisniff share",
 		"inventory.json",
 	)
+}
+
+func TestWriteReconFilteredOutput(t *testing.T) {
+	t.Run("filtered count and path", func(t *testing.T) {
+		var buf bytes.Buffer
+		err := WriteRecon(testConfig(t, &buf), ReconResult{
+			Domain:        "api.example.com",
+			BundleDir:     "/tmp/apisniff/api",
+			FlowsPath:     "/tmp/apisniff/api/flows.jsonl",
+			FilteredPath:  "/tmp/apisniff/api/flows.filtered.jsonl",
+			KeptFlows:     45,
+			TotalFlows:    287,
+			FilteredFlows: 242,
+		})
+		if err != nil {
+			t.Fatalf("WriteRecon returned error: %v", err)
+		}
+
+		got := buf.String()
+		assertNoANSI(t, got)
+		assertContains(t, got,
+			"✓ captured 45 flows (287 observed, 242 filtered)",
+			"Bundle",
+			"filtered",
+			"/tmp/apisniff/api/flows.filtered.jsonl",
+		)
+	})
+
+	t.Run("omits filtered fields when zero", func(t *testing.T) {
+		var buf bytes.Buffer
+		err := WriteRecon(testConfig(t, &buf), ReconResult{
+			Domain:     "api.example.com",
+			BundleDir:  "/tmp/apisniff/api",
+			FlowsPath:  "/tmp/apisniff/api/flows.jsonl",
+			KeptFlows:  8,
+			TotalFlows: 8,
+		})
+		if err != nil {
+			t.Fatalf("WriteRecon returned error: %v", err)
+		}
+
+		got := buf.String()
+		assertNoANSI(t, got)
+		assertContains(t, got, "✓ captured 8 flows")
+		assertNotContains(t, got, "filtered", "observed")
+	})
+
+	t.Run("shows filtered count without path", func(t *testing.T) {
+		var buf bytes.Buffer
+		err := WriteRecon(testConfig(t, &buf), ReconResult{
+			Domain:        "api.example.com",
+			BundleDir:     "/tmp/apisniff/api",
+			FlowsPath:     "/tmp/apisniff/api/flows.jsonl",
+			KeptFlows:     8,
+			FilteredFlows: 2,
+		})
+		if err != nil {
+			t.Fatalf("WriteRecon returned error: %v", err)
+		}
+
+		got := buf.String()
+		assertNoANSI(t, got)
+		assertContains(t, got, "✓ captured 8 flows (2 filtered)")
+		assertNotContains(t, got, "\n  filtered", "flows.filtered.jsonl")
+	})
 }
 
 func TestProbeCompactTableAtNarrowWidthPreservesLatency(t *testing.T) {

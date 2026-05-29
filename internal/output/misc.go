@@ -1,13 +1,18 @@
 package output
 
-import "fmt"
+import (
+	"fmt"
+	"strings"
+)
 
 type ReconResult struct {
-	Domain     string
-	BundleDir  string
-	FlowsPath  string
-	KeptFlows  int
-	TotalFlows int
+	Domain        string
+	BundleDir     string
+	FlowsPath     string
+	FilteredPath  string
+	KeptFlows     int
+	TotalFlows    int
+	FilteredFlows int
 }
 
 type SpecStatusResult struct {
@@ -27,8 +32,15 @@ type ShareResult struct {
 func WriteRecon(cfg Config, result ReconResult) error {
 	s := newStyles(cfg)
 	completion := fmt.Sprintf("%s captured %d flows", s.successIcon(), result.KeptFlows)
+	var details []string
 	if result.TotalFlows > 0 && result.TotalFlows != result.KeptFlows {
-		completion = fmt.Sprintf("%s (%d observed)", completion, result.TotalFlows)
+		details = append(details, fmt.Sprintf("%d observed", result.TotalFlows))
+	}
+	if result.FilteredFlows > 0 {
+		details = append(details, fmt.Sprintf("%d filtered", result.FilteredFlows))
+	}
+	if len(details) > 0 {
+		completion = fmt.Sprintf("%s (%s)", completion, strings.Join(details, ", "))
 	}
 
 	lines := []string{
@@ -38,6 +50,9 @@ func WriteRecon(cfg Config, result ReconResult) error {
 		s.section("Bundle"),
 		s.kv("directory", result.BundleDir),
 		s.kv("flows", result.FlowsPath),
+	}
+	if result.FilteredPath != "" {
+		lines = append(lines, s.kv("filtered", result.FilteredPath))
 	}
 	return s.writeLines(lines...)
 }

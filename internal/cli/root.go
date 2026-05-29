@@ -174,11 +174,13 @@ func newReconCommand() *cobra.Command {
 				return writeJSON(cmd.OutOrStdout(), result)
 			}
 			return output.WriteRecon(humanOutputConfig(cmd), output.ReconResult{
-				Domain:     result.Stats.Domain,
-				BundleDir:  result.BundleDir,
-				FlowsPath:  result.FlowsPath,
-				KeptFlows:  result.Stats.KeptFlows,
-				TotalFlows: result.Stats.TotalFlows,
+				Domain:        result.Stats.Domain,
+				BundleDir:     result.BundleDir,
+				FlowsPath:     result.FlowsPath,
+				KeptFlows:     result.Stats.KeptFlows,
+				TotalFlows:    result.Stats.TotalFlows,
+				FilteredFlows: sumDroppedFlows(result.Stats.Dropped),
+				FilteredPath:  result.FilteredPath,
 			})
 		},
 	}
@@ -189,6 +191,14 @@ func newReconCommand() *cobra.Command {
 	cmd.Flags().StringVar(&attachURL, "remote-url", "", "CDP URL for cdp-attach")
 	cmd.Flags().BoolVar(&headless, "headless", false, "launch Chrome headless")
 	return cmd
+}
+
+func sumDroppedFlows(dropped map[string]int) int {
+	total := 0
+	for _, count := range dropped {
+		total += count
+	}
+	return total
 }
 
 func newAnalyzeCommand() *cobra.Command {
