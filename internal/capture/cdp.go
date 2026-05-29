@@ -202,15 +202,8 @@ func Capture(ctx context.Context, cfg Config) (*Result, error) {
 		status.stop()
 	}
 	rec.bodyWG.Wait()
-	filteredPath := FilteredPath(bundle)
-	var filteredWriter *JSONLWriter
-	filteredWriterClosed := true
-	filteredWriterDisabled := false
-	defer func() {
-		if !filteredWriterClosed && filteredWriter != nil {
-			_ = filteredWriter.Close()
-		}
-	}()
+	filtered := newLazyFilteredWriter(bundle)
+	defer filtered.Close()
 	for _, flow := range rec.snapshotFlows() {
 		classification, kept := classifier.Classify(flow)
 		if classification.Action == "drop" {
@@ -219,18 +212,7 @@ func Capture(ctx context.Context, cfg Config) (*Result, error) {
 				dropKey = string(classification.Category)
 			}
 			rec.dropped[dropKey]++
-			if filteredWriter == nil && !filteredWriterDisabled {
-				var err error
-				filteredWriter, err = NewJSONLWriter(filteredPath)
-				if err != nil {
-					filteredWriterDisabled = true
-				} else {
-					filteredWriterClosed = false
-				}
-			}
-			if filteredWriter != nil {
-				_ = filteredWriter.Write(prepareFilteredFlow(flow, classification))
-			}
+			filtered.Write(flow, classification)
 			continue
 		}
 		if kept == nil {
@@ -241,18 +223,10 @@ func Capture(ctx context.Context, cfg Config) (*Result, error) {
 			return nil, err
 		}
 	}
-	filteredCloseOK := false
-	if filteredWriter != nil {
-		filteredWriterClosed = true
-		filteredCloseOK = filteredWriter.Close() == nil
-	}
+	resultFilteredPath := filtered.Close()
 	writerClosed = true
 	if err := writer.Close(); err != nil {
 		return nil, err
-	}
-	resultFilteredPath := ""
-	if filteredCloseOK && filteredWriter.Count() > 0 {
-		resultFilteredPath = filteredPath
 	}
 	stats := model.SessionStats{
 		Domain:          cfg.Domain,

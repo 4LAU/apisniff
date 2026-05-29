@@ -57,15 +57,8 @@ func CaptureProxy(ctx context.Context, cfg Config) (*Result, error) {
 			_ = writer.Close()
 		}
 	}()
-	filteredPath := FilteredPath(bundle)
-	var filteredWriter *JSONLWriter
-	filteredWriterClosed := true
-	filteredWriterDisabled := false
-	defer func() {
-		if !filteredWriterClosed {
-			_ = filteredWriter.Close()
-		}
-	}()
+	filtered := newLazyFilteredWriter(bundle)
+	defer filtered.Close()
 
 	caPath, err := EnsureProxyCA()
 	if err != nil {
@@ -148,18 +141,7 @@ func CaptureProxy(ctx context.Context, cfg Config) (*Result, error) {
 			}
 			stats.Dropped[dropKey]++
 			if classification.Action == "drop" {
-				if filteredWriter == nil && !filteredWriterDisabled {
-					var err error
-					filteredWriter, err = NewJSONLWriter(filteredPath)
-					if err != nil {
-						filteredWriterDisabled = true
-					} else {
-						filteredWriterClosed = false
-					}
-				}
-				if filteredWriter != nil {
-					_ = filteredWriter.Write(prepareFilteredFlow(flow, classification))
-				}
+				filtered.Write(flow, classification)
 			}
 			return resp
 		}
@@ -206,18 +188,10 @@ func CaptureProxy(ctx context.Context, cfg Config) (*Result, error) {
 		return nil, err
 	}
 	stats.DurationSeconds = time.Since(start).Seconds()
-	filteredCloseOK := false
-	if filteredWriter != nil {
-		filteredWriterClosed = true
-		filteredCloseOK = filteredWriter.Close() == nil
-	}
+	resultFilteredPath := filtered.Close()
 	writerClosed = true
 	if err := writer.Close(); err != nil {
 		return nil, err
-	}
-	resultFilteredPath := ""
-	if filteredCloseOK && filteredWriter.Count() > 0 {
-		resultFilteredPath = filteredPath
 	}
 	if err := WriteSession(bundle, stats); err != nil {
 		return nil, err

@@ -46,3 +46,40 @@ func shouldStripFilteredBodies(result model.ClassifyResult) bool {
 	}
 	return false
 }
+
+type lazyFilteredWriter struct {
+	path     string
+	writer   *JSONLWriter
+	disabled bool
+}
+
+func newLazyFilteredWriter(bundleDir string) *lazyFilteredWriter {
+	return &lazyFilteredWriter{path: FilteredPath(bundleDir)}
+}
+
+func (lw *lazyFilteredWriter) Write(flow model.CapturedFlow, result model.ClassifyResult) {
+	if lw.disabled {
+		return
+	}
+	if lw.writer == nil {
+		w, err := NewJSONLWriter(lw.path)
+		if err != nil {
+			lw.disabled = true
+			return
+		}
+		lw.writer = w
+	}
+	_ = lw.writer.Write(prepareFilteredFlow(flow, result))
+}
+
+func (lw *lazyFilteredWriter) Close() string {
+	if lw.writer == nil {
+		return ""
+	}
+	w := lw.writer
+	lw.writer = nil
+	if w.Close() != nil || w.Count() == 0 {
+		return ""
+	}
+	return lw.path
+}
