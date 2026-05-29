@@ -52,7 +52,7 @@ func TestFilterFlowsExcludesUnsafeByDefault(t *testing.T) {
 func TestBuildRequestRemovesHopByHopAndAddsCookies(t *testing.T) {
 	flow := replayFlow("GET", "https://api.example.com/v1/users?q=1", "/v1/users?q=1", 200, nil)
 	flow.Host = "api.example.com:443"
-	req, err := buildRequest(context.Background(), flow, map[string]string{"Authorization": "Bearer x"}, []Cookie{{Domain: ".example.com", Name: "sid", Value: "abc"}})
+	req, err := buildRequest(context.Background(), flow, map[string]string{"Authorization": "Bearer x"}, []Cookie{{Domain: ".example.com", Name: "sid", Value: "abc"}}, false)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -80,7 +80,7 @@ func TestBuildRequestStripsCapturedAuthHeadersByDefault(t *testing.T) {
 		"X-Px-Authorization": "px-token",
 		"X-Trace":            "1",
 	}
-	req, err := buildRequest(context.Background(), flow, nil, nil)
+	req, err := buildRequest(context.Background(), flow, nil, nil, false)
 	if err != nil {
 		t.Fatal(err)
 	}

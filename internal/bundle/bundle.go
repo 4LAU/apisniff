@@ -46,7 +46,8 @@ func Dir() string {
 
 // List returns metadata for valid capture bundle directories, newest first.
 func List() ([]Bundle, error) {
-	entries, err := os.ReadDir(Dir())
+	dir := Dir()
+	entries, err := os.ReadDir(dir)
 	if err != nil {
 		if errors.Is(err, os.ErrNotExist) {
 			return nil, nil
@@ -63,7 +64,7 @@ func List() ([]Bundle, error) {
 		if !ok {
 			continue
 		}
-		meta, err := readBundle(filepath.Join(Dir(), entry.Name()), entry.Name(), parsed.safeName, parsed.createdAt)
+		meta, err := readBundle(filepath.Join(dir, entry.Name()), entry.Name(), parsed.safeName, parsed.createdAt)
 		if err != nil {
 			return nil, err
 		}
@@ -102,10 +103,11 @@ func Delete(bundle Bundle) error {
 	if bundle.Path == "" {
 		return fmt.Errorf("bundle path is required")
 	}
+	dir := Dir()
 	cleaned := filepath.Clean(bundle.Path)
-	prefix := filepath.Clean(Dir()) + string(filepath.Separator)
+	prefix := filepath.Clean(dir) + string(filepath.Separator)
 	if !strings.HasPrefix(cleaned, prefix) {
-		return fmt.Errorf("refusing to delete %s: not inside captures directory %s", bundle.Path, Dir())
+		return fmt.Errorf("refusing to delete %s: not inside captures directory %s", bundle.Path, dir)
 	}
 	return os.RemoveAll(bundle.Path)
 }
@@ -137,9 +139,11 @@ func CountOlderThan(threshold time.Duration) (int, error) {
 	return count, nil
 }
 
+var safeNameReplacer = strings.NewReplacer(".", "-", "/", "-", ":", "-")
+
 // SafeName returns the filesystem-safe prefix used for bundle directories.
 func SafeName(domain string) string {
-	return strings.NewReplacer(".", "-", "/", "-", ":", "-").Replace(domain)
+	return safeNameReplacer.Replace(domain)
 }
 
 type parsedName struct {

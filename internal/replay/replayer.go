@@ -165,7 +165,7 @@ func ReplayOne(ctx context.Context, client *http.Client, flow model.CapturedFlow
 	return replayResult(flow, resp.StatusCode, body, time.Since(start), err)
 }
 
-func buildRequest(ctx context.Context, flow model.CapturedFlow, headers map[string]string, cookies []Cookie, forwardAuth ...bool) (*http.Request, error) {
+func buildRequest(ctx context.Context, flow model.CapturedFlow, headers map[string]string, cookies []Cookie, forwardAuth bool) (*http.Request, error) {
 	host, err := requestHost(flow)
 	if err != nil {
 		return nil, err
@@ -178,13 +178,12 @@ func buildRequest(ctx context.Context, flow model.CapturedFlow, headers map[stri
 	if err != nil {
 		return nil, err
 	}
-	fwdAuth := len(forwardAuth) > 0 && forwardAuth[0]
 	for key, value := range flow.RequestHeaders {
 		lower := strings.ToLower(key)
 		if _, skip := hopByHop[lower]; skip {
 			continue
 		}
-		if !fwdAuth {
+		if !forwardAuth {
 			if isAuthHeader(lower) {
 				continue
 			}

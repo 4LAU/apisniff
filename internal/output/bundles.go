@@ -106,12 +106,12 @@ func cleanTable(s styles, bundles []BundleSummary) string {
 		rows = append(rows, []string{
 			firstNonEmpty(bundle.Domain, bundle.SafeName, "-"),
 			bundle.CapturedAt.Local().Format("2006-01-02 15:04"),
-			humanBytes(bundle.SizeBytes),
 			fmt.Sprintf("%d", bundle.FlowCount),
+			humanBytes(bundle.SizeBytes),
 			bundle.Path,
 		})
 	}
-	return s.simpleTable([]string{"Domain", "Captured", "Size", "Flows", "Path"}, rows)
+	return s.simpleTable([]string{"Domain", "Captured", "Flows", "Size", "Path"}, rows)
 }
 
 func firstNonEmpty(values ...string) string {
