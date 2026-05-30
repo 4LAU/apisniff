@@ -4,7 +4,9 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"errors"
 	"math"
+	"os"
 	"path/filepath"
 	"regexp"
 	"sort"
@@ -31,6 +33,96 @@ var fixtureCases = []struct {
 	{"complex.jsonl", "example.com"},
 }
 
+func FuzzAdapterBoundaryGenerateMarshalValidate(f *testing.F) {
+	for _, seed := range [][]byte{
+		[]byte(`{"method":"GET","host":"example.com","path":"/api/fuzz","url":"https://example.com/api/fuzz","response_status":200,"response_headers":{"content-type":"application/json"},"response_body":"eyJvayI6dHJ1ZX0=","_body_encoding":"base64"}` + "\n"),
+		[]byte(`{"method":"CONNECT","host":"example.com","path":"/api/tunnel","url":"https://example.com/api/tunnel","response_status":200,"response_headers":{"content-type":"application/json"},"response_body":"eyJvayI6dHJ1ZX0=","_body_encoding":"base64"}` + "\n"),
+		[]byte(`{"method":"GET","path":"/api/bad","response_status":0}` + "\n"),
+		[]byte(`not jsonl`),
+		[]byte{},
+	} {
+		f.Add(seed)
+	}
+
+	f.Fuzz(func(t *testing.T, data []byte) {
+		path := filepath.Join(t.TempDir(), "flows.jsonl")
+		if err := os.WriteFile(path, data, 0o600); err != nil {
+			t.Fatal(err)
+		}
+
+		flows, _, err := adapter.LoadFlows(path)
+		if err != nil {
+			return
+		}
+		doc, err := Generate(FilterAPIFlows(flows), "example.com", nil, Options{})
+		if errors.Is(err, ErrNoValidAPIFlows) {
+			return
+		}
+		if err != nil {
+			t.Fatalf("Generate returned unexpected error: %v", err)
+		}
+		if _, err := MarshalAndValidate(doc, "json"); err != nil {
+			t.Fatalf("generated spec did not validate: %v", err)
+		}
+	})
+}
+
+func TestSpecEdgeCaseFixturePassesGenerationInvariants(t *testing.T) {
+	flows, _, err := adapter.LoadFlows(filepath.Join(testutil.RepoRoot(t), "testdata", "fixtures", "spec_edge_cases.jsonl"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	doc, err := Generate(FilterAPIFlows(flows), "https://{Example}.com/api", nil, Options{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := MarshalAndValidate(doc, "json"); err != nil {
+		t.Fatal(err)
+	}
+
+	servers := toAnySlice(doc["servers"])
+	if len(servers) != 1 || asMap(servers[0])["url"] != "https://example.com" {
+		t.Fatalf("servers = %#v", servers)
+	}
+
+	paths := asMap(doc["paths"])
+	for _, path := range []string{
+		"/api/status/zero",
+		"/api/status/out-of-range",
+		"/api/empty-method",
+		"/api/connect",
+		"/api/{broken",
+	} {
+		if paths[path] != nil {
+			t.Fatalf("invalid fixture path %s survived into spec paths: %#v", path, paths[path])
+		}
+	}
+	if paths["/api/resources/{resourceId}"] == nil || paths["/api/search"] == nil || paths["/api/deep"] == nil {
+		t.Fatalf("expected edge-case paths missing: %#v", paths)
+	}
+
+	params := toAnySlice(operation(doc, "/api/search", "get")["parameters"])
+	for _, paramValue := range params {
+		param := asMap(paramValue)
+		if param["name"] == "" {
+			t.Fatalf("blank query parameter survived: %#v", params)
+		}
+	}
+
+	if paths["/api/mixed"] == nil || paths["/api/text-jsonlike"] == nil {
+		t.Fatalf("expected edge-case paths /api/mixed and /api/text-jsonlike missing: %#v", paths)
+	}
+
+	mixedContent := asMap(asMap(asMap(operation(doc, "/api/mixed", "get")["responses"])["200"])["content"])
+	if mixedContent["application/json"] == nil || mixedContent["application/problem+json"] == nil {
+		t.Fatalf("mixed JSON content types missing: %#v", mixedContent)
+	}
+	textResponse := asMap(asMap(operation(doc, "/api/text-jsonlike", "get")["responses"])["200"])
+	if asMap(textResponse["content"])["text/plain"] != nil {
+		t.Fatalf("non-JSON response body was treated as JSON content: %#v", textResponse)
+	}
+}
+
 func loadFixtureSpec(t *testing.T, fixtureName string, domain string, opts Options) map[string]any {
 	t.Helper()
 	flows, _, err := adapter.LoadFlows(filepath.Join(testutil.RepoRoot(t), "testdata", "fixtures", fixtureName))
@@ -40,7 +132,7 @@ func loadFixtureSpec(t *testing.T, fixtureName string, domain string, opts Optio
 	if len(flows) == 0 {
 		t.Fatalf("fixture %s produced no flows", fixtureName)
 	}
-	return Generate(flows, domain, nil, opts)
+	return mustGenerate(t, flows, domain, nil, opts)
 }
 
 func TestGeneratedSpecsPassStructuralValidation(t *testing.T) {
@@ -174,7 +266,7 @@ func TestRoundTripResponseSchemasMatchTraffic(t *testing.T) {
 				t.Fatal(err)
 			}
 			apiFlows := FilterAPIFlows(flows)
-			doc := Generate(apiFlows, tc.domain, nil, Options{})
+			doc := mustGenerate(t, apiFlows, tc.domain, nil, Options{})
 
 			data, err := Marshal(doc, "json")
 			if err != nil {

@@ -1,12 +1,23 @@
 package spec
 
 import (
+	"encoding/json"
+	"errors"
 	"strings"
 	"testing"
 
 	"github.com/4LAU/apisniff/internal/auth"
 	"github.com/4LAU/apisniff/internal/model"
 )
+
+func mustGenerate(t testing.TB, flows []model.CapturedFlow, domain string, patterns []auth.Pattern, opts Options) map[string]any {
+	t.Helper()
+	doc, err := Generate(flows, domain, patterns, opts)
+	if err != nil {
+		t.Fatal(err)
+	}
+	return doc
+}
 
 func specFlow(method, path string, status int, body []byte) model.CapturedFlow {
 	return model.CapturedFlow{
@@ -65,6 +76,117 @@ func withTags(tags ...string) flowOption {
 	return func(flow *model.CapturedFlow) {
 		flow.Tags = tags
 	}
+}
+
+func TestGenerateReturnsErrNoValidAPIFlows(t *testing.T) {
+	_, err := Generate([]model.CapturedFlow{
+		specFlow("CONNECT", "/api/tunnel", 200, []byte(`{"ignored":true}`)),
+		specFlow("GET", "", 200, []byte(`{"ignored":true}`)),
+		specFlow("GET", "/api/status/zero", 0, []byte(`{"ignored":true}`)),
+		specFlow("GET", "/users/{broken", 200, []byte(`{"ignored":true}`)),
+	}, "example.com", nil, Options{})
+	if !errors.Is(err, ErrNoValidAPIFlows) {
+		t.Fatalf("err = %v, want ErrNoValidAPIFlows", err)
+	}
+}
+
+func FuzzGenerator(f *testing.F) {
+	f.Add(uint8(0), "api/v1/users/123", uint16(200), []byte(`{"name":"Ada"}`), []byte(`{"ok":true}`), uint8(0))
+	f.Add(uint8(1), "/api/orders/{orderId}", uint16(201), []byte(`[1,2,3]`), []byte(`null`), uint8(1))
+	f.Add(uint8(6), "search?q=test", uint16(499), []byte(`"request"`), []byte(`{"error":{"code":"x"}}`), uint8(0))
+
+	methods := []string{"GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS", "HEAD", "TRACE"}
+	contentTypes := []string{"application/json", "application/problem+json", "application/vnd.apisniff+json"}
+
+	f.Fuzz(func(t *testing.T, methodSeed uint8, rawPath string, statusSeed uint16, requestSeed []byte, responseSeed []byte, contentTypeSeed uint8) {
+		method := methods[int(methodSeed)%len(methods)]
+		status := 100 + int(statusSeed%500)
+		path := fuzzSpecPath(rawPath)
+		contentType := contentTypes[int(contentTypeSeed)%len(contentTypes)]
+
+		flow := specFlow(method, path, status, fuzzJSONBody(responseSeed))
+		flow.ResponseHeaders = map[string]string{"content-type": contentType}
+		if method == "POST" || method == "PUT" || method == "PATCH" {
+			flow.RequestHeaders = map[string]string{"content-type": "application/json"}
+			flow.RequestBody = fuzzJSONBody(requestSeed)
+		}
+
+		doc, err := Generate([]model.CapturedFlow{flow}, "example.com", nil, Options{IncludeExamples: true})
+		if err != nil {
+			t.Fatalf("Generate returned error for constrained flow: %v", err)
+		}
+		if _, err := MarshalAndValidate(doc, "json"); err != nil {
+			t.Fatalf("generated spec did not validate: %v", err)
+		}
+	})
+}
+
+func fuzzSpecPath(raw string) string {
+	if raw == "" {
+		return "/api/fuzz"
+	}
+	parts := strings.Split(strings.SplitN(raw, "?", 2)[0], "/")
+	clean := make([]string, 0, len(parts))
+	for _, part := range parts {
+		if part == "" {
+			continue
+		}
+		if strings.HasPrefix(part, "{") && strings.HasSuffix(part, "}") {
+			clean = append(clean, "{itemId}")
+			continue
+		}
+		segment := make([]byte, 0, len(part))
+		for i := 0; i < len(part) && len(segment) < 24; i++ {
+			c := part[i]
+			if (c >= 'a' && c <= 'z') || (c >= 'A' && c <= 'Z') || (c >= '0' && c <= '9') || c == '-' || c == '_' || c == '.' || c == '~' {
+				segment = append(segment, c)
+			}
+		}
+		if len(segment) > 0 {
+			clean = append(clean, string(segment))
+		}
+		if len(clean) == 8 {
+			break
+		}
+	}
+	if len(clean) == 0 {
+		return "/api/fuzz"
+	}
+	return "/" + strings.Join(clean, "/")
+}
+
+func fuzzJSONBody(seed []byte) []byte {
+	var value any
+	switch {
+	case len(seed) == 0:
+		value = nil
+	case seed[0]%5 == 0:
+		value = string(seed[1:])
+	case seed[0]%5 == 1:
+		value = int(seed[0]) + len(seed)
+	case seed[0]%5 == 2:
+		value = seed[0]%2 == 0
+	case seed[0]%5 == 3:
+		items := make([]any, 0, min(len(seed), 8))
+		for _, b := range seed[:min(len(seed), 8)] {
+			items = append(items, int(b))
+		}
+		value = items
+	default:
+		value = map[string]any{
+			"value": string(seed[1:]),
+			"size":  len(seed),
+			"nested": map[string]any{
+				"first": int(seed[0]),
+				"last":  int(seed[len(seed)-1]),
+			},
+		}
+	}
+	data, err := json.Marshal(value)
+	if err != nil {
+		panic(err)
+	}
+	return data
 }
 
 func TestInferSchemaObjectAndArray(t *testing.T) {
@@ -205,7 +327,7 @@ func TestMergeSchemasAdditionalPropertiesWinsOverProperties(t *testing.T) {
 }
 
 func TestGenerateOpenAPIBasicAndNormalize(t *testing.T) {
-	doc := Generate([]model.CapturedFlow{
+	doc := mustGenerate(t, []model.CapturedFlow{
 		specFlow("GET", "/api/v1/users", 200, []byte(`[{"id":1,"name":"Alice"}]`)),
 		specFlow("GET", "/api/v1/users/123", 200, []byte(`{"id":123,"name":"Bob"}`)),
 		specFlow("POST", "/api/v1/users", 200, []byte(`{"id":124}`)),
@@ -217,7 +339,7 @@ func TestGenerateOpenAPIBasicAndNormalize(t *testing.T) {
 }
 
 func TestQueryParamsAndResponseSchemaMerging(t *testing.T) {
-	doc := Generate([]model.CapturedFlow{
+	doc := mustGenerate(t, []model.CapturedFlow{
 		specFlow("GET", "/api/v1/users?page=1", 200, []byte(`{"id":1}`)),
 		specFlow("GET", "/api/v1/users?page=2&sort=name", 200, []byte(`{"id":2,"email":"a@b.com"}`)),
 		specFlow("GET", "/api/v1/users", 404, []byte(`{"error":"not found"}`)),
@@ -251,7 +373,7 @@ func TestRequestBodies(t *testing.T) {
 	mp.RequestHeaders = map[string]string{"content-type": "multipart/form-data; boundary=bound"}
 	mp.RequestBody = []byte("--bound\r\nContent-Disposition: form-data; name=\"file\"; filename=\"a.jpg\"\r\n\r\nx\r\n--bound--")
 
-	doc := Generate([]model.CapturedFlow{jsonPost, formPost, mp}, "example.com", nil, Options{})
+	doc := mustGenerate(t, []model.CapturedFlow{jsonPost, formPost, mp}, "example.com", nil, Options{})
 	if requestSchema(doc, "/api/v1/users", "post", "application/json")["type"] != "object" {
 		t.Fatalf("json request missing")
 	}
@@ -265,7 +387,7 @@ func TestRequestBodies(t *testing.T) {
 }
 
 func TestJSONRequestBodySchemasMergeAcrossFlows(t *testing.T) {
-	doc := Generate([]model.CapturedFlow{
+	doc := mustGenerate(t, []model.CapturedFlow{
 		testFlow(withMethod("POST"), withRequest("application/json", []byte(`{"name":"Alice"}`))),
 		testFlow(withMethod("POST"), withRequest("application/json", []byte(`{"name":"Bob","age":30}`))),
 	}, "example.com", nil, Options{})
@@ -276,7 +398,7 @@ func TestJSONRequestBodySchemasMergeAcrossFlows(t *testing.T) {
 }
 
 func TestFormURLEncodedRequestBodySchema(t *testing.T) {
-	doc := Generate([]model.CapturedFlow{
+	doc := mustGenerate(t, []model.CapturedFlow{
 		testFlow(withMethod("POST"), withRequest("application/x-www-form-urlencoded", []byte("username=alice&password=secret"))),
 	}, "example.com", nil, Options{})
 	props := asMap(requestSchema(doc, "/api/v1/users", "post", "application/x-www-form-urlencoded")["properties"])
@@ -294,7 +416,7 @@ func TestMultipartRequestBodyIncludesTextAndBinaryFields(t *testing.T) {
 		"Content-Type: image/jpeg\r\n\r\n" +
 		"<binary data>\r\n" +
 		"--bound--")
-	doc := Generate([]model.CapturedFlow{
+	doc := mustGenerate(t, []model.CapturedFlow{
 		testFlow(withMethod("POST"), withPath("/api/v1/upload"), withRequest("multipart/form-data; boundary=bound", body)),
 	}, "example.com", nil, Options{})
 	props := asMap(requestSchema(doc, "/api/v1/upload", "post", "multipart/form-data")["properties"])
@@ -312,7 +434,7 @@ func TestParseMultipartQuotedBoundary(t *testing.T) {
 }
 
 func TestExamplesRedactSecrets(t *testing.T) {
-	doc := Generate([]model.CapturedFlow{
+	doc := mustGenerate(t, []model.CapturedFlow{
 		specFlow("GET", "/api/v1/users", 200, []byte(`{"password":"hunter2","author":"Jane","token":"bearer abc"}`)),
 	}, "example.com", nil, Options{IncludeExamples: true})
 	props := asMap(responseSchema(doc, "/api/v1/users", "get", "200")["properties"])
@@ -322,7 +444,7 @@ func TestExamplesRedactSecrets(t *testing.T) {
 }
 
 func TestExamplesRedactNestedSensitiveField(t *testing.T) {
-	doc := Generate([]model.CapturedFlow{
+	doc := mustGenerate(t, []model.CapturedFlow{
 		testFlow(withResponse(200, "application/json", []byte(`{"user":{"name":"alice","credential":"s3cr3t"}}`))),
 	}, "example.com", nil, Options{IncludeExamples: true})
 	nested := asMap(asMap(asMap(responseSchema(doc, "/api/v1/users", "get", "200")["properties"])["user"])["properties"])
@@ -332,7 +454,7 @@ func TestExamplesRedactNestedSensitiveField(t *testing.T) {
 }
 
 func TestExamplesSensitiveFieldBoundaries(t *testing.T) {
-	doc := Generate([]model.CapturedFlow{
+	doc := mustGenerate(t, []model.CapturedFlow{
 		testFlow(withResponse(200, "application/json", []byte(`{"auth":"x","author":"Jane","secret":"s","secretariat":"UN","token":"t","max_tokens":100}`))),
 	}, "example.com", nil, Options{IncludeExamples: true})
 	props := asMap(responseSchema(doc, "/api/v1/users", "get", "200")["properties"])
@@ -348,7 +470,7 @@ func TestExamplesSensitiveFieldBoundaries(t *testing.T) {
 
 func TestMultipartSensitiveFieldExampleRedacted(t *testing.T) {
 	body := []byte("--bound\r\nContent-Disposition: form-data; name=\"password\"\r\n\r\nhunter2\r\n--bound--")
-	doc := Generate([]model.CapturedFlow{
+	doc := mustGenerate(t, []model.CapturedFlow{
 		testFlow(withMethod("POST"), withPath("/api/v1/login"), withRequest("multipart/form-data; boundary=bound", body)),
 	}, "example.com", nil, Options{IncludeExamples: true})
 	props := asMap(requestSchema(doc, "/api/v1/login", "post", "multipart/form-data")["properties"])
@@ -358,7 +480,7 @@ func TestMultipartSensitiveFieldExampleRedacted(t *testing.T) {
 }
 
 func TestObservedAuthAndSecuritySchemes(t *testing.T) {
-	doc := Generate([]model.CapturedFlow{specFlow("GET", "/api/v1/users", 200, []byte(`{"ok":true}`))}, "example.com", []auth.Pattern{
+	doc := mustGenerate(t, []model.CapturedFlow{specFlow("GET", "/api/v1/users", 200, []byte(`{"ok":true}`))}, "example.com", []auth.Pattern{
 		{AuthType: "bearer", Detail: "authorization: bearer", FlowCount: 5},
 		{AuthType: "token_endpoint", Detail: "/oauth/token", FlowCount: 1},
 	}, Options{InferSchemes: true})
@@ -375,7 +497,7 @@ func TestObservedAuthAndSecuritySchemes(t *testing.T) {
 }
 
 func TestObservedAuthDefaultDoesNotInferSecuritySchemes(t *testing.T) {
-	doc := Generate([]model.CapturedFlow{testFlow()}, "example.com", []auth.Pattern{
+	doc := mustGenerate(t, []model.CapturedFlow{testFlow()}, "example.com", []auth.Pattern{
 		{AuthType: "bearer", Detail: "authorization: bearer", FlowCount: 5},
 	}, Options{})
 	if doc["x-observed-auth"] == nil {
@@ -387,7 +509,7 @@ func TestObservedAuthDefaultDoesNotInferSecuritySchemes(t *testing.T) {
 }
 
 func TestSecuritySchemesInferAPIKeyAndCookie(t *testing.T) {
-	doc := Generate([]model.CapturedFlow{testFlow()}, "example.com", []auth.Pattern{
+	doc := mustGenerate(t, []model.CapturedFlow{testFlow()}, "example.com", []auth.Pattern{
 		{AuthType: "api_key_header", Detail: "x-api-key", FlowCount: 2},
 		{AuthType: "api_key_query", Detail: "api_key", FlowCount: 1},
 		{AuthType: "session_cookie", Detail: "sessionid", FlowCount: 3},
@@ -404,7 +526,7 @@ func TestSecuritySchemesInferAPIKeyAndCookie(t *testing.T) {
 }
 
 func TestSecuritySchemesInferMultipleHTTPTypes(t *testing.T) {
-	doc := Generate([]model.CapturedFlow{testFlow()}, "example.com", []auth.Pattern{
+	doc := mustGenerate(t, []model.CapturedFlow{testFlow()}, "example.com", []auth.Pattern{
 		{AuthType: "bearer", Detail: "authorization: bearer", FlowCount: 5},
 		{AuthType: "basic", Detail: "authorization: basic", FlowCount: 1},
 	}, Options{InferSchemes: true})
@@ -418,7 +540,7 @@ func TestSecuritySchemesInferMultipleHTTPTypes(t *testing.T) {
 }
 
 func TestSecuritySchemeComponentsPreservedDuringSchemaPromotion(t *testing.T) {
-	doc := Generate([]model.CapturedFlow{
+	doc := mustGenerate(t, []model.CapturedFlow{
 		testFlow(withPath("/api/v1/users/1"), withResponse(200, "application/json", []byte(`{"id":1,"name":"Alice"}`))),
 		testFlow(withPath("/api/v1/customers/2"), withResponse(200, "application/json", []byte(`{"id":2,"name":"Bob"}`))),
 	}, "example.com", []auth.Pattern{
@@ -472,7 +594,7 @@ func TestFilterAPIFlowsIncludesTaggedBusinessAuthAndAntibot(t *testing.T) {
 }
 
 func TestQueryParamObservationMetadataDoesNotLeakValues(t *testing.T) {
-	doc := Generate([]model.CapturedFlow{
+	doc := mustGenerate(t, []model.CapturedFlow{
 		testFlow(withPath("/api/v1/users?token=secret-one&page=1")),
 		testFlow(withPath("/api/v1/users?token=secret-two&sort=name")),
 	}, "example.com", nil, Options{})
