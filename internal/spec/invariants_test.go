@@ -7,10 +7,12 @@ import (
 	"path/filepath"
 	"regexp"
 	"sort"
+	"strconv"
 	"strings"
 	"testing"
 
 	"github.com/4LAU/apisniff/internal/adapter"
+	"github.com/4LAU/apisniff/internal/model"
 	"github.com/4LAU/apisniff/internal/testutil"
 	"github.com/getkin/kin-openapi/openapi3"
 )
@@ -25,6 +27,7 @@ var fixtureCases = []struct {
 	{"multisite.har", "example.com"},
 	{"auth_variants.har", "example.com"},
 	{"redaction.jsonl", "example.com"},
+	{"complex.jsonl", "example.com"},
 }
 
 func loadFixtureSpec(t *testing.T, fixtureName string, domain string, opts Options) map[string]any {
@@ -158,5 +161,108 @@ func TestNoExamplesByDefault(t *testing.T) {
 				t.Fatal("spec contains examples with IncludeExamples=false")
 			}
 		})
+	}
+}
+
+func TestRoundTripResponseSchemasMatchTraffic(t *testing.T) {
+	for _, tc := range fixtureCases {
+		t.Run(tc.name, func(t *testing.T) {
+			repoRoot := testutil.RepoRoot(t)
+			flows, _, err := adapter.LoadFlows(filepath.Join(repoRoot, "testdata", "fixtures", tc.name))
+			if err != nil {
+				t.Fatal(err)
+			}
+			apiFlows := FilterAPIFlows(flows)
+			doc := Generate(apiFlows, tc.domain, nil, Options{})
+
+			data, err := Marshal(doc, "json")
+			if err != nil {
+				t.Fatal(err)
+			}
+			loader := openapi3.NewLoader()
+			loaded, err := loader.LoadFromData(data)
+			if err != nil {
+				t.Fatal(err)
+			}
+
+			for _, flow := range apiFlows {
+				if len(flow.ResponseBody) == 0 {
+					continue
+				}
+				parsed := ParseJSONBody(flow.ResponseBody)
+				if parsed == nil {
+					continue
+				}
+				normalizedPath := model.NormalizePath(flow.Path)
+				pathItem := loaded.Paths.Find(normalizedPath)
+				if pathItem == nil {
+					continue
+				}
+				method := strings.ToLower(flow.Method)
+				op := pathItem.GetOperation(strings.ToUpper(method))
+				if op == nil {
+					continue
+				}
+				status := strconv.Itoa(flow.ResponseStatus)
+				resp := op.Responses.Status(flow.ResponseStatus)
+				if resp == nil {
+					continue
+				}
+				ct := flow.ContentType()
+				if ct == "" {
+					ct = "application/json"
+				}
+				mediaType := resp.Value.Content.Get(ct)
+				if mediaType == nil || mediaType.Schema == nil {
+					continue
+				}
+				schema := mediaType.Schema.Value
+				if schema == nil {
+					continue
+				}
+				assertSchemaCovers(t, tc.name, method+" "+normalizedPath+" "+status, schema, parsed)
+			}
+		})
+	}
+}
+
+func assertSchemaCovers(t *testing.T, fixture, label string, schema *openapi3.Schema, value any) {
+	t.Helper()
+	switch v := value.(type) {
+	case map[string]any:
+		if schema.Type != nil && !schema.Type.Includes("object") {
+			t.Errorf("%s [%s]: expected object schema, got %v", fixture, label, schema.Type)
+			return
+		}
+		for key, child := range v {
+			if child == nil {
+				continue
+			}
+			propRef := schema.Properties[key]
+			if propRef == nil || propRef.Value == nil {
+				continue
+			}
+			assertSchemaCovers(t, fixture, label+"."+key, propRef.Value, child)
+		}
+	case []any:
+		if schema.Type != nil && !schema.Type.Includes("array") {
+			t.Errorf("%s [%s]: expected array schema, got %v", fixture, label, schema.Type)
+			return
+		}
+		if schema.Items != nil && schema.Items.Value != nil && len(v) > 0 {
+			assertSchemaCovers(t, fixture, label+"[0]", schema.Items.Value, v[0])
+		}
+	case float64:
+		if schema.Type != nil && !schema.Type.Includes("integer") && !schema.Type.Includes("number") && !schema.Type.Includes("string") {
+			t.Errorf("%s [%s]: numeric value but schema type is %v", fixture, label, schema.Type)
+		}
+	case string:
+		if schema.Type != nil && !schema.Type.Includes("string") {
+			t.Errorf("%s [%s]: string value but schema type is %v", fixture, label, schema.Type)
+		}
+	case bool:
+		if schema.Type != nil && !schema.Type.Includes("boolean") && !schema.Type.Includes("string") {
+			t.Errorf("%s [%s]: boolean value but schema type is %v", fixture, label, schema.Type)
+		}
 	}
 }

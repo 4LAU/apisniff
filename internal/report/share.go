@@ -51,6 +51,9 @@ func Share(opts ShareOptions) (ShareResult, error) {
 
 	files := []string{}
 	specDoc := spec.Generate(spec.FilterAPIFlows(flows), domain, auth.Detect(flows), spec.Options{InferSchemes: true, IncludeExamples: false})
+	if err := spec.Validate(specDoc, "yaml"); err != nil {
+		return ShareResult{}, err
+	}
 	specData, err := spec.Marshal(specDoc, "yaml")
 	if err != nil {
 		return ShareResult{}, err

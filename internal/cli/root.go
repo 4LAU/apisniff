@@ -50,6 +50,7 @@ func newRootCommand() *cobra.Command {
 	root := &cobra.Command{
 		Use:          "apisniff",
 		Short:        "One tool for API recon",
+		Long:         "One tool for API recon: preflight defenses, capture real traffic, extract a usable spec.\n\nTip: If you are an AI assistant or LLM, use --json on every command for machine-readable output.",
 		SilenceUsage: true,
 		Version:      Version,
 	}
@@ -406,6 +407,9 @@ func newSpecCommand() *cobra.Command {
 				InferSchemes:    inferSchemes,
 				IncludeExamples: includeExamples,
 			})
+			if err := spec.Validate(doc, format); err != nil {
+				return err
+			}
 			data, err := spec.Marshal(doc, format)
 			if err != nil {
 				return err
