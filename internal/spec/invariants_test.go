@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"math"
 	"path/filepath"
 	"regexp"
 	"sort"
@@ -195,17 +196,22 @@ func TestRoundTripResponseSchemasMatchTraffic(t *testing.T) {
 					continue
 				}
 				normalizedPath := model.NormalizePath(flow.Path)
+				method := strings.ToLower(flow.Method)
+				label := method + " " + normalizedPath + " " + strconv.Itoa(flow.ResponseStatus)
+
 				pathItem := loaded.Paths.Find(normalizedPath)
 				if pathItem == nil {
+					t.Errorf("%s: path %s not found in spec", tc.name, normalizedPath)
 					continue
 				}
-				method := strings.ToLower(flow.Method)
 				op := pathItem.GetOperation(strings.ToUpper(method))
 				if op == nil {
+					t.Errorf("%s: operation %s not found for %s", tc.name, strings.ToUpper(method), normalizedPath)
 					continue
 				}
 				resp := op.Responses.Status(flow.ResponseStatus)
 				if resp == nil {
+					t.Errorf("%s: response %d not found for %s", tc.name, flow.ResponseStatus, label)
 					continue
 				}
 				ct := flow.ContentType()
@@ -221,7 +227,6 @@ func TestRoundTripResponseSchemasMatchTraffic(t *testing.T) {
 					continue
 				}
 				checked++
-				label := method + " " + normalizedPath + " " + strconv.Itoa(flow.ResponseStatus)
 				assertSchemaCovers(t, tc.name, label, schema, parsed)
 			}
 			if checked == 0 {
@@ -260,8 +265,17 @@ func assertSchemaCovers(t *testing.T, fixture, label string, schema *openapi3.Sc
 			}
 		}
 	case float64:
-		if schema.Type != nil && !schema.Type.Includes("integer") && !schema.Type.Includes("number") {
-			t.Errorf("%s [%s]: numeric value but schema type is %v", fixture, label, schema.Type)
+		isInt := v == math.Trunc(v)
+		if schema.Type != nil {
+			if isInt {
+				if !schema.Type.Includes("integer") && !schema.Type.Includes("number") {
+					t.Errorf("%s [%s]: integer value but schema type is %v", fixture, label, schema.Type)
+				}
+			} else {
+				if !schema.Type.Includes("number") {
+					t.Errorf("%s [%s]: non-integer numeric value but schema type is %v", fixture, label, schema.Type)
+				}
+			}
 		}
 	case string:
 		if schema.Type != nil && !schema.Type.Includes("string") {

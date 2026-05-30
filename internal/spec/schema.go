@@ -115,6 +115,16 @@ func MergeSchemas(existing, new map[string]any) map[string]any {
 	newType, _ := new["type"].(string)
 	if existingType != newType {
 		eitherNullable := truthy(existing["nullable"]) || truthy(new["nullable"])
+		if isNullSentinel(existing) {
+			result := copyMap(new)
+			result["nullable"] = true
+			return result
+		}
+		if isNullSentinel(new) {
+			result := copyMap(existing)
+			result["nullable"] = true
+			return result
+		}
 		if (newType == "object" || newType == "array") && existingType != "object" && existingType != "array" {
 			result := copyMap(new)
 			if eitherNullable && !truthy(result["nullable"]) {
@@ -197,6 +207,10 @@ func MergeSchemas(existing, new map[string]any) map[string]any {
 		}
 		return result
 	}
+}
+
+func isNullSentinel(schema map[string]any) bool {
+	return schema["type"] == "string" && truthy(schema["nullable"]) && len(schema) == 2
 }
 
 func allMapKeys(value map[string]any) bool {
