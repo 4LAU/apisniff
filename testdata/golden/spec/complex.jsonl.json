@@ -120,11 +120,7 @@
                             "items": {
                               "properties": {
                                 "price": {
-                                  "type": "string",
-                                  "x-apisniff-observed-types": [
-                                    "integer",
-                                    "number"
-                                  ]
+                                  "type": "number"
                                 },
                                 "qty": {
                                   "type": "integer"
@@ -142,11 +138,7 @@
                             "type": "string"
                           },
                           "total": {
-                            "type": "string",
-                            "x-apisniff-observed-types": [
-                              "integer",
-                              "number"
-                            ]
+                            "type": "number"
                           }
                         },
                         "type": "object"

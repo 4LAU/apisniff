@@ -7,11 +7,18 @@ import (
 	"github.com/getkin/kin-openapi/openapi3"
 )
 
-func Validate(doc map[string]any, format string) error {
+func MarshalAndValidate(doc map[string]any, format string) ([]byte, error) {
 	data, err := Marshal(doc, format)
 	if err != nil {
-		return fmt.Errorf("marshal for validation: %w", err)
+		return nil, fmt.Errorf("marshal spec: %w", err)
 	}
+	if err := ValidateBytes(data); err != nil {
+		return nil, err
+	}
+	return data, nil
+}
+
+func ValidateBytes(data []byte) error {
 	loader := openapi3.NewLoader()
 	loaded, err := loader.LoadFromData(data)
 	if err != nil {

@@ -129,6 +129,16 @@ func MergeSchemas(existing, new map[string]any) map[string]any {
 			}
 			return result
 		}
+		if (existingType == "integer" && newType == "number") || (existingType == "number" && newType == "integer") {
+			result := map[string]any{"type": "number"}
+			if eitherNullable {
+				result["nullable"] = true
+			}
+			if example, ok := mergeExample(existing, new); ok {
+				result["example"] = example
+			}
+			return result
+		}
 		result := map[string]any{"type": "string"}
 		if eitherNullable {
 			result["nullable"] = true

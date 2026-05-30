@@ -185,6 +185,7 @@ func TestRoundTripResponseSchemasMatchTraffic(t *testing.T) {
 				t.Fatal(err)
 			}
 
+			checked := 0
 			for _, flow := range apiFlows {
 				if len(flow.ResponseBody) == 0 {
 					continue
@@ -203,7 +204,6 @@ func TestRoundTripResponseSchemasMatchTraffic(t *testing.T) {
 				if op == nil {
 					continue
 				}
-				status := strconv.Itoa(flow.ResponseStatus)
 				resp := op.Responses.Status(flow.ResponseStatus)
 				if resp == nil {
 					continue
@@ -220,7 +220,12 @@ func TestRoundTripResponseSchemasMatchTraffic(t *testing.T) {
 				if schema == nil {
 					continue
 				}
-				assertSchemaCovers(t, tc.name, method+" "+normalizedPath+" "+status, schema, parsed)
+				checked++
+				label := method + " " + normalizedPath + " " + strconv.Itoa(flow.ResponseStatus)
+				assertSchemaCovers(t, tc.name, label, schema, parsed)
+			}
+			if checked == 0 {
+				t.Fatal("round-trip test checked zero flows — test is not exercising anything")
 			}
 		})
 	}
@@ -249,11 +254,13 @@ func assertSchemaCovers(t *testing.T, fixture, label string, schema *openapi3.Sc
 			t.Errorf("%s [%s]: expected array schema, got %v", fixture, label, schema.Type)
 			return
 		}
-		if schema.Items != nil && schema.Items.Value != nil && len(v) > 0 {
-			assertSchemaCovers(t, fixture, label+"[0]", schema.Items.Value, v[0])
+		if schema.Items != nil && schema.Items.Value != nil {
+			for i, item := range v {
+				assertSchemaCovers(t, fixture, label+"["+strconv.Itoa(i)+"]", schema.Items.Value, item)
+			}
 		}
 	case float64:
-		if schema.Type != nil && !schema.Type.Includes("integer") && !schema.Type.Includes("number") && !schema.Type.Includes("string") {
+		if schema.Type != nil && !schema.Type.Includes("integer") && !schema.Type.Includes("number") {
 			t.Errorf("%s [%s]: numeric value but schema type is %v", fixture, label, schema.Type)
 		}
 	case string:
@@ -261,7 +268,7 @@ func assertSchemaCovers(t *testing.T, fixture, label string, schema *openapi3.Sc
 			t.Errorf("%s [%s]: string value but schema type is %v", fixture, label, schema.Type)
 		}
 	case bool:
-		if schema.Type != nil && !schema.Type.Includes("boolean") && !schema.Type.Includes("string") {
+		if schema.Type != nil && !schema.Type.Includes("boolean") {
 			t.Errorf("%s [%s]: boolean value but schema type is %v", fixture, label, schema.Type)
 		}
 	}

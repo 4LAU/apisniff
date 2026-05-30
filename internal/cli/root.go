@@ -407,10 +407,7 @@ func newSpecCommand() *cobra.Command {
 				InferSchemes:    inferSchemes,
 				IncludeExamples: includeExamples,
 			})
-			if err := spec.Validate(doc, format); err != nil {
-				return err
-			}
-			data, err := spec.Marshal(doc, format)
+			data, err := spec.MarshalAndValidate(doc, format)
 			if err != nil {
 				return err
 			}
