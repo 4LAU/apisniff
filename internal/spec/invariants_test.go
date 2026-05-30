@@ -219,13 +219,15 @@ func TestRoundTripResponseSchemasMatchTraffic(t *testing.T) {
 					ct = "application/json"
 				}
 				mediaType := resp.Value.Content.Get(ct)
-				if mediaType == nil || mediaType.Schema == nil {
+				if mediaType == nil {
+					t.Errorf("%s: media type %s not found for %s", tc.name, ct, label)
+					continue
+				}
+				if mediaType.Schema == nil || mediaType.Schema.Value == nil {
+					t.Errorf("%s: schema missing for %s", tc.name, label)
 					continue
 				}
 				schema := mediaType.Schema.Value
-				if schema == nil {
-					continue
-				}
 				checked++
 				assertSchemaCovers(t, tc.name, label, schema, parsed)
 			}
@@ -250,6 +252,10 @@ func assertSchemaCovers(t *testing.T, fixture, label string, schema *openapi3.Sc
 			}
 			propRef := schema.Properties[key]
 			if propRef == nil || propRef.Value == nil {
+				hasAdditional := schema.AdditionalProperties.Schema != nil || (schema.AdditionalProperties.Has != nil && *schema.AdditionalProperties.Has)
+				if !hasAdditional {
+					t.Errorf("%s [%s]: property %q in traffic but not in schema", fixture, label, key)
+				}
 				continue
 			}
 			assertSchemaCovers(t, fixture, label+"."+key, propRef.Value, child)
@@ -257,6 +263,10 @@ func assertSchemaCovers(t *testing.T, fixture, label string, schema *openapi3.Sc
 	case []any:
 		if schema.Type != nil && !schema.Type.Includes("array") {
 			t.Errorf("%s [%s]: expected array schema, got %v", fixture, label, schema.Type)
+			return
+		}
+		if len(v) > 0 && (schema.Items == nil || schema.Items.Value == nil) {
+			t.Errorf("%s [%s]: non-empty array but no items schema", fixture, label)
 			return
 		}
 		if schema.Items != nil && schema.Items.Value != nil {
