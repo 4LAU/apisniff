@@ -403,10 +403,16 @@ func newSpecCommand() *cobra.Command {
 				}
 			}
 			apiFlows := spec.FilterAPIFlows(specFlows)
-			doc := spec.Generate(apiFlows, domain, auth.Detect(specFlows), spec.Options{
+			doc, err := spec.Generate(apiFlows, domain, auth.Detect(specFlows), spec.Options{
 				InferSchemes:    inferSchemes,
 				IncludeExamples: includeExamples,
 			})
+			if err != nil {
+				if errors.Is(err, spec.ErrNoValidAPIFlows) {
+					return fmt.Errorf("no valid API flows after filtering; adjust inclusion filters or capture API traffic: %w", err)
+				}
+				return err
+			}
 			data, err := spec.MarshalAndValidate(doc, format)
 			if err != nil {
 				return err

@@ -122,6 +122,39 @@ func TestShareOutputContainsNoRawTrafficFields(t *testing.T) {
 	}
 }
 
+func TestShareSkipsSpecWhenNoValidAPIFlows(t *testing.T) {
+	bundle := t.TempDir()
+	output := filepath.Join(t.TempDir(), "share")
+	flow := model.CapturedFlow{
+		Method:          "GET",
+		Host:            "example.com",
+		Path:            "/",
+		URL:             "https://example.com/",
+		RequestHeaders:  map[string]string{},
+		ResponseStatus:  200,
+		ResponseHeaders: map[string]string{"content-type": "text/html"},
+		ResponseBody:    []byte("<html>not api</html>"),
+		BodyEncoding:    "base64",
+	}
+	writeBundleForShareTest(t, bundle, []model.CapturedFlow{flow})
+
+	result, err := Share(ShareOptions{BundleOrDomain: bundle, OutputDir: output})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if strings.Join(result.Files, ",") != "inventory.json,report.md,session.json" {
+		t.Fatalf("files = %#v", result.Files)
+	}
+	if _, err := os.Stat(filepath.Join(output, "spec.yaml")); !os.IsNotExist(err) {
+		t.Fatalf("spec.yaml was written for a bundle with no valid API flows")
+	}
+	for _, name := range []string{"inventory.json", "report.md", "session.json"} {
+		if _, err := os.Stat(filepath.Join(output, name)); err != nil {
+			t.Fatalf("%s was not written: %v", name, err)
+		}
+	}
+}
+
 func TestShareOutputContainsNoCredentialValues(t *testing.T) {
 	bundle := t.TempDir()
 	output := filepath.Join(t.TempDir(), "share")

@@ -3,6 +3,7 @@ package spec
 import (
 	"crypto/sha1"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"net/http"
 	"net/url"
@@ -26,6 +27,8 @@ type Options struct {
 	InferSchemes    bool
 	IncludeExamples bool
 }
+
+var ErrNoValidAPIFlows = errors.New("no valid API flows for spec generation")
 
 type queryEvidence struct {
 	presentCount int
@@ -69,9 +72,12 @@ func IsAPIFlow(flow model.CapturedFlow) bool {
 	return ok
 }
 
-func Generate(flows []model.CapturedFlow, domain string, patterns []auth.Pattern, opts Options) map[string]any {
+func Generate(flows []model.CapturedFlow, domain string, patterns []auth.Pattern, opts Options) (map[string]any, error) {
 	host := targetHost(domain)
 	operations := aggregateOperations(flows, opts.IncludeExamples)
+	if len(operations) == 0 {
+		return nil, ErrNoValidAPIFlows
+	}
 	operationIDs := operationIDs(operations)
 	paths := map[string]any{}
 
@@ -103,7 +109,7 @@ func Generate(flows []model.CapturedFlow, domain string, patterns []auth.Pattern
 	}
 	addAuth(doc, patterns, opts.InferSchemes)
 	promoteComponents(doc, operations)
-	return doc
+	return doc, nil
 }
 
 func aggregateOperations(flows []model.CapturedFlow, includeExamples bool) []*observedOperation {
@@ -113,8 +119,17 @@ func aggregateOperations(flows []model.CapturedFlow, includeExamples bool) []*ob
 	}
 	operations := map[groupKey]*observedOperation{}
 	for _, flow := range flows {
-		path, pathParams := model.NormalizePathWithParams(flow.Path)
+		if flow.ResponseStatus < 100 || flow.ResponseStatus > 599 {
+			continue
+		}
 		method := strings.ToLower(flow.Method)
+		if !isOpenAPIOperation(method) {
+			continue
+		}
+		path, pathParams, ok := normalizeSpecPathWithParams(flow.Path)
+		if !ok {
+			continue
+		}
 		key := groupKey{path: path, method: method}
 		op := operations[key]
 		if op == nil {
@@ -138,11 +153,16 @@ func aggregateOperations(flows []model.CapturedFlow, includeExamples bool) []*ob
 		}
 		op.flows = append(op.flows, flow)
 		for _, param := range pathParams {
-			op.pathParamValues[param.Name] = append(op.pathParamValues[param.Name], param.ObservedValue)
+			if param.ObservedValue != "" {
+				op.pathParamValues[param.Name] = append(op.pathParamValues[param.Name], param.ObservedValue)
+			}
 		}
 		if _, rawQuery, ok := strings.Cut(flow.Path, "?"); ok {
 			values, _ := url.ParseQuery(rawQuery)
 			for name, paramValues := range values {
+				if name == "" {
+					continue
+				}
 				evidence := op.query[name]
 				if evidence == nil {
 					evidence = &queryEvidence{values: map[string]struct{}{}}
@@ -174,6 +194,79 @@ func aggregateOperations(flows []model.CapturedFlow, includeExamples bool) []*ob
 		out = append(out, operations[key])
 	}
 	return out
+}
+
+var openAPIOperations = map[string]struct{}{
+	"get":     {},
+	"put":     {},
+	"post":    {},
+	"delete":  {},
+	"options": {},
+	"head":    {},
+	"patch":   {},
+	"trace":   {},
+}
+
+func isOpenAPIOperation(method string) bool {
+	_, ok := openAPIOperations[method]
+	return ok
+}
+
+func normalizeSpecPathWithParams(path string) (string, []model.PathParam, bool) {
+	pathPart := strings.SplitN(path, "?", 2)[0]
+	if !strings.HasPrefix(pathPart, "/") {
+		return "", nil, false
+	}
+	parts := strings.Split(pathPart, "/")
+	params := []model.PathParam{}
+	nameCounts := map[string]int{}
+	previousStatic := ""
+	for i, part := range parts {
+		if part == "" {
+			continue
+		}
+		switch {
+		case strings.ContainsAny(part, "{}"):
+			if !validTemplateParamSegment(part) {
+				return "", nil, false
+			}
+			canonical := canonicalPathParamName(previousStatic, nameCounts)
+			parts[i] = "{" + canonical + "}"
+			params = append(params, model.PathParam{Name: canonical})
+		case model.IsDynamicSegment(part):
+			canonical := canonicalPathParamName(previousStatic, nameCounts)
+			parts[i] = "{" + canonical + "}"
+			params = append(params, model.PathParam{Name: canonical, ObservedValue: part})
+		default:
+			previousStatic = part
+		}
+	}
+	normalized := strings.Join(parts, "/")
+	if normalized == "" {
+		normalized = "/"
+	}
+	return normalized, params, true
+}
+
+var pathTemplateNameRe = regexp.MustCompile(`^\{[0-9A-Za-z_.-]+\}$`)
+
+func validTemplateParamSegment(segment string) bool {
+	return pathTemplateNameRe.MatchString(segment)
+}
+
+func canonicalPathParamName(previousStatic string, counts map[string]int) string {
+	base := "id"
+	if previousStatic != "" {
+		prefix := model.CamelName(model.SingularizeSegment(previousStatic))
+		if prefix != "" && prefix != "id" {
+			base = prefix + "Id"
+		}
+	}
+	counts[base]++
+	if counts[base] == 1 {
+		return base
+	}
+	return base + strconv.Itoa(counts[base])
 }
 
 func recordRequestSchema(op *observedOperation, flow model.CapturedFlow, includeExamples bool) {
@@ -382,10 +475,10 @@ func buildOperationMetadata(op *observedOperation, operationID string) map[strin
 }
 
 var (
-	intValueRe      = regexp.MustCompile(`^[+-]?\d+$`)
-	numberValueRe   = regexp.MustCompile(`^[+-]?(\d+\.\d+|\d+|\.\d+)$`)
-	versionSegment  = regexp.MustCompile(`(?i)^v\d+$`)
-	simpleIdentRe   = regexp.MustCompile(`^[A-Za-z][0-9A-Za-z]*$`)
+	intValueRe     = regexp.MustCompile(`^[+-]?\d+$`)
+	numberValueRe  = regexp.MustCompile(`^[+-]?(\d+\.\d+|\d+|\.\d+)$`)
+	versionSegment = regexp.MustCompile(`(?i)^v\d+$`)
+	simpleIdentRe  = regexp.MustCompile(`^[A-Za-z][0-9A-Za-z]*$`)
 )
 
 var genericTagPrefixes = map[string]struct{}{
@@ -491,10 +584,23 @@ func targetHost(value string) string {
 	}
 	parsed, err := url.Parse(raw)
 	if err == nil && parsed.Hostname() != "" {
-		return strings.ToLower(strings.TrimSuffix(parsed.Hostname(), "."))
+		return cleanServerHost(parsed.Hostname())
 	}
-	host := strings.SplitN(value, "/", 2)[0]
-	return strings.ToLower(strings.TrimSuffix(host, "."))
+	hostSource := value
+	if _, afterScheme, ok := strings.Cut(value, "://"); ok {
+		hostSource = afterScheme
+	}
+	host := strings.SplitN(hostSource, "/", 2)[0]
+	return cleanServerHost(host)
+}
+
+func cleanServerHost(host string) string {
+	cleaned := strings.NewReplacer("{", "", "}", "").Replace(host)
+	cleaned = strings.ToLower(strings.TrimSuffix(cleaned, "."))
+	if cleaned == "" {
+		return "unknown"
+	}
+	return cleaned
 }
 
 func statusDescription(status string) string {
@@ -658,7 +764,6 @@ func promoteComponents(doc map[string]any, operations []*observedOperation) {
 		}
 	}
 }
-
 
 func pascalName(value string) string {
 	if simpleIdentRe.MatchString(value) && strings.IndexFunc(value, func(r rune) bool {

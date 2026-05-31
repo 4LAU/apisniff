@@ -50,15 +50,20 @@ func Share(opts ShareOptions) (ShareResult, error) {
 	inventory := BuildInventory(flows, domain)
 
 	files := []string{}
-	specDoc := spec.Generate(spec.FilterAPIFlows(flows), domain, auth.Detect(flows), spec.Options{InferSchemes: true, IncludeExamples: false})
-	specData, err := spec.MarshalAndValidate(specDoc, "yaml")
-	if err != nil {
+	specDoc, err := spec.Generate(spec.FilterAPIFlows(flows), domain, auth.Detect(flows), spec.Options{InferSchemes: true, IncludeExamples: false})
+	if err != nil && !errors.Is(err, spec.ErrNoValidAPIFlows) {
 		return ShareResult{}, err
 	}
-	if err := os.WriteFile(filepath.Join(outputDir, "spec.yaml"), specData, 0o600); err != nil {
-		return ShareResult{}, err
+	if err == nil {
+		specData, err := spec.MarshalAndValidate(specDoc, "yaml")
+		if err != nil {
+			return ShareResult{}, err
+		}
+		if err := os.WriteFile(filepath.Join(outputDir, "spec.yaml"), specData, 0o600); err != nil {
+			return ShareResult{}, err
+		}
+		files = append(files, "spec.yaml")
 	}
-	files = append(files, "spec.yaml")
 
 	if err := WriteInventory(filepath.Join(outputDir, "inventory.json"), inventory); err != nil {
 		return ShareResult{}, err

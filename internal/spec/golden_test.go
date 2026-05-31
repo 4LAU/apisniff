@@ -22,7 +22,7 @@ func TestGoldenSpecParity(t *testing.T) {
 			if err != nil {
 				t.Fatal(err)
 			}
-			got := Generate(flows, tc.domain, nil, Options{})
+			got := mustGenerate(t, flows, tc.domain, nil, Options{})
 			goldenPath := filepath.Join(repoRoot, "testdata", "golden", "spec", tc.name+".json")
 			if *updateGoldens {
 				data, err := json.MarshalIndent(got, "", "  ")

@@ -25,7 +25,7 @@ func redactionFlow(responseBody string) model.CapturedFlow {
 }
 
 func TestSpecExamplesRedactCredentialPatterns(t *testing.T) {
-	doc := Generate([]model.CapturedFlow{redactionFlow(`{
+	doc := mustGenerate(t, []model.CapturedFlow{redactionFlow(`{
 		"authorization": "Bearer sk_live_secret",
 		"basic_auth": "Basic dXNlcjpzZWNyZXQ=",
 		"stripe_publishable": "pk_test_123",
@@ -51,7 +51,7 @@ func TestSpecExamplesRedactCredentialPatterns(t *testing.T) {
 }
 
 func TestSpecWithoutExamplesOmitsExampleKeys(t *testing.T) {
-	doc := Generate([]model.CapturedFlow{redactionFlow(`{"name":"Ada","password":"SuperSecret"}`)}, "example.com", nil, Options{})
+	doc := mustGenerate(t, []model.CapturedFlow{redactionFlow(`{"name":"Ada","password":"SuperSecret"}`)}, "example.com", nil, Options{})
 	data, err := json.Marshal(doc)
 	if err != nil {
 		t.Fatal(err)
@@ -62,7 +62,7 @@ func TestSpecWithoutExamplesOmitsExampleKeys(t *testing.T) {
 }
 
 func TestSensitiveFieldNamesAlwaysRedactedInExamples(t *testing.T) {
-	doc := Generate([]model.CapturedFlow{redactionFlow(`{
+	doc := mustGenerate(t, []model.CapturedFlow{redactionFlow(`{
 		"password": "plain-value",
 		"credential": "plain-value",
 		"api_key": "plain-value",
