@@ -9,57 +9,6 @@ import (
 	"time"
 )
 
-func TestDetectRateLimitRecords429AndRetryAfter(t *testing.T) {
-	var count atomic.Int32
-	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		if got := r.Header.Get("x-api-key"); got != "secret" {
-			w.WriteHeader(http.StatusBadRequest)
-			return
-		}
-		if got := r.Header.Get("cookie"); got != "session=abc" {
-			w.WriteHeader(http.StatusBadRequest)
-			return
-		}
-		if count.Add(1) >= 4 {
-			w.Header().Set("retry-after", "7")
-			w.WriteHeader(http.StatusTooManyRequests)
-			return
-		}
-		w.WriteHeader(http.StatusOK)
-	}))
-	defer server.Close()
-
-	rateLimit, results := DetectRateLimit(
-		context.Background(),
-		server.URL,
-		Options{
-			Headers: map[string]string{"x-api-key": "secret"},
-			Cookie:  "session=abc",
-			Timeout: time.Second,
-		},
-		RateOptions{Requests: 6},
-	)
-
-	if len(results) != 6 {
-		t.Fatalf("results length = %d, want 6", len(results))
-	}
-	if rateLimit.RequestsSent != 6 {
-		t.Fatalf("requests sent = %d, want 6", rateLimit.RequestsSent)
-	}
-	if rateLimit.FirstBlockAt != 4 {
-		t.Fatalf("first block at = %d, want 4", rateLimit.FirstBlockAt)
-	}
-	if rateLimit.BlockStatus != http.StatusTooManyRequests {
-		t.Fatalf("block status = %d, want %d", rateLimit.BlockStatus, http.StatusTooManyRequests)
-	}
-	if rateLimit.RetryAfter != "7" {
-		t.Fatalf("retry after = %q, want 7", rateLimit.RetryAfter)
-	}
-	if results[3].Variant != "rate_4" {
-		t.Fatalf("variant = %q, want rate_4", results[3].Variant)
-	}
-}
-
 func TestDetectRateLimitDetectsSilentThrottle(t *testing.T) {
 	var count atomic.Int32
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {

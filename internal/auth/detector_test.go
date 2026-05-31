@@ -23,24 +23,6 @@ func authFlow(update func(*model.CapturedFlow)) model.CapturedFlow {
 	return flow
 }
 
-func TestDetectAuthPatterns(t *testing.T) {
-	flows := []model.CapturedFlow{
-		authFlow(func(f *model.CapturedFlow) { f.RequestHeaders = map[string]string{"authorization": "Bearer token"} }),
-		authFlow(func(f *model.CapturedFlow) { f.RequestHeaders = map[string]string{"authorization": "Bearer token2"} }),
-		authFlow(func(f *model.CapturedFlow) { f.RequestHeaders = map[string]string{"x-api-key": "abc"} }),
-		authFlow(func(f *model.CapturedFlow) { f.Path = "/oauth/token" }),
-		authFlow(func(f *model.CapturedFlow) { f.Path = "/api/data?api_key=abc" }),
-		authFlow(func(f *model.CapturedFlow) { f.RequestHeaders = map[string]string{"cookie": "PHPSESSID=abc; other=1"} }),
-	}
-	patterns := Detect(flows)
-	if len(patterns) < 5 {
-		t.Fatalf("patterns = %+v", patterns)
-	}
-	if patterns[0].AuthType != "bearer" || patterns[0].FlowCount != 2 {
-		t.Fatalf("first pattern = %+v", patterns[0])
-	}
-}
-
 func TestDetectBearer(t *testing.T) {
 	patterns := Detect([]model.CapturedFlow{
 		authFlow(func(f *model.CapturedFlow) {

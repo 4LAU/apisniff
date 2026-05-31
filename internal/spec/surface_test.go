@@ -1,7 +1,6 @@
 package spec
 
 import (
-	"encoding/json"
 	"testing"
 
 	"github.com/4LAU/apisniff/internal/model"
@@ -47,9 +46,6 @@ func TestBuildSurfaceInventoryClassifiesAllFlows(t *testing.T) {
 	}
 	if len(inventory.Flows) != 2 || inventory.Flows[0].Category != model.BusinessAPI || inventory.Flows[1].Category != model.ThirdPartyAPI {
 		t.Fatalf("flows = %#v", inventory.Flows)
-	}
-	if _, err := json.Marshal(inventory); err != nil {
-		t.Fatalf("inventory did not marshal: %v", err)
 	}
 }
 

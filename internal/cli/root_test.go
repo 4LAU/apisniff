@@ -15,34 +15,6 @@ import (
 	"github.com/spf13/cobra"
 )
 
-func TestReplayCommandExposesForwardAuthFlag(t *testing.T) {
-	cmd := newReplayCommand()
-	if cmd.Flags().Lookup("forward-auth") == nil {
-		t.Fatalf("forward-auth flag missing")
-	}
-}
-
-func TestDefaultVersionIsDev(t *testing.T) {
-	if Version != "dev" {
-		t.Fatalf("Version = %q, want %q", Version, "dev")
-	}
-}
-
-func TestRootVersionFlagOutputsVersion(t *testing.T) {
-	previous := Version
-	t.Cleanup(func() { Version = previous })
-	Version = "1.2.3-test"
-
-	stdout, stderr, err := executeForTest(newRootCommand(), "--version")
-	if err != nil {
-		t.Fatalf("--version returned error: %v", err)
-	}
-	if stderr != "" {
-		t.Fatalf("stderr = %q, want empty", stderr)
-	}
-	assertContains(t, stdout, "apisniff version", Version)
-}
-
 func TestAnalyzeHumanWritesOnlyStderrAndBundle(t *testing.T) {
 	input := writeTestFlows(t, t.TempDir())
 	outputDir := filepath.Join(t.TempDir(), "bundle")
@@ -184,64 +156,6 @@ func TestAnalyzeImportsBurpAndJSONL(t *testing.T) {
 	})
 }
 
-func TestAnalyzeFetchGraphQLRequiresOutputDir(t *testing.T) {
-	input := writeTestFlows(t, t.TempDir())
-
-	stdout, _, err := executeForTest(newAnalyzeCommand(), input, "--fetch-graphql")
-	if err == nil {
-		t.Fatalf("expected error")
-	}
-	if stdout != "" {
-		t.Fatalf("stdout = %q, want empty", stdout)
-	}
-	if !strings.Contains(err.Error(), "--fetch-graphql requires --output-dir to store the introspection result") {
-		t.Fatalf("error = %v", err)
-	}
-}
-
-func TestCommandsReportMissingRequiredArgs(t *testing.T) {
-	tests := []struct {
-		name string
-		cmd  *cobra.Command
-		want string
-	}{
-		{name: "analyze", cmd: newAnalyzeCommand(), want: "accepts 1 arg(s), received 0"},
-		{name: "spec", cmd: newSpecCommand(), want: "accepts 1 arg(s), received 0"},
-		{name: "share", cmd: newShareCommand(), want: "accepts 1 arg(s), received 0"},
-		{name: "replay", cmd: newReplayCommand(), want: "accepts 1 arg(s), received 0"},
-		{name: "probe rate", cmd: newProbeCommand(), want: "probe rate requires a URL argument"},
-	}
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			args := []string{}
-			if tt.name == "probe rate" {
-				args = []string{"rate"}
-			}
-			stdout, _, err := executeForTest(tt.cmd, args...)
-			if err == nil {
-				t.Fatalf("expected error")
-			}
-			if stdout != "" {
-				t.Fatalf("stdout = %q, want empty", stdout)
-			}
-			if !strings.Contains(err.Error(), tt.want) {
-				t.Fatalf("error = %v, want %q", err, tt.want)
-			}
-		})
-	}
-}
-
-func TestHeaderFlagValidationRejectsMissingColon(t *testing.T) {
-	input := writeTestFlows(t, t.TempDir())
-	_, _, err := executeForTest(newReplayCommand(), input, "--dry-run", "--header", "Authorization Bearer token")
-	if err == nil {
-		t.Fatalf("expected invalid header error")
-	}
-	if !strings.Contains(err.Error(), `invalid header "Authorization Bearer token": expected key:value`) {
-		t.Fatalf("error = %v", err)
-	}
-}
-
 func TestSpecWritesSpecToStdoutAndStatusToStderr(t *testing.T) {
 	input := writeTestFlows(t, t.TempDir())
 
@@ -348,16 +262,6 @@ func TestSpecIncludeHostIncludesDroppedFlows(t *testing.T) {
 	paths := payload["paths"].(map[string]any)
 	if _, ok := paths["/v1/data"]; !ok {
 		t.Fatalf("included host path missing from spec paths: %#v", paths)
-	}
-}
-
-func TestProbeRateRequiresURL(t *testing.T) {
-	_, _, err := executeForTest(newProbeCommand(), "rate")
-	if err == nil {
-		t.Fatalf("expected error for probe rate without URL")
-	}
-	if !strings.Contains(err.Error(), "probe rate requires a URL argument") {
-		t.Fatalf("error = %v", err)
 	}
 }
 

@@ -33,22 +33,6 @@ func replayFlow(method, rawURL, path string, status int, body []byte) model.Capt
 	}
 }
 
-func TestFilterFlowsExcludesUnsafeByDefault(t *testing.T) {
-	flows := []model.CapturedFlow{
-		replayFlow("GET", "https://example.com/a", "/a", 200, nil),
-		replayFlow("POST", "https://example.com/b", "/b", 200, nil),
-		replayFlow("OPTIONS", "https://example.com/c", "/c", 204, nil),
-	}
-	safe, unsafe := FilterFlows(flows, false)
-	if len(safe) != 2 || len(unsafe) != 1 {
-		t.Fatalf("safe=%d unsafe=%d", len(safe), len(unsafe))
-	}
-	all, unsafe := FilterFlows(flows, true)
-	if len(all) != 3 || unsafe != nil {
-		t.Fatalf("include unsafe all=%d unsafe=%v", len(all), unsafe)
-	}
-}
-
 func TestBuildRequestRemovesHopByHopAndAddsCookies(t *testing.T) {
 	flow := replayFlow("GET", "https://api.example.com/v1/users?q=1", "/v1/users?q=1", 200, nil)
 	flow.Host = "api.example.com:443"

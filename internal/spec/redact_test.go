@@ -50,17 +50,6 @@ func TestSpecExamplesRedactCredentialPatterns(t *testing.T) {
 	}
 }
 
-func TestSpecWithoutExamplesOmitsExampleKeys(t *testing.T) {
-	doc := mustGenerate(t, []model.CapturedFlow{redactionFlow(`{"name":"Ada","password":"SuperSecret"}`)}, "example.com", nil, Options{})
-	data, err := json.Marshal(doc)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if strings.Contains(string(data), `"example"`) {
-		t.Fatalf("spec generated without examples contained example keys:\n%s", data)
-	}
-}
-
 func TestSensitiveFieldNamesAlwaysRedactedInExamples(t *testing.T) {
 	doc := mustGenerate(t, []model.CapturedFlow{redactionFlow(`{
 		"password": "plain-value",

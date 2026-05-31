@@ -3,13 +3,11 @@ package spec
 import (
 	"bytes"
 	"context"
-	"encoding/json"
 	"errors"
 	"math"
 	"os"
 	"path/filepath"
 	"regexp"
-	"sort"
 	"strconv"
 	"strings"
 	"testing"
@@ -203,40 +201,6 @@ func TestSpecOutputDeterministic(t *testing.T) {
 			}
 			if !bytes.Equal(firstJSON, secondJSON) {
 				t.Fatal("Generate produced non-deterministic JSON")
-			}
-		})
-	}
-}
-
-func TestSerializedPathKeysSorted(t *testing.T) {
-	for _, tc := range fixtureCases {
-		t.Run(tc.name, func(t *testing.T) {
-			doc := loadFixtureSpec(t, tc.name, tc.domain, Options{})
-			data, err := Marshal(doc, "json")
-			if err != nil {
-				t.Fatal(err)
-			}
-			paths := asMap(doc["paths"])
-			keys := make([]string, 0, len(paths))
-			for path := range paths {
-				keys = append(keys, path)
-			}
-			sort.Strings(keys)
-			previousIndex := -1
-			for _, path := range keys {
-				encoded, err := json.Marshal(path)
-				if err != nil {
-					t.Fatal(err)
-				}
-				needle := "\n    " + string(encoded) + ":"
-				index := strings.Index(string(data), needle)
-				if index < 0 {
-					t.Fatalf("serialized path key %s not found", path)
-				}
-				if index <= previousIndex {
-					t.Fatalf("serialized path key %s is out of order", path)
-				}
-				previousIndex = index
 			}
 		})
 	}

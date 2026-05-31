@@ -65,9 +65,15 @@ func TestDetectFormats(t *testing.T) {
 	harPath := filepath.Join(dir, "traffic.har")
 	jsonlPath := filepath.Join(dir, "flows.jsonl")
 	burpPath := filepath.Join(dir, "burp.xml")
-	os.WriteFile(harPath, []byte(`{"log":{"entries":[]}}`), 0o600)
-	os.WriteFile(jsonlPath, []byte(`{"method":"GET"}`+"\n"), 0o600)
-	os.WriteFile(burpPath, []byte(`<?xml version="1.0"?><items></items>`), 0o600)
+	if err := os.WriteFile(harPath, []byte(`{"log":{"entries":[]}}`), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(jsonlPath, []byte(`{"method":"GET"}`+"\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(burpPath, []byte(`<?xml version="1.0"?><items></items>`), 0o600); err != nil {
+		t.Fatal(err)
+	}
 	for path, want := range map[string]string{harPath: "har", jsonlPath: "jsonl", burpPath: "burp"} {
 		got, err := Detect(path)
 		if err != nil {
