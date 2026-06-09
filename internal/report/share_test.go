@@ -235,6 +235,48 @@ func TestShareRegeneratesReportInsteadOfCopyingSource(t *testing.T) {
 	}
 }
 
+func TestShareSessionExportDropsUnknownFields(t *testing.T) {
+	bundle := t.TempDir()
+	output := filepath.Join(t.TempDir(), "share")
+	writeBundleForShareTest(t, bundle, []model.CapturedFlow{{
+		Method:          "GET",
+		Host:            "example.com",
+		Path:            "/api/users",
+		URL:             "https://example.com/api/users",
+		RequestHeaders:  map[string]string{},
+		ResponseStatus:  200,
+		ResponseHeaders: map[string]string{"content-type": "application/json"},
+		ResponseBody:    []byte(`{"ok":true}`),
+		BodyEncoding:    "base64",
+		Tags:            []string{"category:business_api"},
+	}})
+	session := `{"domain":"example.com","total_flows":1,"kept_flows":1,"token":"PLANTED_SECRET_VALUE","notes":"internal"}`
+	if err := os.WriteFile(filepath.Join(bundle, "session.json"), []byte(session), 0o600); err != nil {
+		t.Fatal(err)
+	}
+
+	result, err := Share(ShareOptions{BundleOrDomain: bundle, OutputDir: output})
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, name := range result.Files {
+		data, err := os.ReadFile(filepath.Join(output, name))
+		if err != nil {
+			t.Fatal(err)
+		}
+		if strings.Contains(string(data), "PLANTED_SECRET_VALUE") {
+			t.Fatalf("share output %s contains planted session secret:\n%s", name, data)
+		}
+	}
+	exported, err := os.ReadFile(filepath.Join(output, "session.json"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(string(exported), `"domain": "example.com"`) || !strings.Contains(string(exported), `"total_flows": 1`) {
+		t.Fatalf("exported session lost allowlisted fields:\n%s", exported)
+	}
+}
+
 func writeBundleForShareTest(t *testing.T, bundle string, flows []model.CapturedFlow) {
 	t.Helper()
 	var lines []string

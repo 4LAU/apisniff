@@ -1,6 +1,7 @@
 package report
 
 import (
+	"encoding/json"
 	"errors"
 	"os"
 	"path/filepath"
@@ -8,6 +9,7 @@ import (
 	"github.com/4LAU/apisniff/internal/adapter"
 	"github.com/4LAU/apisniff/internal/auth"
 	"github.com/4LAU/apisniff/internal/bundle"
+	"github.com/4LAU/apisniff/internal/model"
 	"github.com/4LAU/apisniff/internal/spec"
 )
 
@@ -75,16 +77,28 @@ func Share(opts ShareOptions) (ShareResult, error) {
 	}
 	files = append(files, "report.md")
 
-	if copied, err := copySession(bundleDir, outputDir); err != nil {
+	if exported, err := exportSession(bundleDir, outputDir); err != nil {
 		return ShareResult{}, err
-	} else if copied {
+	} else if exported {
 		files = append(files, "session.json")
 	}
 
 	return ShareResult{OutputDir: outputDir, Files: files}, nil
 }
 
-func copySession(bundleDir string, outputDir string) (bool, error) {
+// shareSession is the public shape of session.json in share output. It is a
+// deliberate allowlist, separate from model.SessionStats, so a field added to
+// the internal session schema can never leak into shared bundles by default.
+type shareSession struct {
+	Domain          string         `json:"domain"`
+	StartedAt       string         `json:"started_at"`
+	DurationSeconds float64        `json:"duration_seconds"`
+	TotalFlows      int            `json:"total_flows"`
+	KeptFlows       int            `json:"kept_flows"`
+	Dropped         map[string]int `json:"dropped"`
+}
+
+func exportSession(bundleDir string, outputDir string) (bool, error) {
 	data, err := os.ReadFile(filepath.Join(bundleDir, "session.json"))
 	if err != nil {
 		if errors.Is(err, os.ErrNotExist) {
@@ -92,5 +106,21 @@ func copySession(bundleDir string, outputDir string) (bool, error) {
 		}
 		return false, err
 	}
-	return true, os.WriteFile(filepath.Join(outputDir, "session.json"), data, 0o600)
+	var session model.SessionStats
+	if err := json.Unmarshal(data, &session); err != nil {
+		// Malformed session metadata is not worth failing the share; omit it.
+		return false, nil
+	}
+	exported, err := json.MarshalIndent(shareSession{
+		Domain:          session.Domain,
+		StartedAt:       session.StartedAt,
+		DurationSeconds: session.DurationSeconds,
+		TotalFlows:      session.TotalFlows,
+		KeptFlows:       session.KeptFlows,
+		Dropped:         session.Dropped,
+	}, "", "  ")
+	if err != nil {
+		return false, err
+	}
+	return true, os.WriteFile(filepath.Join(outputDir, "session.json"), append(exported, '\n'), 0o600)
 }
