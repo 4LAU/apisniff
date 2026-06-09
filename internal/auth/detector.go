@@ -145,30 +145,6 @@ func ExtractCookies(flows []model.CapturedFlow) []ExtractedCookie {
 	return cookies
 }
 
-func CookiesToCookiejar(cookies []ExtractedCookie) string {
-	var lines []string
-	for _, cookie := range cookies {
-		if cookie.Source != "response" {
-			continue
-		}
-		domain := cookie.Domain
-		flag := "FALSE"
-		if !cookie.HostOnly {
-			domain = "." + domain
-			flag = "TRUE"
-		}
-		secure := "FALSE"
-		if cookie.Secure {
-			secure = "TRUE"
-		}
-		lines = append(lines, strings.Join([]string{domain, flag, cookie.Path, secure, "0", cookie.Name, cookie.Value}, "\t"))
-	}
-	if len(lines) == 0 {
-		return ""
-	}
-	return strings.Join(lines, "\n") + "\n"
-}
-
 func parseSetCookie(raw string, host string) (ExtractedCookie, bool) {
 	parts := strings.Split(raw, ";")
 	if len(parts) == 0 {

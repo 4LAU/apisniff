@@ -54,14 +54,6 @@ func NewDetector() (*Detector, error) {
 	return &Detector{signatures: signatures}, nil
 }
 
-func MustDetector() *Detector {
-	detector, err := NewDetector()
-	if err != nil {
-		panic(err)
-	}
-	return detector
-}
-
 func (d *Detector) Match(headers map[string]string, body []byte, status int) []model.VendorMatch {
 	if d == nil {
 		return nil

@@ -62,10 +62,6 @@ func (s styles) header(value string) string {
 	return s.headerS.Render(value)
 }
 
-func (s styles) section(value string) string {
-	return s.header(value)
-}
-
 func (s styles) faint(value string) string {
 	return s.faintS.Render(value)
 }
@@ -493,19 +489,6 @@ func fitRows(headers []string, rows [][]string, maxWidth int) [][]string {
 				if limits[i] > limits[largest] {
 					largest = i
 				}
-			}
-		}
-		if limits[largest] <= 8 {
-			break
-		}
-		limits[largest]--
-		total--
-	}
-	for total > available {
-		largest := 0
-		for i := range limits {
-			if limits[i] > limits[largest] {
-				largest = i
 			}
 		}
 		if limits[largest] <= 8 {

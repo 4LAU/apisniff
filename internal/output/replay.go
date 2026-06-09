@@ -40,7 +40,7 @@ func WriteReplay(cfg Config, summary replay.Summary) error {
 		lines = append(lines, "", s.simpleTable([]string{"Method", "Path", "Status", "Result"}, rows))
 	}
 
-	lines = append(lines, "", s.section("Summary"))
+	lines = append(lines, "", s.header("Summary"))
 	for _, line := range replaySummaryLines(s, summary, []string{"match", "drift", "auth_expired", "blocked", "error"}) {
 		lines = append(lines, line)
 	}
@@ -58,7 +58,7 @@ func writeReplayDryRun(s styles, summary replay.Summary) error {
 		}, "  "),
 	}
 	if len(summary.Endpoints) > 0 {
-		lines = append(lines, "", s.section("Endpoints"))
+		lines = append(lines, "", s.header("Endpoints"))
 		for _, endpoint := range summary.Endpoints {
 			lines = append(lines, "  "+endpoint)
 		}

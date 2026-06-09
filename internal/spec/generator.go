@@ -53,8 +53,7 @@ type responseSchemaKey struct {
 
 type componentUse struct {
 	path   string
-	method string
-	key    string
+	media  map[string]any
 	schema map[string]any
 }
 
@@ -615,7 +614,7 @@ func statusDescription(status string) string {
 }
 
 func isJSONishContentType(contentType string) bool {
-	return contentType == "application/json" || strings.HasSuffix(contentType, "+json") || strings.Contains(contentType, "json")
+	return strings.Contains(contentType, "json")
 }
 
 func sortedStringSet(values map[string]struct{}) []any {
@@ -683,34 +682,27 @@ func promoteComponents(doc map[string]any, operations []*observedOperation) {
 	for _, op := range operations {
 		opDict := asMap(asMap(asMap(doc["paths"])[op.path])[op.method])
 		requestBody := asMap(opDict["requestBody"])
-		for ct, mediaValue := range asMap(requestBody["content"]) {
+		for _, mediaValue := range asMap(requestBody["content"]) {
 			media := asMap(mediaValue)
 			schema := asMap(media["schema"])
 			if schema["type"] == "object" || schema["type"] == "array" {
 				key := componentCandidateKey{context: "Request", fingerprint: schemaFingerprint(schema)}
-				candidates[key] = append(candidates[key], componentUse{path: op.path, method: op.method, key: ct, schema: schema})
+				candidates[key] = append(candidates[key], componentUse{path: op.path, media: media, schema: schema})
 			}
 		}
-		for status, responseValue := range asMap(opDict["responses"]) {
+		for _, responseValue := range asMap(opDict["responses"]) {
 			response := asMap(responseValue)
-			for ct, mediaValue := range asMap(response["content"]) {
+			for _, mediaValue := range asMap(response["content"]) {
 				media := asMap(mediaValue)
 				schema := asMap(media["schema"])
 				if schema["type"] == "object" || schema["type"] == "array" {
 					key := componentCandidateKey{context: "Response", fingerprint: schemaFingerprint(schema)}
-					candidates[key] = append(candidates[key], componentUse{path: op.path, method: op.method, key: status + ":" + ct, schema: schema})
+					candidates[key] = append(candidates[key], componentUse{path: op.path, media: media, schema: schema})
 				}
 			}
 		}
 	}
 
-	components := asMap(doc["components"])
-	schemas := asMap(components["schemas"])
-	usedNames := map[string]struct{}{}
-	for name := range schemas {
-		usedNames[name] = struct{}{}
-	}
-	refs := map[componentCandidateKey]string{}
 	keys := make([]componentCandidateKey, 0, len(candidates))
 	for key := range candidates {
 		keys = append(keys, key)
@@ -721,6 +713,8 @@ func promoteComponents(doc map[string]any, operations []*observedOperation) {
 		}
 		return keys[i].context < keys[j].context
 	})
+	schemas := map[string]any{}
+	usedNames := map[string]struct{}{}
 	for _, key := range keys {
 		uses := candidates[key]
 		if len(uses) < 2 {
@@ -728,41 +722,17 @@ func promoteComponents(doc map[string]any, operations []*observedOperation) {
 		}
 		name := uniqueComponentName(componentBaseName(uses[0].path, key.context), usedNames)
 		schemas[name] = uses[0].schema
-		refs[key] = "#/components/schemas/" + name
-	}
-	if len(refs) == 0 {
-		if len(schemas) > 0 {
-			components["schemas"] = schemas
-			doc["components"] = components
+		for _, use := range uses {
+			// Fresh map per use: yaml.v3 emits anchors for shared instances.
+			use.media["schema"] = map[string]any{"$ref": "#/components/schemas/" + name}
 		}
+	}
+	if len(schemas) == 0 {
 		return
 	}
+	components := asMap(doc["components"])
 	components["schemas"] = schemas
 	doc["components"] = components
-
-	for _, op := range operations {
-		opDict := asMap(asMap(asMap(doc["paths"])[op.path])[op.method])
-		requestBody := asMap(opDict["requestBody"])
-		for _, mediaValue := range asMap(requestBody["content"]) {
-			media := asMap(mediaValue)
-			schema := asMap(media["schema"])
-			ref := refs[componentCandidateKey{context: "Request", fingerprint: schemaFingerprint(schema)}]
-			if ref != "" {
-				media["schema"] = map[string]any{"$ref": ref}
-			}
-		}
-		for _, responseValue := range asMap(opDict["responses"]) {
-			response := asMap(responseValue)
-			for _, mediaValue := range asMap(response["content"]) {
-				media := asMap(mediaValue)
-				schema := asMap(media["schema"])
-				ref := refs[componentCandidateKey{context: "Response", fingerprint: schemaFingerprint(schema)}]
-				if ref != "" {
-					media["schema"] = map[string]any{"$ref": ref}
-				}
-			}
-		}
-	}
 }
 
 func pascalName(value string) string {

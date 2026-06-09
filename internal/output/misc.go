@@ -47,7 +47,7 @@ func WriteRecon(cfg Config, result ReconResult) error {
 		s.headerBox("apisniff recon", result.Domain),
 		completion,
 		"",
-		s.section("Bundle"),
+		s.header("Bundle"),
 		s.kv("directory", result.BundleDir),
 		s.kv("flows", result.FlowsPath),
 	}

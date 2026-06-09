@@ -73,13 +73,19 @@ func LoadHAR(path string) ([]model.CapturedFlow, error) {
 			reqBody = []byte(entry.Request.PostData.Text)
 		}
 		respBody := []byte(entry.Response.Content.Text)
+		tags := []string{}
 		if strings.EqualFold(entry.Response.Content.Encoding, "base64") && entry.Response.Content.Text != "" {
 			if decoded, err := base64.StdEncoding.DecodeString(entry.Response.Content.Text); err == nil {
 				respBody = decoded
+			} else {
+				// Keeping the undecoded base64 text would corrupt downstream
+				// consumers; drop the body and mark the flow instead.
+				respBody = nil
+				tags = append(tags, "response_body_decode_error")
 			}
 		}
 		flows = append(flows, model.CapturedFlow{
-			Method:          firstNonEmpty(entry.Request.Method, "GET"),
+			Method:          model.FirstNonEmpty(entry.Request.Method, "GET"),
 			Host:            parsed.Hostname(),
 			Path:            path,
 			URL:             entry.Request.URL,
@@ -89,7 +95,7 @@ func LoadHAR(path string) ([]model.CapturedFlow, error) {
 			ResponseHeaders: parseHARHeaders(entry.Response.Headers),
 			ResponseBody:    respBody,
 			BodyEncoding:    "base64",
-			Tags:            []string{},
+			Tags:            tags,
 			Timestamp:       parseHARTimestamp(entry.StartedDateTime),
 		})
 	}
@@ -117,15 +123,6 @@ func parseHARTimestamp(raw string) float64 {
 		return 0
 	}
 	return float64(t.UnixNano()) / 1e9
-}
-
-func firstNonEmpty(values ...string) string {
-	for _, value := range values {
-		if value != "" {
-			return value
-		}
-	}
-	return ""
 }
 
 func isAbsoluteRequestURL(parsed *url.URL) bool {

@@ -44,7 +44,7 @@ func WriteAnalyze(cfg Config, result AnalyzeResult) error {
 				fmt.Sprintf("%d", endpoint.Count),
 			})
 		}
-		lines = append(lines, "", s.section("Top endpoints"), s.simpleTable([]string{"Method", "Path", "Count"}, rows))
+		lines = append(lines, "", s.header("Top endpoints"), s.simpleTable([]string{"Method", "Path", "Count"}, rows))
 	}
 	if len(result.AuthPatterns) > 0 {
 		rows := make([][]string, 0, len(result.AuthPatterns))
@@ -55,7 +55,7 @@ func WriteAnalyze(cfg Config, result AnalyzeResult) error {
 				fmt.Sprintf("%d", pattern.FlowCount),
 			})
 		}
-		lines = append(lines, "", s.section("Auth patterns"), s.simpleTable([]string{"Type", "Detail", "Flows"}, rows))
+		lines = append(lines, "", s.header("Auth patterns"), s.simpleTable([]string{"Type", "Detail", "Flows"}, rows))
 	}
 	if len(result.Cookies) > 0 {
 		rows := make([][]string, 0, len(result.Cookies))
@@ -66,7 +66,7 @@ func WriteAnalyze(cfg Config, result AnalyzeResult) error {
 				cookie.Source,
 			})
 		}
-		lines = append(lines, "", s.section("Cookies"), s.simpleTable([]string{"Name", "Domain", "Source"}, rows))
+		lines = append(lines, "", s.header("Cookies"), s.simpleTable([]string{"Name", "Domain", "Source"}, rows))
 	}
 	return s.writeLines(lines...)
 }

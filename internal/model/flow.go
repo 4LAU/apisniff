@@ -109,7 +109,7 @@ func (f *CapturedFlow) UnmarshalJSON(data []byte) error {
 		ResponseStatus:  wire.ResponseStatus,
 		ResponseHeaders: nonNilMap(wire.ResponseHeaders),
 		ResponseBody:    resp,
-		BodyEncoding:    firstNonEmpty(wire.BodyEncoding, "base64"),
+		BodyEncoding:    FirstNonEmpty(wire.BodyEncoding, "base64"),
 		Tags:            nonNilSlice(wire.Tags),
 		Timestamp:       wire.Timestamp,
 	}
@@ -134,6 +134,11 @@ func (f CapturedFlow) ContentType() string {
 
 func GetHeader(headers map[string]string, name string) string {
 	lower := strings.ToLower(name)
+	if value, ok := headers[lower]; ok {
+		return value
+	}
+	// Keys are stored lowercase by every loader; scan only as a fallback
+	// for hand-written JSONL with mixed-case keys.
 	for key, value := range headers {
 		if strings.ToLower(key) == lower {
 			return value
@@ -299,7 +304,7 @@ func nonNilSlice(in []string) []string {
 	return in
 }
 
-func firstNonEmpty(values ...string) string {
+func FirstNonEmpty(values ...string) string {
 	for _, value := range values {
 		if value != "" {
 			return value

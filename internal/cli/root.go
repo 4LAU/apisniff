@@ -389,13 +389,15 @@ func newSpecCommand() *cobra.Command {
 				fmt.Fprintln(cmd.ErrOrStderr(), "inclusion filters have no effect on pre-filtered bundles; pass the original capture file via --input")
 			}
 			specFlows := flows
-			surface := spec.BuildSurfaceInventory(flows, domain)
+			var surface spec.SurfaceInventory
 			if inclusionOptionsEnabled(inclusions) {
 				var err error
 				specFlows, surface, err = spec.ApplyInclusionFilters(flows, domain, inclusions)
 				if err != nil {
 					return err
 				}
+			} else if surfaceOutput != "" {
+				surface = spec.BuildSurfaceInventory(flows, domain)
 			}
 			if surfaceOutput != "" {
 				if err := writeJSONFile(surfaceOutput, surface); err != nil {
@@ -421,23 +423,14 @@ func newSpecCommand() *cobra.Command {
 				if err := os.WriteFile(outputFile, data, 0o600); err != nil {
 					return err
 				}
-				paths, operations := countOpenAPIOperations(doc)
-				return output.WriteSpecStatus(humanOutputConfig(cmd), output.SpecStatusResult{
-					Domain:            domain,
-					Format:            format,
-					OutputPath:        outputFile,
-					SurfaceOutputPath: surfaceOutput,
-					Paths:             paths,
-					Operations:        operations,
-				})
-			}
-			if _, err := cmd.OutOrStdout().Write(append(data, '\n')); err != nil {
+			} else if _, err := cmd.OutOrStdout().Write(append(data, '\n')); err != nil {
 				return err
 			}
 			paths, operations := countOpenAPIOperations(doc)
 			return output.WriteSpecStatus(humanOutputConfig(cmd), output.SpecStatusResult{
 				Domain:            domain,
 				Format:            format,
+				OutputPath:        outputFile,
 				SurfaceOutputPath: surfaceOutput,
 				Paths:             paths,
 				Operations:        operations,
@@ -452,7 +445,6 @@ func newSpecCommand() *cobra.Command {
 	cmd.Flags().StringArrayVar(&includeCategory, "include-category", nil, "include category")
 	cmd.Flags().StringArrayVar(&includeHost, "include-host", nil, "include host")
 	cmd.Flags().BoolVar(&inferSchemes, "infer-security-schemes", false, "infer OpenAPI securitySchemes from observed auth")
-	cmd.Flags().Bool("no-infer-security-schemes", false, "keep observed auth in extensions only")
 	cmd.Flags().BoolVar(&includeExamples, "examples", false, "include examples")
 	return cmd
 }

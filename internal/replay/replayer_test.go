@@ -54,6 +54,28 @@ func TestBuildRequestRemovesHopByHopAndAddsCookies(t *testing.T) {
 	}
 }
 
+func TestBuildRequestSplitsProxyJoinedMultiValueHeaders(t *testing.T) {
+	flow := replayFlow("GET", "https://api.example.com/v1/users", "/v1/users", 200, nil)
+	flow.Host = "api.example.com"
+	flow.RequestHeaders = map[string]string{"accept": "application/json\ntext/plain"}
+	req, err := buildRequest(context.Background(), flow, nil, nil, false)
+	if err != nil {
+		t.Fatal(err)
+	}
+	got := req.Header.Values("accept")
+	want := []string{"application/json", "text/plain"}
+	if !reflect.DeepEqual(got, want) {
+		t.Fatalf("accept values = %q, want %q", got, want)
+	}
+	// A raw newline in a header value makes http.Client.Do reject the
+	// whole request, so the split must leave no newlines behind.
+	for _, v := range got {
+		if strings.Contains(v, "\n") {
+			t.Fatalf("header value still contains newline: %q", v)
+		}
+	}
+}
+
 func TestBuildRequestStripsCapturedAuthHeadersByDefault(t *testing.T) {
 	flow := replayFlow("GET", "https://api.example.com/v1/users", "/v1/users", 200, nil)
 	flow.Host = "api.example.com"

@@ -21,20 +21,6 @@ import (
 )
 
 var hopByHop = map[string]struct{}{"host": {}, "content-length": {}, "content-encoding": {}, "transfer-encoding": {}, "connection": {}, "keep-alive": {}}
-var authHeaderNames = map[string]struct{}{
-	"authorization":       {},
-	"proxy-authorization": {},
-	"cookie":              {},
-	"x-api-key":           {},
-	"api-key":             {},
-	"apikey":              {},
-	"x-auth-token":        {},
-	"x-access-token":      {},
-	"x-csrf-token":        {},
-	"x-xsrf-token":        {},
-	"csrf-token":          {},
-	"xsrf-token":          {},
-}
 var safeMethods = map[string]struct{}{"GET": {}, "HEAD": {}, "OPTIONS": {}}
 
 type Options struct {
@@ -136,8 +122,7 @@ func newHTTPClient(opts Options) (*surf.Client, error) {
 	if !opts.Insecure {
 		builder = builder.SecureTLS()
 	}
-	profile := strings.ToLower(firstNonEmpty(opts.Impersonate, "chrome"))
-	switch profile {
+	switch strings.ToLower(opts.Impersonate) {
 	case "chrome", "":
 		return builder.Impersonate().Chrome().Build().Result()
 	case "firefox":
@@ -188,7 +173,11 @@ func buildRequest(ctx context.Context, flow model.CapturedFlow, headers map[stri
 				continue
 			}
 		}
-		req.Header.Set(key, value)
+		// Proxy capture joins duplicate header values with "\n"; a raw
+		// newline in a header value is rejected by net/http.
+		for _, v := range strings.Split(value, "\n") {
+			req.Header.Add(key, v)
+		}
 	}
 	for key, value := range headers {
 		req.Header.Set(key, value)
@@ -344,15 +333,6 @@ func stripPort(host string) string {
 	return host
 }
 
-func firstNonEmpty(values ...string) string {
-	for _, value := range values {
-		if value != "" {
-			return value
-		}
-	}
-	return ""
-}
-
 func hasAuthHeaders(flow model.CapturedFlow) bool {
 	for key := range flow.RequestHeaders {
 		if isAuthHeader(key) {
@@ -364,10 +344,8 @@ func hasAuthHeaders(flow model.CapturedFlow) bool {
 
 func isAuthHeader(key string) bool {
 	lower := strings.ToLower(strings.TrimSpace(key))
-	if _, ok := authHeaderNames[lower]; ok {
-		return true
-	}
-	return strings.Contains(lower, "authorization") ||
+	return lower == "cookie" ||
+		strings.Contains(lower, "authorization") ||
 		strings.Contains(lower, "api-key") ||
 		strings.Contains(lower, "apikey") ||
 		strings.Contains(lower, "auth-token") ||

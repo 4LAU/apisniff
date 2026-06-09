@@ -6,8 +6,17 @@ import (
 	"github.com/4LAU/apisniff/internal/model"
 )
 
+func newTestDetector(t *testing.T) *Detector {
+	t.Helper()
+	detector, err := NewDetector()
+	if err != nil {
+		t.Fatalf("NewDetector: %v", err)
+	}
+	return detector
+}
+
 func TestDetectorMatchesEveryBundledVendorSignature(t *testing.T) {
-	detector := MustDetector()
+	detector := newTestDetector(t)
 	tests := []struct {
 		name       string
 		headers    map[string]string
@@ -59,7 +68,7 @@ func TestDetectorMatchesEveryBundledVendorSignature(t *testing.T) {
 }
 
 func TestDetectorDoesNotMatchPlainNginxResponse(t *testing.T) {
-	matches := MustDetector().Match(map[string]string{"server": "nginx"}, []byte("<html>hello</html>"), 200)
+	matches := newTestDetector(t).Match(map[string]string{"server": "nginx"}, []byte("<html>hello</html>"), 200)
 	if len(matches) != 0 {
 		t.Fatalf("matches = %+v, want none", matches)
 	}

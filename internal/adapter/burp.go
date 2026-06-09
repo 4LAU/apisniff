@@ -57,7 +57,7 @@ func LoadBurp(path string) ([]model.CapturedFlow, error) {
 		reqHeaders, reqBody := splitHTTPMessage(decodeBurpRaw(item.Request))
 		respHeaders, respBody := splitHTTPMessage(decodeBurpRaw(item.Response))
 		flows = append(flows, model.CapturedFlow{
-			Method:          firstNonEmpty(strings.TrimSpace(item.Method), "GET"),
+			Method:          model.FirstNonEmpty(strings.TrimSpace(item.Method), "GET"),
 			Host:            parsed.Hostname(),
 			Path:            path,
 			URL:             strings.TrimSpace(item.URL),

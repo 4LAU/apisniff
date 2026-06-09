@@ -1,7 +1,6 @@
 package auth
 
 import (
-	"strings"
 	"testing"
 
 	"github.com/4LAU/apisniff/internal/model"
@@ -119,7 +118,7 @@ func TestDetectAuthEdgeCasesDoNotFalsePositive(t *testing.T) {
 	}
 }
 
-func TestExtractCookiesAndCookiejar(t *testing.T) {
+func TestExtractCookiesNewestResponseValueWins(t *testing.T) {
 	cookies := ExtractCookies([]model.CapturedFlow{
 		authFlow(func(f *model.CapturedFlow) {
 			f.Timestamp = 1
@@ -137,12 +136,20 @@ func TestExtractCookiesAndCookiejar(t *testing.T) {
 	if len(cookies) != 4 {
 		t.Fatalf("cookies = %+v", cookies)
 	}
-	jar := CookiesToCookiejar(cookies)
-	if !strings.Contains(jar, ".example.com\tTRUE\t/\tTRUE\t0\tid\tnew") {
-		t.Fatalf("cookiejar = %q", jar)
+	var id *ExtractedCookie
+	for i := range cookies {
+		if cookies[i].Name == "id" {
+			id = &cookies[i]
+		}
+		if cookies[i].Name == "session" && cookies[i].Source != "request" {
+			t.Fatalf("session cookie source = %q, want request", cookies[i].Source)
+		}
 	}
-	if strings.Contains(jar, "session") {
-		t.Fatalf("request cookie leaked into jar: %q", jar)
+	if id == nil {
+		t.Fatalf("cookie id missing: %+v", cookies)
+	}
+	if id.Value != "new" || id.Domain != "example.com" || id.HostOnly || !id.Secure || id.Source != "response" {
+		t.Fatalf("cookie id = %+v, want newest response value with Domain attrs", *id)
 	}
 }
 

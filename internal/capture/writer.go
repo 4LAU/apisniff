@@ -45,7 +45,7 @@ func (w *JSONLWriter) Write(flow model.CapturedFlow) error {
 		return err
 	}
 	w.count++
-	return w.buffered.Flush()
+	return nil
 }
 
 func (w *JSONLWriter) Close() error {

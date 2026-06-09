@@ -81,27 +81,27 @@ func (c *Classifier) Classify(flow model.CapturedFlow) (model.ClassifyResult, *m
 	path := flow.Path
 	pathOnly := strings.SplitN(path, "?", 2)[0]
 
-	allowlistType := c.checkAllowlist(flow)
-	if allowlistType != "" {
+	allowlisted := c.isAllowlisted(flow)
+	if allowlisted {
 		tags = append(tags, "allowlisted")
 	}
 
-	if allowlistType == "" && matchesDomainList(host, c.noiseDomains) {
+	if !allowlisted && matchesDomainList(host, c.noiseDomains) {
 		return model.ClassifyResult{Action: "drop", Category: model.Telemetry, Reason: "noise_domain", HostRole: "third_party", Signals: []string{"noise_domain"}}, nil
 	}
 
 	c.learnCSP(flow)
 
-	if allowlistType != "domain" && allowlistType != "path" && containsAny(pathOnly, c.dropPathSubstrings) {
+	if !allowlisted && containsAny(pathOnly, c.dropPathSubstrings) {
 		return model.ClassifyResult{Action: "drop", Category: model.Telemetry, Reason: "path_telemetry", Signals: []string{"path_telemetry"}}, nil
 	}
 
 	hostRole := c.hostRole(flow)
-	if allowlistType == "" && hostRole == "third_party" {
+	if !allowlisted && hostRole == "third_party" {
 		return model.ClassifyResult{Action: "drop", Category: model.ThirdPartyAPI, Reason: "third_party", HostRole: hostRole}, nil
 	}
 
-	if allowlistType != "domain" && allowlistType != "path" {
+	if !allowlisted {
 		ct := flow.ContentType()
 		if contentTypeMatches(ct, droppableContentTypes) {
 			if contentTypeMatches(ct, jsContentTypes) {
@@ -117,15 +117,15 @@ func (c *Classifier) Classify(flow model.CapturedFlow) (model.ClassifyResult, *m
 		}
 	}
 
-	if allowlistType != "domain" && allowlistType != "path" && containsAny(pathOnly, c.sameSiteDropPaths) {
+	if !allowlisted && containsAny(pathOnly, c.sameSiteDropPaths) {
 		return model.ClassifyResult{Action: "drop", Category: model.Telemetry, Reason: "same_site_noise", HostRole: hostRole, Signals: []string{"same_site_noise"}}, nil
 	}
 
-	if allowlistType == "" && flow.Method == "POST" && len(flow.RequestBody) >= len(sensorDataPrefix) && string(flow.RequestBody[:len(sensorDataPrefix)]) == string(sensorDataPrefix) {
+	if !allowlisted && flow.Method == "POST" && len(flow.RequestBody) >= len(sensorDataPrefix) && string(flow.RequestBody[:len(sensorDataPrefix)]) == string(sensorDataPrefix) {
 		return model.ClassifyResult{Action: "drop", Category: model.Antibot, Reason: "same_site_noise", HostRole: hostRole, Signals: []string{"sensor_data"}}, nil
 	}
 
-	if allowlistType == "" && ExtractRegisteredDomain(host) == c.targetRD {
+	if !allowlisted && ExtractRegisteredDomain(host) == c.targetRD {
 		hostLower := strings.ToLower(stripPort(host))
 		for _, indicator := range telemetrySubdomainIndicators {
 			if strings.HasPrefix(hostLower, indicator) || strings.Contains(hostLower, "."+indicator) {
@@ -147,15 +147,12 @@ func (c *Classifier) Classify(flow model.CapturedFlow) (model.ClassifyResult, *m
 	}, &kept
 }
 
-func (c *Classifier) checkAllowlist(flow model.CapturedFlow) string {
+func (c *Classifier) isAllowlisted(flow model.CapturedFlow) bool {
 	if matchesDomainList(flow.Host, c.allowlistDomains) {
-		return "domain"
+		return true
 	}
 	pathOnly := strings.SplitN(flow.Path, "?", 2)[0]
-	if containsAny(pathOnly, c.allowlistPaths) {
-		return "path"
-	}
-	return ""
+	return containsAny(pathOnly, c.allowlistPaths)
 }
 
 func (c *Classifier) hostRole(flow model.CapturedFlow) string {
@@ -214,10 +211,10 @@ func (c *Classifier) scanAntibotMarkers(body []byte) []string {
 	if len(body) == 0 {
 		return nil
 	}
-	text := string(body)
-	if len(text) > 500000 {
-		text = text[:500000]
+	if len(body) > 500000 {
+		body = body[:500000]
 	}
+	text := string(body)
 	var markers []string
 	for _, marker := range c.antibotMarkers {
 		if strings.Contains(text, marker) {
