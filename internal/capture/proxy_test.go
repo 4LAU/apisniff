@@ -15,6 +15,7 @@ import (
 	"path/filepath"
 	"strconv"
 	"strings"
+	"sync"
 	"testing"
 	"time"
 
@@ -553,6 +554,86 @@ func TestCaptureProxyRecordsFlowWhenClientAborts(t *testing.T) {
 	}
 	if !hasTag(flows[0].Tags, "response_body_incomplete") && !hasTag(flows[0].Tags, "response_body_error") {
 		t.Fatalf("aborted stream missing incomplete/error tag: %v", flows[0].Tags)
+	}
+}
+
+func TestCaptureProxyConcurrentRequestsRecordAllFlows(t *testing.T) {
+	setTestHome(t, t.TempDir())
+	backend := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("content-type", "application/json")
+		w.WriteHeader(http.StatusOK)
+		w.Write([]byte(`{"i":"` + r.URL.Query().Get("i") + `"}`))
+	}))
+	defer backend.Close()
+
+	port := freePort(t)
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	resultCh := make(chan *Result, 1)
+	errCh := make(chan error, 1)
+	go func() {
+		result, err := CaptureProxy(ctx, Config{Domain: "127.0.0.1", Port: port, Timeout: 10 * time.Second})
+		if err != nil {
+			errCh <- err
+			return
+		}
+		resultCh <- result
+	}()
+	waitForProxy(t, port)
+
+	proxyURL, err := url.Parse("http://127.0.0.1:" + strconv.Itoa(port))
+	if err != nil {
+		t.Fatal(err)
+	}
+	client := &http.Client{Transport: &http.Transport{Proxy: http.ProxyURL(proxyURL)}}
+	const n = 24
+	var wg sync.WaitGroup
+	reqErrs := make([]error, n)
+	for i := 0; i < n; i++ {
+		wg.Add(1)
+		go func(i int) {
+			defer wg.Done()
+			resp, err := client.Get(backend.URL + "/api/data?i=" + strconv.Itoa(i))
+			if err != nil {
+				reqErrs[i] = err
+				return
+			}
+			io.Copy(io.Discard, resp.Body)
+			resp.Body.Close()
+		}(i)
+	}
+	wg.Wait()
+	for i, err := range reqErrs {
+		if err != nil {
+			t.Fatalf("request %d failed: %v", i, err)
+		}
+	}
+	cancel()
+
+	var result *Result
+	select {
+	case result = <-resultCh:
+	case err := <-errCh:
+		t.Fatal(err)
+	case <-time.After(10 * time.Second):
+		t.Fatal("timed out waiting for proxy capture")
+	}
+	flows, err := adapter.LoadJSONL(result.FlowsPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(flows) != n {
+		t.Fatalf("flows = %d, want %d (concurrent flows lost)", len(flows), n)
+	}
+	seen := map[string]bool{}
+	for _, flow := range flows {
+		seen[flow.Path] = true
+		if got := `{"i":"` + strings.TrimPrefix(flow.Path, "/api/data?i=") + `"}`; string(flow.ResponseBody) != got {
+			t.Fatalf("flow %s carries wrong body %q (cross-request corruption)", flow.Path, flow.ResponseBody)
+		}
+	}
+	if len(seen) != n {
+		t.Fatalf("distinct paths = %d, want %d", len(seen), n)
 	}
 }
 
