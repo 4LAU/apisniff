@@ -153,7 +153,25 @@ func NormalizePath(path string) string {
 }
 
 func NormalizePathWithParams(path string) (string, []PathParam) {
+	normalized, params, _ := normalizePathSegments(path, false)
+	return normalized, params
+}
+
+// NormalizeSpecPath is the strict variant used for OpenAPI paths: it requires
+// a leading slash and canonicalizes `{template}` segments, rejecting
+// malformed ones. Both variants share one walker so endpoint names cannot
+// drift between analyze/report output and the generated spec.
+func NormalizeSpecPath(path string) (string, []PathParam, bool) {
+	return normalizePathSegments(path, true)
+}
+
+var pathTemplateNameRe = regexp.MustCompile(`^\{[0-9A-Za-z_.-]+\}$`)
+
+func normalizePathSegments(path string, templates bool) (string, []PathParam, bool) {
 	pathPart := strings.SplitN(path, "?", 2)[0]
+	if templates && !strings.HasPrefix(pathPart, "/") {
+		return "", nil, false
+	}
 	parts := strings.Split(pathPart, "/")
 	params := []PathParam{}
 	nameCounts := map[string]int{}
@@ -162,42 +180,44 @@ func NormalizePathWithParams(path string) (string, []PathParam) {
 		if part == "" {
 			continue
 		}
-		if IsDynamicSegment(part) {
-			prefix := pathParamPrefix(previousStatic)
-			baseName := "id"
-			if prefix != "id" {
-				baseName = prefix + "Id"
+		switch {
+		case templates && strings.ContainsAny(part, "{}"):
+			if !pathTemplateNameRe.MatchString(part) {
+				return "", nil, false
 			}
-			name := dedupeParamName(baseName, nameCounts)
+			name := canonicalParamName(previousStatic, nameCounts)
+			parts[i] = "{" + name + "}"
+			params = append(params, PathParam{Name: name})
+		case IsDynamicSegment(part):
+			name := canonicalParamName(previousStatic, nameCounts)
 			parts[i] = "{" + name + "}"
 			params = append(params, PathParam{Name: name, ObservedValue: part})
-			continue
+		default:
+			previousStatic = part
 		}
-		previousStatic = part
 	}
 	normalized := strings.Join(parts, "/")
 	if normalized == "" {
 		normalized = "/"
 	}
-	return normalized, params
+	return normalized, params, true
 }
 
 func IsDynamicSegment(part string) bool {
 	return uuidRe.MatchString(part) || numericRe.MatchString(part) || hexRe.MatchString(part)
 }
 
-func pathParamPrefix(previousStatic string) string {
-	if previousStatic == "" {
-		return "id"
+func canonicalParamName(previousStatic string, counts map[string]int) string {
+	base := "id"
+	if previousStatic != "" {
+		prefix := SingularizeSegment(previousStatic)
+		if len(prefix) < 3 {
+			prefix = previousStatic
+		}
+		if camel := CamelName(prefix); camel != "id" {
+			base = camel + "Id"
+		}
 	}
-	prefix := SingularizeSegment(previousStatic)
-	if len(prefix) < 3 {
-		prefix = previousStatic
-	}
-	return CamelName(prefix)
-}
-
-func dedupeParamName(base string, counts map[string]int) string {
 	counts[base]++
 	if counts[base] == 1 {
 		return base

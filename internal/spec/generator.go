@@ -125,7 +125,7 @@ func aggregateOperations(flows []model.CapturedFlow, includeExamples bool) []*ob
 		if !isOpenAPIOperation(method) {
 			continue
 		}
-		path, pathParams, ok := normalizeSpecPathWithParams(flow.Path)
+		path, pathParams, ok := model.NormalizeSpecPath(flow.Path)
 		if !ok {
 			continue
 		}
@@ -209,63 +209,6 @@ var openAPIOperations = map[string]struct{}{
 func isOpenAPIOperation(method string) bool {
 	_, ok := openAPIOperations[method]
 	return ok
-}
-
-func normalizeSpecPathWithParams(path string) (string, []model.PathParam, bool) {
-	pathPart := strings.SplitN(path, "?", 2)[0]
-	if !strings.HasPrefix(pathPart, "/") {
-		return "", nil, false
-	}
-	parts := strings.Split(pathPart, "/")
-	params := []model.PathParam{}
-	nameCounts := map[string]int{}
-	previousStatic := ""
-	for i, part := range parts {
-		if part == "" {
-			continue
-		}
-		switch {
-		case strings.ContainsAny(part, "{}"):
-			if !validTemplateParamSegment(part) {
-				return "", nil, false
-			}
-			canonical := canonicalPathParamName(previousStatic, nameCounts)
-			parts[i] = "{" + canonical + "}"
-			params = append(params, model.PathParam{Name: canonical})
-		case model.IsDynamicSegment(part):
-			canonical := canonicalPathParamName(previousStatic, nameCounts)
-			parts[i] = "{" + canonical + "}"
-			params = append(params, model.PathParam{Name: canonical, ObservedValue: part})
-		default:
-			previousStatic = part
-		}
-	}
-	normalized := strings.Join(parts, "/")
-	if normalized == "" {
-		normalized = "/"
-	}
-	return normalized, params, true
-}
-
-var pathTemplateNameRe = regexp.MustCompile(`^\{[0-9A-Za-z_.-]+\}$`)
-
-func validTemplateParamSegment(segment string) bool {
-	return pathTemplateNameRe.MatchString(segment)
-}
-
-func canonicalPathParamName(previousStatic string, counts map[string]int) string {
-	base := "id"
-	if previousStatic != "" {
-		prefix := model.CamelName(model.SingularizeSegment(previousStatic))
-		if prefix != "" && prefix != "id" {
-			base = prefix + "Id"
-		}
-	}
-	counts[base]++
-	if counts[base] == 1 {
-		return base
-	}
-	return base + strconv.Itoa(counts[base])
 }
 
 func recordRequestSchema(op *observedOperation, flow model.CapturedFlow, includeExamples bool) {
