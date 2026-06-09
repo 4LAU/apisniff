@@ -69,6 +69,17 @@ func Must(targetDomain string) *Classifier {
 	return classifier
 }
 
+// Learn ingests cross-flow evidence (CSP headers, referer/origin links)
+// without classifying. Batch callers run Learn over every flow first so that
+// Classify results do not depend on flow order; live capture, which cannot
+// see the future, simply skips this pass and learns as it goes.
+func (c *Classifier) Learn(flow model.CapturedFlow) {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	c.learnCSP(flow)
+	c.learnRelated(flow)
+}
+
 func (c *Classifier) Classify(flow model.CapturedFlow) (model.ClassifyResult, *model.CapturedFlow) {
 	c.mu.Lock()
 	defer c.mu.Unlock()
@@ -137,6 +148,7 @@ func (c *Classifier) Classify(flow model.CapturedFlow) (model.ClassifyResult, *m
 	kept := flow
 	kept.Tags = tags
 	category := c.surfaceCategory(kept, hostRole, tags)
+	kept.Tags = tagCategory(tags, category)
 	return model.ClassifyResult{
 		Action:   "keep",
 		Category: category,
@@ -145,6 +157,20 @@ func (c *Classifier) Classify(flow model.CapturedFlow) (model.ClassifyResult, *m
 		HostRole: hostRole,
 		Signals:  tags,
 	}, &kept
+}
+
+// tagCategory returns tags with exactly one category tag: any existing
+// category tag is replaced. Kept flows carry their category so every consumer
+// (capture writers, spec generation, inventory) reads one convention.
+func tagCategory(tags []string, category model.SurfaceCategory) []string {
+	out := make([]string, 0, len(tags)+1)
+	for _, tag := range tags {
+		if strings.HasPrefix(tag, "category:") {
+			continue
+		}
+		out = append(out, tag)
+	}
+	return append(out, "category:"+string(category))
 }
 
 func (c *Classifier) isAllowlisted(flow model.CapturedFlow) bool {
@@ -163,16 +189,29 @@ func (c *Classifier) hostRole(flow model.CapturedFlow) string {
 	if _, ok := c.relatedDomains[rd]; ok {
 		return "same_site"
 	}
+	if c.learnRelated(flow) {
+		return "same_site"
+	}
+	return "third_party"
+}
+
+// learnRelated marks the flow's registered domain as same-site when the
+// request's referer/origin points at the target. Reports whether it did.
+func (c *Classifier) learnRelated(flow model.CapturedFlow) bool {
+	rd := ExtractRegisteredDomain(flow.Host)
+	if rd == "" || rd == c.targetRD {
+		return false
+	}
 	for _, header := range []string{"referer", "origin"} {
 		if value := model.GetHeader(flow.RequestHeaders, header); value != "" {
 			host := hostFromURL(value)
 			if host != "" && ExtractRegisteredDomain(host) == c.targetRD {
 				c.relatedDomains[rd] = struct{}{}
-				return "same_site"
+				return true
 			}
 		}
 	}
-	return "third_party"
+	return false
 }
 
 func (c *Classifier) learnCSP(flow model.CapturedFlow) {

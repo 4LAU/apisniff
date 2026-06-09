@@ -204,7 +204,13 @@ func Capture(ctx context.Context, cfg Config) (*Result, error) {
 	rec.bodyWG.Wait()
 	filtered := newLazyFilteredWriter(bundle)
 	defer filtered.Close()
-	for _, flow := range rec.snapshotFlows() {
+	snapshot := rec.snapshotFlows()
+	// Classification happens post-capture here, so the two-pass Learn makes
+	// the result independent of event arrival order.
+	for _, flow := range snapshot {
+		classifier.Learn(flow)
+	}
+	for _, flow := range snapshot {
 		classification, kept := classifier.Classify(flow)
 		if classification.Action == "drop" {
 			dropKey := classification.Reason
@@ -218,7 +224,6 @@ func Capture(ctx context.Context, cfg Config) (*Result, error) {
 		if kept == nil {
 			continue
 		}
-		kept.Tags = appendTag(kept.Tags, "category:"+string(classification.Category))
 		if err := writer.Write(*kept); err != nil {
 			return nil, err
 		}

@@ -17,6 +17,10 @@ type InclusionOptions struct {
 	IncludeHosts      []string
 }
 
+func (o InclusionOptions) Enabled() bool {
+	return o.IncludeThirdParty || len(o.IncludeCategories) > 0 || len(o.IncludeHosts) > 0
+}
+
 type SurfaceInventory struct {
 	SchemaVersion int                    `json:"schema_version"`
 	Domain        string                 `json:"domain,omitempty"`
@@ -67,7 +71,8 @@ func ApplyInclusionFilters(flows []model.CapturedFlow, domain string, opts Inclu
 	out := make([]model.CapturedFlow, 0, len(flows))
 	for _, item := range classified {
 		if item.result.Action == "keep" && item.kept != nil {
-			out = append(out, withCategoryTag(*item.kept, item.result.Category))
+			// Classify already tags kept flows with their category.
+			out = append(out, *item.kept)
 			continue
 		}
 		if matchesInclusion(item.flow, item.result, normalized) {
@@ -78,6 +83,11 @@ func ApplyInclusionFilters(flows []model.CapturedFlow, domain string, opts Inclu
 }
 
 func classifyFlows(flows []model.CapturedFlow, classifier *classify.Classifier) []classifiedFlow {
+	// Two passes: learn cross-flow evidence first so classification is
+	// independent of flow order.
+	for _, flow := range flows {
+		classifier.Learn(flow)
+	}
 	out := make([]classifiedFlow, 0, len(flows))
 	for _, flow := range flows {
 		result, kept := classifier.Classify(flow)

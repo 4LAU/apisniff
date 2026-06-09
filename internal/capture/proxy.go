@@ -31,7 +31,8 @@ import (
 const proxyBodyLimit = 5 * 1024 * 1024
 
 type proxyRequestState struct {
-	flow model.CapturedFlow
+	flow    model.CapturedFlow
+	reqBody *captureReader
 }
 
 func CaptureProxy(ctx context.Context, cfg Config) (*Result, error) {
@@ -84,51 +85,7 @@ func CaptureProxy(ctx context.Context, cfg Config) (*Result, error) {
 		Proxy:             http.ProxyFromEnvironment,
 		TLSClientConfig:   &tls.Config{InsecureSkipVerify: true}, //nolint:gosec
 	}
-	proxy.OnRequest().HandleConnect(goproxy.AlwaysMitm)
-	proxy.OnRequest().DoFunc(func(req *http.Request, pctx *goproxy.ProxyCtx) (*http.Request, *http.Response) {
-		flow, err := flowFromProxyRequest(req)
-		if err != nil {
-			pctx.UserData = err
-			return req, nil
-		}
-		if req.Body != nil {
-			body, replayBody, truncated, readErr := captureBodyForReplay(req.Body, proxyBodyLimit)
-			req.Body = replayBody
-			if readErr == nil {
-				flow.RequestBody = body
-				if truncated {
-					flow.Tags = appendTag(flow.Tags, "request_body_truncated")
-				}
-			} else {
-				flow.Tags = appendTag(flow.Tags, "request_body_error")
-			}
-		}
-		pctx.UserData = &proxyRequestState{flow: flow}
-		return req, nil
-	})
-	proxy.OnResponse().DoFunc(func(resp *http.Response, pctx *goproxy.ProxyCtx) *http.Response {
-		state, ok := pctx.UserData.(*proxyRequestState)
-		if !ok || resp == nil {
-			return resp
-		}
-		flow := state.flow
-		flow.ResponseStatus = resp.StatusCode
-		flow.ResponseHeaders = headersToMap(resp.Header)
-		flow.Tags = appendTag(flow.Tags, "request_proto:"+flowProto(pctx.Req))
-		flow.Tags = appendTag(flow.Tags, "upstream_response_proto:"+resp.Proto)
-		if resp.Body != nil {
-			body, replayBody, truncated, readErr := captureBodyForReplay(resp.Body, proxyBodyLimit)
-			resp.Body = replayBody
-			if readErr == nil {
-				flow.ResponseBody = body
-				if truncated {
-					flow.Tags = appendTag(flow.Tags, "response_body_truncated")
-				}
-			} else {
-				flow.Tags = appendTag(flow.Tags, "response_body_error")
-			}
-		}
-
+	recordFlow := func(flow model.CapturedFlow) {
 		classification, kept := classifier.Classify(flow)
 		mu.Lock()
 		defer mu.Unlock()
@@ -143,14 +100,78 @@ func CaptureProxy(ctx context.Context, cfg Config) (*Result, error) {
 			if classification.Action == "drop" {
 				filtered.Write(flow, classification)
 			}
-			return resp
+			return
 		}
-		kept.Tags = appendTag(kept.Tags, "category:"+string(classification.Category))
 		if err := writer.Write(*kept); err != nil {
 			stats.Dropped["write_error"]++
-			return resp
+			return
 		}
 		stats.KeptFlows = writer.Count()
+	}
+
+	proxy.OnRequest().HandleConnect(goproxy.AlwaysMitm)
+	proxy.OnRequest().DoFunc(func(req *http.Request, pctx *goproxy.ProxyCtx) (*http.Request, *http.Response) {
+		flow, err := flowFromProxyRequest(req)
+		if err != nil {
+			pctx.UserData = err
+			return req, nil
+		}
+		state := &proxyRequestState{flow: flow}
+		if req.Body != nil && req.Body != http.NoBody {
+			// Record the request body as the transport streams it upstream —
+			// no pre-read, no temp file. The snapshot is taken when the
+			// response body finishes.
+			state.reqBody = newCaptureReader(req.Body, proxyBodyLimit)
+			req.Body = state.reqBody
+		}
+		pctx.UserData = state
+		return req, nil
+	})
+	proxy.OnResponse().DoFunc(func(resp *http.Response, pctx *goproxy.ProxyCtx) *http.Response {
+		state, ok := pctx.UserData.(*proxyRequestState)
+		if !ok || resp == nil {
+			return resp
+		}
+		flow := state.flow
+		flow.ResponseStatus = resp.StatusCode
+		flow.ResponseHeaders = headersToMap(resp.Header)
+		flow.Tags = appendTag(flow.Tags, "request_proto:"+flowProto(pctx.Req))
+		flow.Tags = appendTag(flow.Tags, "upstream_response_proto:"+resp.Proto)
+		reqBody := state.reqBody
+		finalize := func(body []byte, truncated, complete bool, readErr error) {
+			if reqBody != nil {
+				captured, reqTruncated, _, reqErr := reqBody.snapshot()
+				if reqErr != nil {
+					flow.Tags = appendTag(flow.Tags, "request_body_error")
+				} else {
+					flow.RequestBody = captured
+					if reqTruncated {
+						flow.Tags = appendTag(flow.Tags, "request_body_truncated")
+					}
+				}
+			}
+			if readErr != nil {
+				flow.Tags = appendTag(flow.Tags, "response_body_error")
+			} else {
+				flow.ResponseBody = body
+				if truncated {
+					flow.Tags = appendTag(flow.Tags, "response_body_truncated")
+				}
+				if !complete {
+					flow.Tags = appendTag(flow.Tags, "response_body_incomplete")
+				}
+			}
+			recordFlow(flow)
+		}
+		if resp.Body == nil {
+			finalize(nil, false, true, nil)
+			return resp
+		}
+		// The body streams through to the client unbuffered; the flow is
+		// recorded once the body completes (EOF) or the client goes away
+		// (Close). A streaming/SSE response therefore reaches the client
+		// immediately instead of stalling until fully read.
+		resp.Body = newFinalizingBody(resp.Body, proxyBodyLimit, finalize)
 		return resp
 	})
 
@@ -187,16 +208,28 @@ func CaptureProxy(ctx context.Context, cfg Config) (*Result, error) {
 	if err := <-errCh; err != nil && err != http.ErrServerClosed {
 		return nil, err
 	}
+	// Hijacked MITM connections are not waited on by Shutdown, so a
+	// streaming response can still finalize after this point. Close the
+	// writers and snapshot the stats under the same lock finalize uses;
+	// stragglers then fail cleanly against the closed writer.
+	mu.Lock()
 	stats.DurationSeconds = time.Since(start).Seconds()
 	resultFilteredPath := filtered.Close()
 	writerClosed = true
-	if err := writer.Close(); err != nil {
+	closeErr := writer.Close()
+	statsCopy := stats
+	statsCopy.Dropped = make(map[string]int, len(stats.Dropped))
+	for key, count := range stats.Dropped {
+		statsCopy.Dropped[key] = count
+	}
+	mu.Unlock()
+	if closeErr != nil {
+		return nil, closeErr
+	}
+	if err := WriteSession(bundle, statsCopy); err != nil {
 		return nil, err
 	}
-	if err := WriteSession(bundle, stats); err != nil {
-		return nil, err
-	}
-	return &Result{BundleDir: bundle, FlowsPath: flowsPath, FilteredPath: resultFilteredPath, CAPath: caPath, Stats: stats}, nil
+	return &Result{BundleDir: bundle, FlowsPath: flowsPath, FilteredPath: resultFilteredPath, CAPath: caPath, Stats: statsCopy}, nil
 }
 
 func EnsureProxyCA() (string, error) {
@@ -319,62 +352,88 @@ func headersToMap(headers http.Header) map[string]string {
 	return out
 }
 
-type removeOnCloseFile struct {
-	*os.File
-	path string
-}
+// captureReader tees a body stream into a size-capped in-memory buffer as the
+// real consumer reads it. It never pre-reads and never touches disk, so the
+// stream's pacing is untouched.
+type captureReader struct {
+	rc    io.ReadCloser
+	limit int64
 
-func (f *removeOnCloseFile) Close() error {
-	closeErr := f.File.Close()
-	removeErr := os.Remove(f.path)
-	if closeErr != nil {
-		return closeErr
-	}
-	return removeErr
-}
-
-type limitedCaptureWriter struct {
+	mu        sync.Mutex
 	buf       bytes.Buffer
-	limit     int64
 	truncated bool
+	sawEOF    bool
+	readErr   error
 }
 
-func (w *limitedCaptureWriter) Write(p []byte) (int, error) {
-	if int64(w.buf.Len()) < w.limit {
-		remaining := int(w.limit - int64(w.buf.Len()))
-		if remaining > len(p) {
-			remaining = len(p)
+func newCaptureReader(rc io.ReadCloser, limit int64) *captureReader {
+	return &captureReader{rc: rc, limit: limit}
+}
+
+func (c *captureReader) Read(p []byte) (int, error) {
+	n, err := c.rc.Read(p)
+	c.mu.Lock()
+	if n > 0 {
+		remaining := c.limit - int64(c.buf.Len())
+		switch {
+		case remaining >= int64(n):
+			c.buf.Write(p[:n])
+		case remaining > 0:
+			c.buf.Write(p[:remaining])
+			c.truncated = true
+		default:
+			c.truncated = true
 		}
-		if remaining > 0 {
-			_, _ = w.buf.Write(p[:remaining])
-		}
-		if remaining < len(p) {
-			w.truncated = true
-		}
-	} else if len(p) > 0 {
-		w.truncated = true
 	}
-	return len(p), nil
+	if err == io.EOF {
+		c.sawEOF = true
+	} else if err != nil && c.readErr == nil {
+		c.readErr = err
+	}
+	c.mu.Unlock()
+	return n, err
 }
 
-func captureBodyForReplay(body io.ReadCloser, limit int64) ([]byte, io.ReadCloser, bool, error) {
-	temp, err := os.CreateTemp("", "apisniff-proxy-body-*")
+func (c *captureReader) Close() error {
+	return c.rc.Close()
+}
+
+func (c *captureReader) snapshot() (body []byte, truncated, complete bool, err error) {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	return append([]byte(nil), c.buf.Bytes()...), c.truncated, c.sawEOF, c.readErr
+}
+
+// finalizingBody invokes finalize exactly once when the response body
+// completes (EOF) or is closed (client done or gone). finalize receives the
+// captured prefix, whether it was truncated at the cap, whether the upstream
+// stream completed, and any upstream read error.
+type finalizingBody struct {
+	*captureReader
+	once     sync.Once
+	finalize func(body []byte, truncated, complete bool, readErr error)
+}
+
+func newFinalizingBody(rc io.ReadCloser, limit int64, finalize func(body []byte, truncated, complete bool, readErr error)) *finalizingBody {
+	return &finalizingBody{captureReader: newCaptureReader(rc, limit), finalize: finalize}
+}
+
+func (f *finalizingBody) Read(p []byte) (int, error) {
+	n, err := f.captureReader.Read(p)
 	if err != nil {
-		return nil, body, false, err
+		f.fire()
 	}
-	defer body.Close()
-	capture := &limitedCaptureWriter{limit: limit}
-	if _, err := io.Copy(io.MultiWriter(temp, capture), body); err != nil {
-		name := temp.Name()
-		temp.Close()
-		os.Remove(name)
-		return nil, io.NopCloser(bytes.NewReader(nil)), false, err
-	}
-	if _, err := temp.Seek(0, 0); err != nil {
-		name := temp.Name()
-		temp.Close()
-		os.Remove(name)
-		return nil, io.NopCloser(bytes.NewReader(nil)), false, err
-	}
-	return append([]byte(nil), capture.buf.Bytes()...), &removeOnCloseFile{File: temp, path: temp.Name()}, capture.truncated, nil
+	return n, err
+}
+
+func (f *finalizingBody) Close() error {
+	err := f.captureReader.Close()
+	f.fire()
+	return err
+}
+
+func (f *finalizingBody) fire() {
+	f.once.Do(func() {
+		f.finalize(f.snapshot())
+	})
 }

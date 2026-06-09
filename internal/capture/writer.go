@@ -14,6 +14,7 @@ type JSONLWriter struct {
 	file      *os.File
 	buffered  *bufio.Writer
 	count     int
+	closed    bool
 }
 
 func NewJSONLWriter(path string) (*JSONLWriter, error) {
@@ -37,6 +38,9 @@ func NewJSONLWriter(path string) (*JSONLWriter, error) {
 }
 
 func (w *JSONLWriter) Write(flow model.CapturedFlow) error {
+	if w.closed {
+		return os.ErrClosed
+	}
 	line, err := flow.ToJSONL()
 	if err != nil {
 		return err
@@ -49,6 +53,10 @@ func (w *JSONLWriter) Write(flow model.CapturedFlow) error {
 }
 
 func (w *JSONLWriter) Close() error {
+	if w.closed {
+		return nil
+	}
+	w.closed = true
 	if err := w.buffered.Flush(); err != nil {
 		w.file.Close()
 		return err
