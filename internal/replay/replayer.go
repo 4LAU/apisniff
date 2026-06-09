@@ -15,6 +15,7 @@ import (
 	"time"
 
 	"github.com/4LAU/apisniff/internal/adapter"
+	"github.com/4LAU/apisniff/internal/auth"
 	"github.com/4LAU/apisniff/internal/bundle"
 	"github.com/4LAU/apisniff/internal/model"
 	"github.com/enetx/surf"
@@ -159,7 +160,13 @@ func buildRequest(ctx context.Context, flow model.CapturedFlow, headers map[stri
 	if len(flow.RequestBody) > 0 {
 		body = bytes.NewReader(flow.RequestBody)
 	}
-	req, err := http.NewRequestWithContext(ctx, flow.Method, flow.URL, body)
+	targetURL := flow.URL
+	if !forwardAuth {
+		// Credentials live in query strings too (?api_key=, ?access_token=),
+		// not just headers.
+		targetURL = auth.StripCredentialQueryParams(targetURL)
+	}
+	req, err := http.NewRequestWithContext(ctx, flow.Method, targetURL, body)
 	if err != nil {
 		return nil, err
 	}
@@ -343,13 +350,5 @@ func hasAuthHeaders(flow model.CapturedFlow) bool {
 }
 
 func isAuthHeader(key string) bool {
-	lower := strings.ToLower(strings.TrimSpace(key))
-	return lower == "cookie" ||
-		strings.Contains(lower, "authorization") ||
-		strings.Contains(lower, "api-key") ||
-		strings.Contains(lower, "apikey") ||
-		strings.Contains(lower, "auth-token") ||
-		strings.Contains(lower, "access-token") ||
-		strings.Contains(lower, "csrf-token") ||
-		strings.Contains(lower, "xsrf-token")
+	return auth.IsCredentialHeader(key)
 }

@@ -217,6 +217,34 @@ func TestReplayOneStripsCapturedAuthHeadersBeforeNetwork(t *testing.T) {
 	}
 }
 
+func TestReplayOneStripsQueryCredentialsBeforeNetwork(t *testing.T) {
+	var gotQuery url.Values
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		gotQuery = r.URL.Query()
+		w.Header().Set("content-type", "application/json")
+		w.Write([]byte(`{"ok":true}`))
+	}))
+	defer server.Close()
+
+	path := "/api/data?api_key=sk1&access_token=at1&client_secret=cs1&signature=sg1&token=t1&q=ok&page=2"
+	flow := serverFlow(server.URL, "GET", path, http.StatusOK, nil, []byte(`{"ok":true}`), nil)
+
+	ReplayOne(context.Background(), server.Client(), flow, Options{}, nil)
+	for _, credential := range []string{"api_key", "access_token", "client_secret", "signature", "token"} {
+		if gotQuery.Has(credential) {
+			t.Errorf("credential query param %q forwarded: %q", credential, gotQuery.Get(credential))
+		}
+	}
+	if gotQuery.Get("q") != "ok" || gotQuery.Get("page") != "2" {
+		t.Fatalf("non-credential params mangled: %v", gotQuery)
+	}
+
+	ReplayOne(context.Background(), server.Client(), flow, Options{ForwardAuth: true}, nil)
+	if gotQuery.Get("api_key") != "sk1" || gotQuery.Get("access_token") != "at1" {
+		t.Fatalf("--forward-auth did not forward query credentials: %v", gotQuery)
+	}
+}
+
 func TestRunAppliesGlobFilterBeforeReplay(t *testing.T) {
 	var users atomic.Int32
 	var posts atomic.Int32
