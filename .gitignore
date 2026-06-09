@@ -16,3 +16,10 @@ dist/
 scripts/
 .claude/
 testing-policy.md
+.ignore-dump/
+
+# Python era (removed; keep ignored so strays never land in git)
+venv/
+.venv/
+__pycache__/
+*.pyc
