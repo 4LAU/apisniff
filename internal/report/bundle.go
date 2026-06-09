@@ -15,6 +15,7 @@ import (
 	"time"
 
 	"github.com/4LAU/apisniff/internal/model"
+	"github.com/4LAU/apisniff/internal/spec"
 )
 
 const (
@@ -125,6 +126,9 @@ func WriteBundle(dir string, flows []model.CapturedFlow, session model.SessionSt
 		return err
 	}
 	inventory := BuildInventory(flows, session.Domain)
+	// Imported flows carry no category tags; classify so the report shows
+	// real categories instead of "uncategorized".
+	inventory.Categories = spec.BuildSurfaceInventory(flows, session.Domain).Categories
 	return writePrivateFile(filepath.Join(dir, "report.md"), Markdown(inventory))
 }
 

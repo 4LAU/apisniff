@@ -385,27 +385,19 @@ func newSpecCommand() *cobra.Command {
 				IncludeCategories: includeCategory,
 				IncludeHosts:      includeHost,
 			}
-			if inclusionOptionsEnabled(inclusions) && isPrefilteredBundleInput(path) {
+			if inclusions.Enabled() && isPrefilteredBundleInput(path) {
 				fmt.Fprintln(cmd.ErrOrStderr(), "inclusion filters have no effect on pre-filtered bundles; pass the original capture file via --input")
 			}
-			specFlows := flows
-			var surface spec.SurfaceInventory
-			if inclusionOptionsEnabled(inclusions) {
-				var err error
-				specFlows, surface, err = spec.ApplyInclusionFilters(flows, domain, inclusions)
-				if err != nil {
-					return err
-				}
-			} else if surfaceOutput != "" {
-				surface = spec.BuildSurfaceInventory(flows, domain)
+			pipeline, err := spec.BuildPipeline(flows, domain, inclusions)
+			if err != nil {
+				return err
 			}
 			if surfaceOutput != "" {
-				if err := writeJSONFile(surfaceOutput, surface); err != nil {
+				if err := writeJSONFile(surfaceOutput, pipeline.Surface); err != nil {
 					return err
 				}
 			}
-			apiFlows := spec.FilterAPIFlows(specFlows)
-			doc, err := spec.Generate(apiFlows, domain, auth.Detect(specFlows), spec.Options{
+			doc, err := spec.Generate(pipeline.APIFlows, domain, pipeline.Auth, spec.Options{
 				InferSchemes:    inferSchemes,
 				IncludeExamples: includeExamples,
 			})
@@ -644,10 +636,6 @@ func isPrefilteredBundleInput(path string) bool {
 		return true
 	}
 	return false
-}
-
-func inclusionOptionsEnabled(opts spec.InclusionOptions) bool {
-	return opts.IncludeThirdParty || len(opts.IncludeCategories) > 0 || len(opts.IncludeHosts) > 0
 }
 
 func countOpenAPIOperations(doc map[string]any) (int, int) {

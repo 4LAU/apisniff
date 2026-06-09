@@ -7,7 +7,6 @@ import (
 	"path/filepath"
 
 	"github.com/4LAU/apisniff/internal/adapter"
-	"github.com/4LAU/apisniff/internal/auth"
 	"github.com/4LAU/apisniff/internal/bundle"
 	"github.com/4LAU/apisniff/internal/model"
 	"github.com/4LAU/apisniff/internal/spec"
@@ -49,10 +48,17 @@ func Share(opts ShareOptions) (ShareResult, error) {
 		domain = resolved.SafeName
 	}
 	domain = domainFromSession(bundleDir, domain)
+	pipeline, err := spec.BuildPipeline(flows, domain, spec.InclusionOptions{})
+	if err != nil {
+		return ShareResult{}, err
+	}
 	inventory := BuildInventory(flows, domain)
+	// Tag-based category counts miss imported flows; the pipeline's surface
+	// classification covers every flow.
+	inventory.Categories = pipeline.Surface.Categories
 
 	files := []string{}
-	specDoc, err := spec.Generate(spec.FilterAPIFlows(flows), domain, auth.Detect(flows), spec.Options{InferSchemes: true, IncludeExamples: false})
+	specDoc, err := spec.Generate(pipeline.APIFlows, domain, pipeline.Auth, spec.Options{InferSchemes: true, IncludeExamples: false})
 	if err != nil && !errors.Is(err, spec.ErrNoValidAPIFlows) {
 		return ShareResult{}, err
 	}
