@@ -678,6 +678,9 @@ func TestCaptureProxyConcurrentRequestsRecordAllFlows(t *testing.T) {
 			t.Fatalf("request %d failed: %v", i, err)
 		}
 	}
+	// Release keep-alive connections so shutdown drains deterministically on
+	// slow CI runners.
+	client.CloseIdleConnections()
 	cancel()
 
 	var result *Result

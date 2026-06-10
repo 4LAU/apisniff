@@ -208,8 +208,11 @@ func CaptureProxy(ctx context.Context, cfg Config) (*Result, error) {
 	}
 	shutdownCtx, cancelShutdown := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancelShutdown()
+	// A straggler connection must not cost the user the capture: if graceful
+	// shutdown cannot drain within the grace period, force-close and keep
+	// the bundle.
 	if err := server.Shutdown(shutdownCtx); err != nil {
-		return nil, err
+		_ = server.Close()
 	}
 	if err := <-errCh; err != nil && err != http.ErrServerClosed {
 		return nil, err
