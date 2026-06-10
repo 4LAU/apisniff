@@ -140,13 +140,19 @@ func CaptureProxy(ctx context.Context, cfg Config) (*Result, error) {
 		reqBody := state.reqBody
 		finalize := func(body []byte, truncated, complete bool, readErr error) {
 			if reqBody != nil {
-				captured, reqTruncated, _, reqErr := reqBody.snapshot()
+				captured, reqTruncated, reqComplete, reqErr := reqBody.snapshot()
 				if reqErr != nil {
 					flow.Tags = appendTag(flow.Tags, "request_body_error")
 				} else {
 					flow.RequestBody = captured
 					if reqTruncated {
 						flow.Tags = appendTag(flow.Tags, "request_body_truncated")
+					}
+					// The server can respond before draining the upload
+					// (HTTP/2, early 4xx); the captured prefix is then not
+					// the full request body.
+					if !reqComplete {
+						flow.Tags = appendTag(flow.Tags, "request_body_incomplete")
 					}
 				}
 			}

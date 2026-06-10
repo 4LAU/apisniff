@@ -474,6 +474,76 @@ func TestCaptureProxyTruncatesCapturedBodyAtCapAndForwardsFully(t *testing.T) {
 	}
 }
 
+func TestCaptureProxyTagsRequestBodyIncompleteWhenUpstreamRespondsEarly(t *testing.T) {
+	setTestHome(t, t.TempDir())
+	// Larger than net/http's post-handler drain limit (256KB) so the backend
+	// closes the connection without ever consuming the full upload.
+	const bodySize = 4 * 1024 * 1024
+	backend := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		// Respond immediately without reading the request body.
+		w.Header().Set("content-type", "application/json")
+		w.WriteHeader(http.StatusRequestEntityTooLarge)
+		w.Write([]byte(`{"error":"too large"}`))
+	}))
+	defer backend.Close()
+
+	port := freePort(t)
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	resultCh := make(chan *Result, 1)
+	errCh := make(chan error, 1)
+	go func() {
+		result, err := CaptureProxy(ctx, Config{Domain: "127.0.0.1", Port: port, Timeout: 10 * time.Second})
+		if err != nil {
+			errCh <- err
+			return
+		}
+		resultCh <- result
+	}()
+	waitForProxy(t, port)
+
+	proxyURL, err := url.Parse("http://127.0.0.1:" + strconv.Itoa(port))
+	if err != nil {
+		t.Fatal(err)
+	}
+	client := &http.Client{Transport: &http.Transport{Proxy: http.ProxyURL(proxyURL)}}
+	resp, err := client.Post(backend.URL+"/api/upload", "application/octet-stream", bytes.NewReader(bytes.Repeat([]byte("y"), bodySize)))
+	// The early response can surface as an error mid-upload depending on
+	// timing; the flow finalizes either way once the proxy finishes copying
+	// the (tiny) response body.
+	if err == nil {
+		io.Copy(io.Discard, resp.Body)
+		resp.Body.Close()
+	}
+	time.Sleep(300 * time.Millisecond)
+	cancel()
+
+	var result *Result
+	select {
+	case result = <-resultCh:
+	case err := <-errCh:
+		t.Fatal(err)
+	case <-time.After(10 * time.Second):
+		t.Fatal("timed out waiting for proxy capture")
+	}
+	flows, err := adapter.LoadJSONL(result.FlowsPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(flows) != 1 {
+		t.Fatalf("flows = %d", len(flows))
+	}
+	if !hasTag(flows[0].Tags, "request_body_incomplete") {
+		t.Fatalf("partial upload missing request_body_incomplete tag: %v", flows[0].Tags)
+	}
+	if hasTag(flows[0].Tags, "request_body_truncated") {
+		t.Fatalf("under-cap upload must not be tagged truncated: %v", flows[0].Tags)
+	}
+	if len(flows[0].RequestBody) >= bodySize {
+		t.Fatalf("captured %d bytes, expected a partial prefix of %d", len(flows[0].RequestBody), bodySize)
+	}
+}
+
 func TestCaptureProxyRecordsFlowWhenClientAborts(t *testing.T) {
 	setTestHome(t, t.TempDir())
 	handlerDone := make(chan struct{}, 1)

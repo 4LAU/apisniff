@@ -300,6 +300,7 @@ func TestRunRejectsInvalidFilterPattern(t *testing.T) {
 func TestReplayOneDetectsMatchDriftAuthExpiredAndBlocked(t *testing.T) {
 	tests := []struct {
 		name           string
+		path           string
 		originalStatus int
 		originalBody   []byte
 		requestHeaders map[string]string
@@ -337,6 +338,18 @@ func TestReplayOneDetectsMatchDriftAuthExpiredAndBlocked(t *testing.T) {
 			wantBodyMatch:  false,
 		},
 		{
+			// Auth captured only in the query string is stripped before
+			// replay; the resulting 401 is expired credentials, not blocking.
+			name:           "auth expired via stripped query credential",
+			path:           "/api/me?access_token=stale",
+			originalStatus: http.StatusOK,
+			originalBody:   []byte(`{"ok":true}`),
+			replayStatus:   http.StatusUnauthorized,
+			replayBody:     []byte(`{"error":"unauthorized"}`),
+			wantCategory:   "auth_expired",
+			wantBodyMatch:  false,
+		},
+		{
 			name:           "blocked",
 			originalStatus: http.StatusOK,
 			originalBody:   []byte(`{"ok":true}`),
@@ -355,7 +368,11 @@ func TestReplayOneDetectsMatchDriftAuthExpiredAndBlocked(t *testing.T) {
 			}))
 			defer server.Close()
 
-			flow := serverFlow(server.URL, "GET", "/api/test", tt.originalStatus, nil, tt.originalBody, tt.requestHeaders)
+			path := tt.path
+			if path == "" {
+				path = "/api/test"
+			}
+			flow := serverFlow(server.URL, "GET", path, tt.originalStatus, nil, tt.originalBody, tt.requestHeaders)
 			result := ReplayOne(context.Background(), server.Client(), flow, Options{}, nil)
 			if result.Category != tt.wantCategory {
 				t.Fatalf("category = %q, want %q; result = %#v", result.Category, tt.wantCategory, result)

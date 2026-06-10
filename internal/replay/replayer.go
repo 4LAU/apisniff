@@ -202,7 +202,7 @@ func buildRequest(ctx context.Context, flow model.CapturedFlow, headers map[stri
 
 func replayResult(flow model.CapturedFlow, status int, body []byte, elapsed time.Duration, err error) Result {
 	bodyMatch, diff := CompareShape(flow.ResponseBody, body)
-	category, statusMatch := AssignCategory(flow.ResponseStatus, status, hasAuthHeaders(flow), bodyMatch, len(flow.ResponseBody), len(body), err)
+	category, statusMatch := AssignCategory(flow.ResponseStatus, status, hadCredentials(flow), bodyMatch, len(flow.ResponseBody), len(body), err)
 	result := Result{
 		Method:         flow.Method,
 		Path:           flow.Path,
@@ -338,6 +338,26 @@ func stripPort(host string) string {
 		return parsed
 	}
 	return host
+}
+
+// hadCredentials must match the stripping policy in buildRequest: a flow whose
+// auth lived only in a query param (?access_token=...) replays without it, and
+// a 401 there is auth_expired, not blocked. Over-matching a benign param named
+// "token" is acceptable — recall over precision, same as the stripping itself.
+func hadCredentials(flow model.CapturedFlow) bool {
+	if hasAuthHeaders(flow) {
+		return true
+	}
+	parsed, err := url.Parse(flow.URL)
+	if err != nil {
+		return false
+	}
+	for name := range parsed.Query() {
+		if auth.IsCredentialQueryParam(name) {
+			return true
+		}
+	}
+	return false
 }
 
 func hasAuthHeaders(flow model.CapturedFlow) bool {
