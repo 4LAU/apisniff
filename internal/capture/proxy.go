@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"crypto/ecdsa"
+	"crypto/ed25519"
 	"crypto/elliptic"
 	"crypto/rand"
 	"crypto/rsa"
@@ -304,7 +305,7 @@ func validateCA(cert *tls.Certificate) string {
 		return "certificate has expired"
 	}
 	switch cert.PrivateKey.(type) {
-	case *rsa.PrivateKey, *ecdsa.PrivateKey:
+	case *rsa.PrivateKey, *ecdsa.PrivateKey, ed25519.PrivateKey:
 		// supported
 	default:
 		return "unsupported private key type"
@@ -383,25 +384,20 @@ type certCache struct {
 
 func (c *certCache) Fetch(hostname string, gen func() (*tls.Certificate, error)) (*tls.Certificate, error) {
 	c.mu.Lock()
+	defer c.mu.Unlock()
 	if c.cache != nil {
 		if cert, ok := c.cache[hostname]; ok {
-			c.mu.Unlock()
 			return cert, nil
 		}
 	}
-	c.mu.Unlock()
-
 	cert, err := gen()
 	if err != nil {
 		return nil, err
 	}
-
-	c.mu.Lock()
 	if c.cache == nil {
 		c.cache = make(map[string]*tls.Certificate)
 	}
 	c.cache[hostname] = cert
-	c.mu.Unlock()
 	return cert, nil
 }
 
