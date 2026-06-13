@@ -12,7 +12,7 @@ import (
 	"github.com/chromedp/chromedp"
 )
 
-func NewBrowserContext(ctx context.Context, mode string, port int, userDataDir string, attachURL string, headless bool) (context.Context, context.CancelFunc, error) {
+func NewBrowserContext(ctx context.Context, mode string, port int, userDataDir string, attachURL string, headless bool, extraOpts ...chromedp.ExecAllocatorOption) (context.Context, context.CancelFunc, error) {
 	silentLog := chromedp.WithLogf(func(string, ...interface{}) {})
 	switch mode {
 	case "cdp-attach":
@@ -47,6 +47,7 @@ func NewBrowserContext(ctx context.Context, mode string, port int, userDataDir s
 			chromedp.NoFirstRun,
 			chromedp.NoDefaultBrowserCheck,
 		)
+		opts = append(opts, extraOpts...)
 		allocCtx, allocCancel := chromedp.NewExecAllocator(ctx, opts...)
 		browserCtx, browserCancel := chromedp.NewContext(allocCtx, silentLog)
 		return browserCtx, func() {
@@ -96,4 +97,20 @@ func FindChrome() string {
 
 func DefaultPort() int {
 	return 9222 + int(time.Now().UnixNano()%1000)
+}
+
+func ChromeAvailable() (string, bool) {
+	path := FindChrome()
+	if path == "google-chrome" {
+		// FindChrome returns this as fallback even when nothing is installed
+		if _, err := exec.LookPath(path); err != nil {
+			return "", false
+		}
+	}
+	if filepath.IsAbs(path) {
+		if _, err := os.Stat(path); err != nil {
+			return "", false
+		}
+	}
+	return path, true
 }

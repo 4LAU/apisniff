@@ -24,15 +24,16 @@ import (
 )
 
 type Config struct {
-	Domain       string
-	URL          string
-	Mode         string
-	Port         int
-	UserDataDir  string
-	AttachURL    string
-	Headless     bool
-	Timeout      time.Duration
-	StatusWriter io.Writer
+	Domain        string
+	URL           string
+	Mode          string
+	Port          int
+	UserDataDir   string
+	AttachURL     string
+	Headless      bool
+	LaunchBrowser bool
+	Timeout       time.Duration
+	StatusWriter  io.Writer
 }
 
 type Result struct {
@@ -40,6 +41,7 @@ type Result struct {
 	FlowsPath    string             `json:"flows_path"`
 	FilteredPath string             `json:"filtered_path,omitempty"`
 	CAPath       string             `json:"ca_path,omitempty"`
+	SPKIHash     string             `json:"spki_hash,omitempty"`
 	Stats        model.SessionStats `json:"stats"`
 }
 
