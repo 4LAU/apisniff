@@ -94,6 +94,7 @@ func CaptureProxy(ctx context.Context, cfg Config) (*Result, error) {
 	}
 	proxy := goproxy.NewProxyHttpServer()
 	proxy.Verbose = false
+	proxy.Logger = log.New(io.Discard, "", 0)
 	proxy.AllowHTTP2 = true
 	proxy.CertStore = &certCache{}
 	proxy.Tr = &http.Transport{
