@@ -367,11 +367,7 @@ func proxyConfigDir() (string, error) {
 // Subject Public Key Info (SPKI). This is the format used by Chrome's
 // --ignore-certificate-errors-spki-list flag.
 func SPKIHash(cert *x509.Certificate) string {
-	pkDER, err := x509.MarshalPKIXPublicKey(cert.PublicKey)
-	if err != nil {
-		return ""
-	}
-	digest := sha256.Sum256(pkDER)
+	digest := sha256.Sum256(cert.RawSubjectPublicKeyInfo)
 	return base64.StdEncoding.EncodeToString(digest[:])
 }
 

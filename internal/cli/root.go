@@ -198,7 +198,7 @@ func newReconCommand() *cobra.Command {
 	}
 	cmd.Flags().BoolVar(&jsonOutput, "json", false, "output as JSON")
 	cmd.Flags().StringVar(&proxyURL, "proxy", "", "reserved for future upstream proxy chaining")
-	cmd.Flags().IntVar(&port, "port", 0, "CDP or proxy port")
+	cmd.Flags().IntVar(&port, "port", 0, "capture port (proxy: 8080, cdp-attach: 9222, cdp-launch: auto)")
 	cmd.Flags().StringVar(&mode, "mode", "cdp-launch", "capture mode: cdp-launch, cdp-attach, proxy")
 	cmd.Flags().StringVar(&attachURL, "remote-url", "", "CDP URL for cdp-attach")
 	cmd.Flags().BoolVar(&headless, "headless", false, "launch Chrome headless")
