@@ -352,6 +352,17 @@ func CaptureProxy(ctx context.Context, cfg Config) (*Result, error) {
 		} else {
 			<-runCtx.Done()
 		}
+
+		// Drain period: wait for in-flight finalizers (max 500ms)
+		drainDone := make(chan struct{})
+		go func() {
+			activeWG.Wait()
+			close(drainDone)
+		}()
+		select {
+		case <-drainDone:
+		case <-time.After(500 * time.Millisecond):
+		}
 	}
 
 	shutdownCtx, cancelShutdown := context.WithTimeout(context.Background(), 5*time.Second)
