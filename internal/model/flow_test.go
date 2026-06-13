@@ -209,7 +209,7 @@ func TestIsDynamicSegmentOpaqueIDs(t *testing.T) {
 		"payment_processors",        // prefix ok, tail <12 chars
 		"event_acknowledgements",    // prefix ok, tail >=12 but all-lowercase, no digit -> readable
 		"internal_configuration",    // prefix ok, readable lowercase tail
-		"org_MemberRoles",           // allowlisted-looking prefix, CamelCase but tail <12 -> readable
+		"org_MemberRoles",           // valid prefix shape, CamelCase but tail <12 -> readable
 		"receiptmanagementenabled",  // 24 chars, no digit -> long route word, not a token
 		"sixmonthspendbycurrency",   // 23 chars, no digit -> long route word
 		"outofpocketexpenses",       // 19 chars, no digit
