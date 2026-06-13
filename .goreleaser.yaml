@@ -39,7 +39,7 @@ checksum:
 release:
   prerelease: auto
 
-brews:
+homebrew:
   - name: apisniff
     ids:
       - apisniff
