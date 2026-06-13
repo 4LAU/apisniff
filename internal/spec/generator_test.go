@@ -682,12 +682,16 @@ func TestGenerateOpaqueIDsCollapse(t *testing.T) {
 			t.Errorf("expected path %q in spec, missing", p)
 		}
 	}
-	if len(paths) != len(want) {
-		t.Fatalf("path count = %d, want %d: %#v", len(paths), len(want), paths)
-	}
+	// Leak guard runs before the count assertion so it stays load-bearing: a raw
+	// id surviving would also change the count, and a fatal count check here would
+	// shadow this loop. Templated param names are camelCase (creditcardId, userId),
+	// so any "_" in a path means a raw prefixed id (cc_/u_/org_) leaked through.
 	for p := range paths {
 		if strings.ContainsAny(p, "_") || strings.Contains(p, "01ARZ3") || strings.Contains(p, "01BX5Z") {
 			t.Errorf("raw id leaked into path %q", p)
 		}
+	}
+	if len(paths) != len(want) {
+		t.Fatalf("path count = %d, want %d: %#v", len(paths), len(want), paths)
 	}
 }
