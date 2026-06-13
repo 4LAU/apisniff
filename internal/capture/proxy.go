@@ -31,6 +31,9 @@ import (
 
 	"github.com/4LAU/apisniff/internal/classify"
 	"github.com/4LAU/apisniff/internal/model"
+	"github.com/chromedp/cdproto/cdp"
+	"github.com/chromedp/cdproto/target"
+	"github.com/chromedp/chromedp"
 	"github.com/elazarl/goproxy"
 )
 
@@ -42,6 +45,11 @@ type proxyRequestState struct {
 }
 
 func CaptureProxy(ctx context.Context, cfg Config) (*Result, error) {
+	if cfg.LaunchBrowser {
+		if _, ok := ChromeAvailable(); !ok {
+			return nil, fmt.Errorf("Chrome not found; install Chrome or Chromium, or rerun with --no-browser")
+		}
+	}
 	if cfg.Port == 0 {
 		cfg.Port = 8080
 	}
@@ -71,7 +79,6 @@ func CaptureProxy(ctx context.Context, cfg Config) (*Result, error) {
 	if err != nil {
 		return nil, err
 	}
-	_ = spkiHash
 	classifier, err := classify.New(cfg.Domain)
 	if err != nil {
 		return nil, err
@@ -79,6 +86,7 @@ func CaptureProxy(ctx context.Context, cfg Config) (*Result, error) {
 
 	var mu sync.Mutex
 	var flowCount atomic.Int64
+	var activeWG sync.WaitGroup
 	stats := model.SessionStats{
 		Domain:    cfg.Domain,
 		StartedAt: start.UTC().Format(time.RFC3339),
@@ -185,7 +193,12 @@ func CaptureProxy(ctx context.Context, cfg Config) (*Result, error) {
 		// recorded once the body completes (EOF) or the client goes away
 		// (Close). A streaming/SSE response therefore reaches the client
 		// immediately instead of stalling until fully read.
-		resp.Body = newFinalizingBody(resp.Body, proxyBodyLimit, finalize)
+		activeWG.Add(1)
+		wrappedFinalize := func(body []byte, truncated, complete bool, readErr error) {
+			defer activeWG.Done()
+			finalize(body, truncated, complete, readErr)
+		}
+		resp.Body = newFinalizingBody(resp.Body, proxyBodyLimit, wrappedFinalize)
 		return resp
 	})
 
@@ -203,17 +216,141 @@ func CaptureProxy(ctx context.Context, cfg Config) (*Result, error) {
 	go func() {
 		errCh <- server.Serve(listener)
 	}()
-	showStatus := cfg.StatusWriter != nil && isTerminal(cfg.StatusWriter)
-	if showStatus {
-		fmt.Fprintf(cfg.StatusWriter, "MITM proxy listening on %s\n", server.Addr)
-		status := newStatusLine(cfg.StatusWriter, "Capturing traffic", &flowCount)
-		status.start()
-		<-runCtx.Done()
-		status.stop()
-		fmt.Fprintln(cfg.StatusWriter, "MITM proxy stopped")
+
+	if cfg.LaunchBrowser {
+		if cfg.StatusWriter != nil {
+			fmt.Fprintf(cfg.StatusWriter, "MITM proxy listening on %s\n", server.Addr)
+			fmt.Fprintf(cfg.StatusWriter, "Launching Chrome through proxy...\n")
+		}
+		browserCtx, cancelBrowser, err := NewBrowserContext(runCtx, "cdp-launch", 0, "", "", cfg.Headless,
+			chromedp.ProxyServer(fmt.Sprintf("127.0.0.1:%d", cfg.Port)),
+			chromedp.Flag("ignore-certificate-errors-spki-list", spkiHash),
+			chromedp.Flag("proxy-bypass-list", "<-loopback>"),
+		)
+		if err != nil {
+			shutdownCtx, cancelShutdown := context.WithTimeout(context.Background(), 5*time.Second)
+			defer cancelShutdown()
+			server.Shutdown(shutdownCtx)
+			<-errCh
+			return nil, fmt.Errorf("failed to launch Chrome: %w", err)
+		}
+		defer cancelBrowser()
+
+		showStatus := cfg.StatusWriter != nil && isTerminal(cfg.StatusWriter)
+		var status *statusLine
+		if showStatus {
+			status = newStatusLine(cfg.StatusWriter, "Capturing traffic", &flowCount)
+			status.start()
+		}
+
+		navErr := chromedp.Run(browserCtx, chromedp.Navigate(cfg.URL))
+
+		if navErr == nil {
+			tabClosed := make(chan struct{}, 1)
+			signalClose := func() {
+				select {
+				case tabClosed <- struct{}{}:
+				default:
+				}
+			}
+			go func() {
+				<-browserCtx.Done()
+				signalClose()
+			}()
+			go func() {
+				c := chromedp.FromContext(browserCtx)
+				if c == nil || c.Browser == nil {
+					return
+				}
+				consecutiveEmptyOrError := 0
+				ticker := time.NewTicker(500 * time.Millisecond)
+				defer ticker.Stop()
+				for {
+					select {
+					case <-runCtx.Done():
+						return
+					case <-ticker.C:
+						pollCtx, pollCancel := context.WithTimeout(runCtx, 2*time.Second)
+						pollExec := cdp.WithExecutor(pollCtx, c.Browser)
+						infos, err := target.GetTargets().Do(pollExec)
+						pollCancel()
+						if err != nil {
+							consecutiveEmptyOrError++
+							if consecutiveEmptyOrError >= 3 {
+								signalClose()
+								return
+							}
+							continue
+						}
+						pages := 0
+						for _, info := range infos {
+							if info.Type == "page" && !strings.HasPrefix(info.URL, "chrome://") {
+								pages++
+							}
+						}
+						if pages == 0 {
+							consecutiveEmptyOrError++
+							if consecutiveEmptyOrError >= 3 {
+								signalClose()
+								return
+							}
+						} else {
+							consecutiveEmptyOrError = 0
+						}
+					}
+				}
+			}()
+			select {
+			case <-tabClosed:
+			case <-runCtx.Done():
+			}
+		}
+
+		// Stop Chrome first
+		cancelBrowser()
+		if status != nil {
+			status.stop()
+		}
+
+		// Drain period: wait for in-flight finalizers (max 500ms)
+		drainDone := make(chan struct{})
+		go func() {
+			activeWG.Wait()
+			close(drainDone)
+		}()
+		select {
+		case <-drainDone:
+		case <-time.After(500 * time.Millisecond):
+		}
+
+		// Handle navigation error: if navErr != nil and no flows captured, return it
+		if navErr != nil && flowCount.Load() == 0 {
+			shutdownCtx, cancelShutdown := context.WithTimeout(context.Background(), 5*time.Second)
+			defer cancelShutdown()
+			if err := server.Shutdown(shutdownCtx); err != nil {
+				_ = server.Close()
+			}
+			<-errCh
+			return nil, navErr
+		}
 	} else {
-		<-runCtx.Done()
+		if cfg.StatusWriter != nil {
+			fmt.Fprintf(cfg.StatusWriter, "MITM proxy listening on %s\n", server.Addr)
+			fmt.Fprintf(cfg.StatusWriter, "CA certificate: %s\n", caPath)
+			fmt.Fprintf(cfg.StatusWriter, "SPKI hash: %s\n", spkiHash)
+			fmt.Fprintf(cfg.StatusWriter, "Configure your client to proxy through %s and trust the CA above.\n", server.Addr)
+		}
+		showStatus := cfg.StatusWriter != nil && isTerminal(cfg.StatusWriter)
+		if showStatus {
+			status := newStatusLine(cfg.StatusWriter, "Capturing traffic", &flowCount)
+			status.start()
+			<-runCtx.Done()
+			status.stop()
+		} else {
+			<-runCtx.Done()
+		}
 	}
+
 	shutdownCtx, cancelShutdown := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancelShutdown()
 	// A straggler connection must not cost the user the capture: if graceful
@@ -246,7 +383,7 @@ func CaptureProxy(ctx context.Context, cfg Config) (*Result, error) {
 	if err := WriteSession(bundle, statsCopy); err != nil {
 		return nil, err
 	}
-	return &Result{BundleDir: bundle, FlowsPath: flowsPath, FilteredPath: resultFilteredPath, CAPath: caPath, Stats: statsCopy}, nil
+	return &Result{BundleDir: bundle, FlowsPath: flowsPath, FilteredPath: resultFilteredPath, CAPath: caPath, SPKIHash: spkiHash, Stats: statsCopy}, nil
 }
 
 func EnsureProxyCA() (string, string, error) {
