@@ -230,7 +230,9 @@ func CaptureProxy(ctx context.Context, cfg Config) (*Result, error) {
 		if err != nil {
 			shutdownCtx, cancelShutdown := context.WithTimeout(context.Background(), 5*time.Second)
 			defer cancelShutdown()
-			server.Shutdown(shutdownCtx)
+			if err := server.Shutdown(shutdownCtx); err != nil {
+				_ = server.Close()
+			}
 			<-errCh
 			return nil, fmt.Errorf("failed to launch Chrome: %w", err)
 		}
