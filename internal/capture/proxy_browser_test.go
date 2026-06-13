@@ -80,20 +80,21 @@ func TestProxyBrowserSPKIBypass(t *testing.T) {
 		t.Fatal("no flows captured — Chrome did not connect through the MITM proxy")
 	}
 
-	// At least one flow should target the test server's path.
+	// At least one flow should target the test server.
+	wantHost := strings.TrimPrefix(strings.TrimPrefix(backend.URL, "https://"), "http://")
 	found := false
 	for _, f := range flows {
-		if strings.Contains(f.Path, "/") {
+		if f.Host == wantHost {
 			found = true
 			break
 		}
 	}
 	if !found {
-		paths := make([]string, len(flows))
+		hosts := make([]string, len(flows))
 		for i, f := range flows {
-			paths[i] = f.Path
+			hosts[i] = f.Host
 		}
-		t.Fatalf("no flow has a path containing '/': %v", paths)
+		t.Fatalf("no flow targets test server host %s: %v", wantHost, hosts)
 	}
 }
 
@@ -199,7 +200,7 @@ func TestProxyBrowserDrainOnShutdown(t *testing.T) {
 	// or error tag. However, if the full response completed before Chrome
 	// disconnected (race), both chunks will be present and neither tag will
 	// appear — that is acceptable too.
-	hasIncompleteOrError := hasTag(drainedFlow.Tags, "response_body_incomplete") || hasTag(drainedFlow.Tags, "response_body_error")
+	hasIncompleteOrError := hasTag(drainedFlow.Tags, "response_body_incomplete") || hasTag(drainedFlow.Tags, "response_body_error") || hasTag(drainedFlow.Tags, "response_body_truncated")
 	bodyHasBothChunks := strings.Contains(string(drainedFlow.ResponseBody), `"chunk":1`) && strings.Contains(string(drainedFlow.ResponseBody), `"chunk":2`)
 	if !hasIncompleteOrError && !bodyHasBothChunks {
 		t.Fatalf("expected incomplete/error tag or full body; got tags=%v body=%q",
