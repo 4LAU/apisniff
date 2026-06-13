@@ -146,6 +146,7 @@ func newReconCommand() *cobra.Command {
 		mode       string
 		attachURL  string
 		headless   bool
+		noBrowser  bool
 	)
 	cmd := &cobra.Command{
 		Use:   "recon DOMAIN",
@@ -159,14 +160,24 @@ func newReconCommand() *cobra.Command {
 			if oldBundles, err := bundleCountOlderThan(30 * 24 * time.Hour); err == nil && oldBundles > 0 {
 				fmt.Fprintf(cmd.ErrOrStderr(), "Warning: %d capture bundle(s) are older than 30 days; run apisniff clean --older-than 30d to remove stale captures.\n", oldBundles)
 			}
+			if !cmd.Flags().Changed("port") {
+				switch mode {
+				case "proxy":
+					port = 8080
+				case "cdp-attach":
+					port = 9222
+				// cdp-launch and default: leave port=0, resolved internally via DefaultPort()
+				}
+			}
 			result, err := captureRun(cmd.Context(), capture.Config{
-				Domain:       domain,
-				URL:          launchURL,
-				Mode:         mode,
-				Port:         port,
-				AttachURL:    attachURL,
-				Headless:     headless,
-				StatusWriter: cmd.ErrOrStderr(),
+				Domain:        domain,
+				URL:           launchURL,
+				Mode:          mode,
+				Port:          port,
+				AttachURL:     attachURL,
+				Headless:      headless,
+				LaunchBrowser: mode == "proxy" && !noBrowser,
+				StatusWriter:  cmd.ErrOrStderr(),
 			})
 			if err != nil {
 				return err
@@ -187,10 +198,11 @@ func newReconCommand() *cobra.Command {
 	}
 	cmd.Flags().BoolVar(&jsonOutput, "json", false, "output as JSON")
 	cmd.Flags().StringVar(&proxyURL, "proxy", "", "reserved for future upstream proxy chaining")
-	cmd.Flags().IntVar(&port, "port", 9222, "CDP or proxy port")
+	cmd.Flags().IntVar(&port, "port", 0, "capture port (proxy: 8080, cdp-attach: 9222, cdp-launch: auto)")
 	cmd.Flags().StringVar(&mode, "mode", "cdp-launch", "capture mode: cdp-launch, cdp-attach, proxy")
 	cmd.Flags().StringVar(&attachURL, "remote-url", "", "CDP URL for cdp-attach")
 	cmd.Flags().BoolVar(&headless, "headless", false, "launch Chrome headless")
+	cmd.Flags().BoolVar(&noBrowser, "no-browser", false, "skip Chrome launch in proxy mode")
 	return cmd
 }
 

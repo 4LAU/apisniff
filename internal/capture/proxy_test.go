@@ -3,10 +3,18 @@ package capture
 import (
 	"bytes"
 	"context"
+	"crypto/ecdsa"
+	"crypto/elliptic"
+	"crypto/rand"
+	"crypto/rsa"
 	"crypto/tls"
 	"crypto/x509"
+	"crypto/x509/pkix"
+	"encoding/base64"
 	"encoding/json"
+	"encoding/pem"
 	"io"
+	"math/big"
 	"net"
 	"net/http"
 	"net/http/httptest"
@@ -101,7 +109,7 @@ func TestCaptureProxyCapturesHTTPFlow(t *testing.T) {
 
 func TestCaptureProxyCapturesHTTPSMITMFlow(t *testing.T) {
 	setTestHome(t, t.TempDir())
-	caPath, err := EnsureProxyCA()
+	caPath, _, err := EnsureProxyCA()
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -169,7 +177,7 @@ func TestCaptureProxyCapturesHTTPSMITMFlow(t *testing.T) {
 
 func TestCaptureProxyUsesHTTP2UpstreamWhenAvailable(t *testing.T) {
 	setTestHome(t, t.TempDir())
-	caPath, err := EnsureProxyCA()
+	caPath, _, err := EnsureProxyCA()
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -303,7 +311,7 @@ func TestCaptureProxyStreamsResponseBeforeCompletion(t *testing.T) {
 	// connection. The plain-HTTP proxy path buffers inside net/http and is
 	// not exercised here.
 	setTestHome(t, t.TempDir())
-	caPath, err := EnsureProxyCA()
+	caPath, _, err := EnsureProxyCA()
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -732,4 +740,216 @@ func waitForProxy(t *testing.T, port int) {
 		time.Sleep(50 * time.Millisecond)
 	}
 	t.Fatalf("proxy did not listen on port %d", port)
+}
+
+func TestGenerateProxyCAUsesECDSA(t *testing.T) {
+	_, _, cert, err := generateProxyCA()
+	if err != nil {
+		t.Fatal(err)
+	}
+	ecKey, ok := cert.PrivateKey.(*ecdsa.PrivateKey)
+	if !ok {
+		t.Fatalf("private key type = %T, want *ecdsa.PrivateKey", cert.PrivateKey)
+	}
+	if ecKey.Curve != elliptic.P256() {
+		t.Fatalf("curve = %v, want P-256", ecKey.Curve)
+	}
+	leaf := cert.Leaf
+	if leaf == nil {
+		t.Fatal("cert.Leaf is nil")
+	}
+	if !leaf.IsCA {
+		t.Fatal("cert is not a CA")
+	}
+	pub, ok := leaf.PublicKey.(*ecdsa.PublicKey)
+	if !ok {
+		t.Fatalf("public key type = %T, want *ecdsa.PublicKey", leaf.PublicKey)
+	}
+	if pub.Curve != elliptic.P256() {
+		t.Fatalf("public key curve = %v, want P-256", pub.Curve)
+	}
+}
+
+func TestSPKIHashDeterministic(t *testing.T) {
+	_, _, cert, err := generateProxyCA()
+	if err != nil {
+		t.Fatal(err)
+	}
+	h1 := SPKIHash(cert.Leaf)
+	h2 := SPKIHash(cert.Leaf)
+	if h1 == "" {
+		t.Fatal("SPKIHash returned empty string")
+	}
+	if h1 != h2 {
+		t.Fatalf("SPKIHash not deterministic: %q != %q", h1, h2)
+	}
+	if _, err := base64.StdEncoding.DecodeString(h1); err != nil {
+		t.Fatalf("SPKIHash is not valid base64: %v", err)
+	}
+}
+
+func TestSPKIHashWorksForRSAAndECDSA(t *testing.T) {
+	makeRSACert := func(t *testing.T) *x509.Certificate {
+		t.Helper()
+		key, err := rsa.GenerateKey(rand.Reader, 2048)
+		if err != nil {
+			t.Fatal(err)
+		}
+		serial, _ := rand.Int(rand.Reader, new(big.Int).Lsh(big.NewInt(1), 128))
+		tmpl := &x509.Certificate{
+			SerialNumber:          serial,
+			Subject:               pkix.Name{CommonName: "test-rsa"},
+			NotBefore:             time.Now().Add(-time.Hour),
+			NotAfter:              time.Now().Add(time.Hour),
+			BasicConstraintsValid: true,
+		}
+		der, err := x509.CreateCertificate(rand.Reader, tmpl, tmpl, &key.PublicKey, key)
+		if err != nil {
+			t.Fatal(err)
+		}
+		cert, err := x509.ParseCertificate(der)
+		if err != nil {
+			t.Fatal(err)
+		}
+		return cert
+	}
+
+	makeECDSACert := func(t *testing.T) *x509.Certificate {
+		t.Helper()
+		key, err := ecdsa.GenerateKey(elliptic.P256(), rand.Reader)
+		if err != nil {
+			t.Fatal(err)
+		}
+		serial, _ := rand.Int(rand.Reader, new(big.Int).Lsh(big.NewInt(1), 128))
+		tmpl := &x509.Certificate{
+			SerialNumber:          serial,
+			Subject:               pkix.Name{CommonName: "test-ecdsa"},
+			NotBefore:             time.Now().Add(-time.Hour),
+			NotAfter:              time.Now().Add(time.Hour),
+			BasicConstraintsValid: true,
+		}
+		der, err := x509.CreateCertificate(rand.Reader, tmpl, tmpl, &key.PublicKey, key)
+		if err != nil {
+			t.Fatal(err)
+		}
+		cert, err := x509.ParseCertificate(der)
+		if err != nil {
+			t.Fatal(err)
+		}
+		return cert
+	}
+
+	for _, tc := range []struct {
+		name string
+		cert *x509.Certificate
+	}{
+		{"RSA", makeRSACert(t)},
+		{"ECDSA", makeECDSACert(t)},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			h := SPKIHash(tc.cert)
+			if h == "" {
+				t.Fatal("SPKIHash returned empty string")
+			}
+			if _, err := base64.StdEncoding.DecodeString(h); err != nil {
+				t.Fatalf("SPKIHash is not valid base64: %v", err)
+			}
+		})
+	}
+}
+
+func TestCertCacheFetchCachesAndDeduplicates(t *testing.T) {
+	calls := 0
+	fakeCert := &tls.Certificate{}
+	gen := func() (*tls.Certificate, error) {
+		calls++
+		return fakeCert, nil
+	}
+
+	c := &certCache{}
+	c1, err := c.Fetch("example.com", gen)
+	if err != nil {
+		t.Fatal(err)
+	}
+	c2, err := c.Fetch("example.com", gen)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if calls != 1 {
+		t.Fatalf("gen called %d times, want 1", calls)
+	}
+	if c1 != c2 {
+		t.Fatal("Fetch returned different cert pointers for same hostname")
+	}
+	if c1 != fakeCert {
+		t.Fatal("Fetch returned unexpected cert")
+	}
+}
+
+func TestEnsureProxyCAValidatesExistingCert(t *testing.T) {
+	dir := t.TempDir()
+	setTestHome(t, dir)
+
+	// Write an expired, non-CA cert to the config dir.
+	key, err := ecdsa.GenerateKey(elliptic.P256(), rand.Reader)
+	if err != nil {
+		t.Fatal(err)
+	}
+	serial, _ := rand.Int(rand.Reader, new(big.Int).Lsh(big.NewInt(1), 128))
+	tmpl := &x509.Certificate{
+		SerialNumber:          serial,
+		Subject:               pkix.Name{CommonName: "expired"},
+		NotBefore:             time.Now().Add(-48 * time.Hour),
+		NotAfter:              time.Now().Add(-24 * time.Hour), // expired
+		BasicConstraintsValid: true,
+		IsCA:                  false, // not a CA
+	}
+	der, err := x509.CreateCertificate(rand.Reader, tmpl, tmpl, &key.PublicKey, key)
+	if err != nil {
+		t.Fatal(err)
+	}
+	certPEM := pem.EncodeToMemory(&pem.Block{Type: "CERTIFICATE", Bytes: der})
+	keyDER, err := x509.MarshalECPrivateKey(key)
+	if err != nil {
+		t.Fatal(err)
+	}
+	keyPEM := pem.EncodeToMemory(&pem.Block{Type: "EC PRIVATE KEY", Bytes: keyDER})
+
+	configDir := filepath.Join(dir, ".apisniff")
+	if err := os.MkdirAll(configDir, 0o700); err != nil {
+		t.Fatal(err)
+	}
+	certPath := filepath.Join(configDir, "ca-cert.pem")
+	keyPath := filepath.Join(configDir, "ca-key.pem")
+	if err := os.WriteFile(certPath, certPEM, 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(keyPath, keyPEM, 0o600); err != nil {
+		t.Fatal(err)
+	}
+
+	// EnsureProxyCA must detect the invalid cert and regenerate.
+	gotPath, spkiHash, err := EnsureProxyCA()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if gotPath == "" {
+		t.Fatal("expected non-empty cert path")
+	}
+	if spkiHash == "" {
+		t.Fatal("expected non-empty SPKI hash")
+	}
+	if _, decErr := base64.StdEncoding.DecodeString(spkiHash); decErr != nil {
+		t.Fatalf("SPKI hash is not valid base64: %v", decErr)
+	}
+
+	// The regenerated cert must actually be a valid CA.
+	newCertPEM, err := os.ReadFile(certPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	pool := x509.NewCertPool()
+	if !pool.AppendCertsFromPEM(newCertPEM) {
+		t.Fatal("regenerated cert PEM could not be parsed")
+	}
 }
