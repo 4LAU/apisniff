@@ -3,14 +3,19 @@ package capture
 import (
 	"bytes"
 	"context"
+	"crypto/ecdsa"
+	"crypto/elliptic"
 	"crypto/rand"
 	"crypto/rsa"
+	"crypto/sha256"
 	"crypto/tls"
 	"crypto/x509"
 	"crypto/x509/pkix"
+	"encoding/base64"
 	"encoding/pem"
 	"fmt"
 	"io"
+	"log"
 	"math/big"
 	"net"
 	"net/http"
@@ -61,10 +66,11 @@ func CaptureProxy(ctx context.Context, cfg Config) (*Result, error) {
 	filtered := newLazyFilteredWriter(bundle)
 	defer filtered.Close()
 
-	caPath, err := EnsureProxyCA()
+	caPath, spkiHash, err := EnsureProxyCA()
 	if err != nil {
 		return nil, err
 	}
+	_ = spkiHash
 	classifier, err := classify.New(cfg.Domain)
 	if err != nil {
 		return nil, err
@@ -80,6 +86,7 @@ func CaptureProxy(ctx context.Context, cfg Config) (*Result, error) {
 	proxy := goproxy.NewProxyHttpServer()
 	proxy.Verbose = false
 	proxy.AllowHTTP2 = true
+	proxy.CertStore = &certCache{}
 	proxy.Tr = &http.Transport{
 		ForceAttemptHTTP2: true,
 		Proxy:             http.ProxyFromEnvironment,
@@ -241,13 +248,13 @@ func CaptureProxy(ctx context.Context, cfg Config) (*Result, error) {
 	return &Result{BundleDir: bundle, FlowsPath: flowsPath, FilteredPath: resultFilteredPath, CAPath: caPath, Stats: statsCopy}, nil
 }
 
-func EnsureProxyCA() (string, error) {
+func EnsureProxyCA() (string, string, error) {
 	dir, err := proxyConfigDir()
 	if err != nil {
-		return "", err
+		return "", "", err
 	}
 	if err := os.MkdirAll(dir, 0o700); err != nil {
-		return "", err
+		return "", "", err
 	}
 	certPath := filepath.Join(dir, "ca-cert.pem")
 	keyPath := filepath.Join(dir, "ca-key.pem")
@@ -256,27 +263,57 @@ func EnsureProxyCA() (string, error) {
 			cert, err := tls.X509KeyPair(certPEM, keyPEM)
 			if err == nil {
 				cert.Leaf, _ = x509.ParseCertificate(cert.Certificate[0])
-				goproxy.GoproxyCa = cert
-				return certPath, nil
+				if reason := validateCA(&cert); reason != "" {
+					log.Printf("existing CA at %s is invalid (%s), generating a new one", certPath, reason)
+				} else {
+					goproxy.GoproxyCa = cert
+					return certPath, SPKIHash(cert.Leaf), nil
+				}
 			}
 		}
 	}
 	certPEM, keyPEM, cert, err := generateProxyCA()
 	if err != nil {
-		return "", err
+		return "", "", err
 	}
 	if err := os.WriteFile(certPath, certPEM, 0o600); err != nil {
-		return "", err
+		return "", "", err
 	}
 	if err := os.WriteFile(keyPath, keyPEM, 0o600); err != nil {
-		return "", err
+		return "", "", err
 	}
 	goproxy.GoproxyCa = cert
-	return certPath, nil
+	return certPath, SPKIHash(cert.Leaf), nil
+}
+
+func validateCA(cert *tls.Certificate) string {
+	leaf := cert.Leaf
+	if leaf == nil {
+		return "no leaf certificate"
+	}
+	if !leaf.IsCA {
+		return "not a CA"
+	}
+	if !leaf.BasicConstraintsValid {
+		return "BasicConstraintsValid is false"
+	}
+	if leaf.KeyUsage&x509.KeyUsageCertSign == 0 {
+		return "missing KeyUsageCertSign"
+	}
+	if time.Now().After(leaf.NotAfter) {
+		return "certificate has expired"
+	}
+	switch cert.PrivateKey.(type) {
+	case *rsa.PrivateKey, *ecdsa.PrivateKey:
+		// supported
+	default:
+		return "unsupported private key type"
+	}
+	return ""
 }
 
 func generateProxyCA() ([]byte, []byte, tls.Certificate, error) {
-	key, err := rsa.GenerateKey(rand.Reader, 2048)
+	key, err := ecdsa.GenerateKey(elliptic.P256(), rand.Reader)
 	if err != nil {
 		return nil, nil, tls.Certificate{}, err
 	}
@@ -296,13 +333,19 @@ func generateProxyCA() ([]byte, []byte, tls.Certificate, error) {
 		KeyUsage:              x509.KeyUsageCertSign | x509.KeyUsageDigitalSignature,
 		BasicConstraintsValid: true,
 		IsCA:                  true,
+		MaxPathLen:            0,
+		MaxPathLenZero:        true,
 	}
 	der, err := x509.CreateCertificate(rand.Reader, &template, &template, &key.PublicKey, key)
 	if err != nil {
 		return nil, nil, tls.Certificate{}, err
 	}
 	certPEM := pem.EncodeToMemory(&pem.Block{Type: "CERTIFICATE", Bytes: der})
-	keyPEM := pem.EncodeToMemory(&pem.Block{Type: "RSA PRIVATE KEY", Bytes: x509.MarshalPKCS1PrivateKey(key)})
+	keyDER, err := x509.MarshalECPrivateKey(key)
+	if err != nil {
+		return nil, nil, tls.Certificate{}, err
+	}
+	keyPEM := pem.EncodeToMemory(&pem.Block{Type: "EC PRIVATE KEY", Bytes: keyDER})
 	cert, err := tls.X509KeyPair(certPEM, keyPEM)
 	if err != nil {
 		return nil, nil, tls.Certificate{}, err
@@ -317,6 +360,49 @@ func proxyConfigDir() (string, error) {
 		return "", err
 	}
 	return filepath.Join(home, ".apisniff"), nil
+}
+
+// SPKIHash returns the base64-encoded SHA-256 hash of the certificate's
+// Subject Public Key Info (SPKI). This is the format used by Chrome's
+// --ignore-certificate-errors-spki-list flag.
+func SPKIHash(cert *x509.Certificate) string {
+	pkDER, err := x509.MarshalPKIXPublicKey(cert.PublicKey)
+	if err != nil {
+		return ""
+	}
+	digest := sha256.Sum256(pkDER)
+	return base64.StdEncoding.EncodeToString(digest[:])
+}
+
+// certCache implements goproxy.CertStorage, caching generated leaf certs by
+// hostname so each host's cert is only generated once per session.
+type certCache struct {
+	mu    sync.Mutex
+	cache map[string]*tls.Certificate
+}
+
+func (c *certCache) Fetch(hostname string, gen func() (*tls.Certificate, error)) (*tls.Certificate, error) {
+	c.mu.Lock()
+	if c.cache != nil {
+		if cert, ok := c.cache[hostname]; ok {
+			c.mu.Unlock()
+			return cert, nil
+		}
+	}
+	c.mu.Unlock()
+
+	cert, err := gen()
+	if err != nil {
+		return nil, err
+	}
+
+	c.mu.Lock()
+	if c.cache == nil {
+		c.cache = make(map[string]*tls.Certificate)
+	}
+	c.cache[hostname] = cert
+	c.mu.Unlock()
+	return cert, nil
 }
 
 func flowFromProxyRequest(req *http.Request) (model.CapturedFlow, error) {
