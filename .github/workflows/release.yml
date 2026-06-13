@@ -34,7 +34,11 @@ jobs:
       - uses: goreleaser/goreleaser-action@v6
         with:
           version: '~> v2'
-          args: release --clean
+          # --parallelism 1 serializes the cross-compile. Five concurrent
+          # builds each compiling the large chromedp/cdproto tree oversubscribe
+          # the runner's memory and thrash until GitHub kills it ("lost
+          # communication"). Building one target at a time keeps peak memory low.
+          args: release --clean --parallelism 1
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           HOMEBREW_TAP_TOKEN: ${{ secrets.HOMEBREW_TAP_TOKEN }}
