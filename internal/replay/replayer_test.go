@@ -459,3 +459,23 @@ func writeFlows(t *testing.T, path string, flows []model.CapturedFlow) {
 		t.Fatal(err)
 	}
 }
+
+func TestDeduplicateReportsMerges(t *testing.T) {
+	flows := []model.CapturedFlow{
+		{Method: "GET", Path: "/creditcards/cc_9BMqukMwYVs6SY1psJlh0f", Timestamp: 1},
+		{Method: "GET", Path: "/creditcards/cc_7w7CLKmd9I77HX2fjHfGPB", Timestamp: 2},
+		{Method: "GET", Path: "/users/search", Timestamp: 3},
+		{Method: "GET", Path: "/users/notifications", Timestamp: 4},
+	}
+	deduped, merges := deduplicate(flows)
+	if len(deduped) != 3 {
+		t.Fatalf("deduped = %d, want 3", len(deduped))
+	}
+	if len(merges) != 1 {
+		t.Fatalf("merges = %#v, want exactly one (the two credit-card ids)", merges)
+	}
+	m := merges[0]
+	if m.Method != "GET" || len(m.Paths) != 2 {
+		t.Fatalf("merge = %#v, want GET with 2 collapsed paths", m)
+	}
+}
