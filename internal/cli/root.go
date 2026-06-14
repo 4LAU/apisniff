@@ -157,8 +157,13 @@ func newReconCommand() *cobra.Command {
 				return errors.New("--proxy as an upstream proxy is not implemented; use --mode proxy to run the apisniff MITM proxy")
 			}
 			domain, launchURL := normalizeTarget(args[0])
-			if oldBundles, err := bundleCountOlderThan(30 * 24 * time.Hour); err == nil && oldBundles > 0 {
-				fmt.Fprintf(cmd.ErrOrStderr(), "Warning: %d capture bundle(s) are older than 30 days; run apisniff clean --older-than 30d to remove stale captures.\n", oldBundles)
+			if !jsonOutput {
+				if oldBundles, err := bundleCountOlderThan(30 * 24 * time.Hour); err == nil && oldBundles > 0 {
+					fmt.Fprintf(cmd.ErrOrStderr(), "Warning: %d capture bundle(s) are older than 30 days; run apisniff clean --older-than 30d to remove stale captures.\n", oldBundles)
+				}
+			}
+			if !jsonOutput && (mode == "cdp-launch" || mode == "cdp-attach") {
+				fmt.Fprintf(cmd.ErrOrStderr(), "Note: %s does not capture Cookie/Set-Cookie on XHR/fetch API calls; use the default proxy mode for authenticated capture.\n", mode)
 			}
 			if !cmd.Flags().Changed("port") {
 				switch mode {
@@ -171,6 +176,10 @@ func newReconCommand() *cobra.Command {
 					port = 9222
 				}
 			}
+			statusWriter := io.Writer(cmd.ErrOrStderr())
+			if jsonOutput {
+				statusWriter = nil
+			}
 			result, err := captureRun(cmd.Context(), capture.Config{
 				Domain:        domain,
 				URL:           launchURL,
@@ -179,7 +188,7 @@ func newReconCommand() *cobra.Command {
 				AttachURL:     attachURL,
 				Headless:      headless,
 				LaunchBrowser: mode == "proxy" && !noBrowser,
-				StatusWriter:  cmd.ErrOrStderr(),
+				StatusWriter:  statusWriter,
 			})
 			if err != nil {
 				return err

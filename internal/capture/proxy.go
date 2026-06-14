@@ -78,7 +78,7 @@ func CaptureProxy(ctx context.Context, cfg Config) (*Result, error) {
 	filtered := newLazyFilteredWriter(bundle)
 	defer filtered.Close()
 
-	caPath, spkiHash, err := EnsureProxyCA()
+	caPath, spkiHash, err := EnsureProxyCA(cfg.StatusWriter)
 	if err != nil {
 		return nil, err
 	}
@@ -386,7 +386,7 @@ func CaptureProxy(ctx context.Context, cfg Config) (*Result, error) {
 	return &Result{BundleDir: bundle, FlowsPath: flowsPath, FilteredPath: resultFilteredPath, CAPath: caPath, SPKIHash: spkiHash, Stats: statsCopy, GraphQL: gqlSummary}, nil
 }
 
-func EnsureProxyCA() (string, string, error) {
+func EnsureProxyCA(status io.Writer) (string, string, error) {
 	dir, err := proxyConfigDir()
 	if err != nil {
 		return "", "", err
@@ -402,7 +402,9 @@ func EnsureProxyCA() (string, string, error) {
 			if err == nil {
 				cert.Leaf, _ = x509.ParseCertificate(cert.Certificate[0])
 				if reason := validateCA(&cert); reason != "" {
-					log.Printf("existing CA at %s is invalid (%s), generating a new one", certPath, reason)
+					if status != nil {
+						fmt.Fprintf(status, "existing CA at %s is invalid (%s); generating a new one\n", certPath, reason)
+					}
 				} else {
 					goproxy.GoproxyCa = cert
 					return certPath, SPKIHash(cert.Leaf), nil

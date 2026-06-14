@@ -14,6 +14,7 @@ import (
 	"encoding/json"
 	"encoding/pem"
 	"io"
+	"log"
 	"math/big"
 	"net"
 	"net/http"
@@ -109,7 +110,7 @@ func TestCaptureProxyCapturesHTTPFlow(t *testing.T) {
 
 func TestCaptureProxyCapturesHTTPSMITMFlow(t *testing.T) {
 	setTestHome(t, t.TempDir())
-	caPath, _, err := EnsureProxyCA()
+	caPath, _, err := EnsureProxyCA(nil)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -177,7 +178,7 @@ func TestCaptureProxyCapturesHTTPSMITMFlow(t *testing.T) {
 
 func TestCaptureProxyUsesHTTP2UpstreamWhenAvailable(t *testing.T) {
 	setTestHome(t, t.TempDir())
-	caPath, _, err := EnsureProxyCA()
+	caPath, _, err := EnsureProxyCA(nil)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -311,7 +312,7 @@ func TestCaptureProxyStreamsResponseBeforeCompletion(t *testing.T) {
 	// connection. The plain-HTTP proxy path buffers inside net/http and is
 	// not exercised here.
 	setTestHome(t, t.TempDir())
-	caPath, _, err := EnsureProxyCA()
+	caPath, _, err := EnsureProxyCA(nil)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -1007,7 +1008,7 @@ func TestEnsureProxyCAValidatesExistingCert(t *testing.T) {
 	}
 
 	// EnsureProxyCA must detect the invalid cert and regenerate.
-	gotPath, spkiHash, err := EnsureProxyCA()
+	gotPath, spkiHash, err := EnsureProxyCA(nil)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -1029,5 +1030,60 @@ func TestEnsureProxyCAValidatesExistingCert(t *testing.T) {
 	pool := x509.NewCertPool()
 	if !pool.AppendCertsFromPEM(newCertPEM) {
 		t.Fatal("regenerated cert PEM could not be parsed")
+	}
+}
+
+// writeInvalidButLoadableCA writes a parseable cert/key pair into the config dir
+// that loads via tls.X509KeyPair but fails validateCA (expired, non-CA), forcing
+// EnsureProxyCA down the regenerate branch that previously logged via log.Printf.
+func writeInvalidButLoadableCA(t *testing.T, home string) {
+	t.Helper()
+	key, err := ecdsa.GenerateKey(elliptic.P256(), rand.Reader)
+	if err != nil {
+		t.Fatal(err)
+	}
+	serial, _ := rand.Int(rand.Reader, new(big.Int).Lsh(big.NewInt(1), 128))
+	tmpl := &x509.Certificate{
+		SerialNumber:          serial,
+		Subject:               pkix.Name{CommonName: "expired"},
+		NotBefore:             time.Now().Add(-48 * time.Hour),
+		NotAfter:              time.Now().Add(-24 * time.Hour), // expired
+		BasicConstraintsValid: true,
+		IsCA:                  false, // not a CA
+	}
+	der, err := x509.CreateCertificate(rand.Reader, tmpl, tmpl, &key.PublicKey, key)
+	if err != nil {
+		t.Fatal(err)
+	}
+	certPEM := pem.EncodeToMemory(&pem.Block{Type: "CERTIFICATE", Bytes: der})
+	keyDER, err := x509.MarshalECPrivateKey(key)
+	if err != nil {
+		t.Fatal(err)
+	}
+	keyPEM := pem.EncodeToMemory(&pem.Block{Type: "EC PRIVATE KEY", Bytes: keyDER})
+	configDir := filepath.Join(home, ".apisniff")
+	if err := os.MkdirAll(configDir, 0o700); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(configDir, "ca-cert.pem"), certPEM, 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(configDir, "ca-key.pem"), keyPEM, 0o600); err != nil {
+		t.Fatal(err)
+	}
+}
+
+func TestEnsureProxyCANilStatusSilentOnRegen(t *testing.T) {
+	home := t.TempDir()
+	setTestHome(t, home)
+	writeInvalidButLoadableCA(t, home)
+	var logBuf bytes.Buffer
+	log.SetOutput(&logBuf)
+	t.Cleanup(func() { log.SetOutput(os.Stderr) })
+	if _, _, err := EnsureProxyCA(nil); err != nil {
+		t.Fatalf("EnsureProxyCA(nil) returned error: %v", err)
+	}
+	if logBuf.Len() != 0 {
+		t.Fatalf("EnsureProxyCA(nil) leaked to the global logger: %q", logBuf.String())
 	}
 }
