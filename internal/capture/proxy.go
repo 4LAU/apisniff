@@ -59,6 +59,9 @@ func CaptureProxy(ctx context.Context, cfg Config) (*Result, error) {
 	if cfg.Timeout == 0 {
 		cfg.Timeout = 30 * time.Minute
 	}
+	if cfg.URL == "" {
+		cfg.URL = "https://" + cfg.Domain
+	}
 	start := time.Now()
 	bundle, err := NewBundleDir(cfg.Domain, start)
 	if err != nil {

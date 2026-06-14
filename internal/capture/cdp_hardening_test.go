@@ -186,3 +186,23 @@ func skipUnlessChrome(t *testing.T) {
 		t.Skipf("Chrome not found: %v", err)
 	}
 }
+
+func TestCaptureEmptyModeDefaultsToProxyWithLaunch(t *testing.T) {
+	got := applyDefaults(Config{Domain: "example.com"})
+	if got.Mode != "proxy" {
+		t.Errorf("Mode = %q, want proxy", got.Mode)
+	}
+	if !got.LaunchBrowser {
+		t.Error("implicit default must launch a browser (old cdp-launch contract)")
+	}
+	if got.URL != "https://example.com" {
+		t.Errorf("URL = %q, want https://example.com", got.URL)
+	}
+}
+
+func TestCaptureExplicitProxyNoBrowserPreserved(t *testing.T) {
+	got := applyDefaults(Config{Domain: "example.com", Mode: "proxy", LaunchBrowser: false})
+	if got.LaunchBrowser {
+		t.Error("explicit Mode:proxy must NOT be forced to launch a browser")
+	}
+}

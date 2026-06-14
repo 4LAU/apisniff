@@ -25,6 +25,10 @@ import (
 	"github.com/chromedp/chromedp"
 )
 
+// Config controls a capture session. The zero value (only Domain set) defaults
+// to the proxy engine with an auto-launched browser, mirroring the old cdp-launch
+// contract. An explicit Mode:"proxy" with LaunchBrowser:false launches nothing and
+// blocks until timeout unless an external client drives traffic through the proxy.
 type Config struct {
 	Domain        string
 	URL           string
@@ -77,10 +81,22 @@ const (
 	maxWebSocketFramePayload = 64 * 1024
 )
 
-func Capture(ctx context.Context, cfg Config) (*Result, error) {
+// applyDefaults resolves implicit mode to proxy with a launched browser, mirroring
+// the old cdp-launch zero-value contract, without preempting an explicit proxy mode.
+// Extracted from Capture so it is unit-testable without launching Chrome.
+func applyDefaults(cfg Config) Config {
 	if cfg.Mode == "" {
-		cfg.Mode = "cdp-launch"
+		cfg.Mode = "proxy"
+		cfg.LaunchBrowser = true
 	}
+	if cfg.URL == "" {
+		cfg.URL = "https://" + cfg.Domain
+	}
+	return cfg
+}
+
+func Capture(ctx context.Context, cfg Config) (*Result, error) {
+	cfg = applyDefaults(cfg)
 	if cfg.Mode == "proxy" {
 		return CaptureProxy(ctx, cfg)
 	}
@@ -89,9 +105,6 @@ func Capture(ctx context.Context, cfg Config) (*Result, error) {
 	}
 	if cfg.Timeout == 0 {
 		cfg.Timeout = 30 * time.Minute
-	}
-	if cfg.URL == "" {
-		cfg.URL = "https://" + cfg.Domain
 	}
 	start := time.Now()
 	bundle, err := NewBundleDir(cfg.Domain, start)
