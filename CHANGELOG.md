@@ -2,6 +2,14 @@
 
 ## [Unreleased]
 
+### Changed
+- `recon` now defaults to `--mode proxy` (clean Chrome through a local MITM proxy) instead of `--mode cdp-launch`. Proxy mode reads the real on-the-wire request/response headers, so authenticated captures now record the actual `Cookie` / `Set-Cookie` on XHR/fetch API calls and are replayable by default. The CDP modes (`cdp-launch`, `cdp-attach`) remain available for WebSocket-frame capture and attaching to an existing browser, but do not capture cookies on XHR/fetch; selecting one now prints a note to that effect.
+- Proxy mode no longer installs apisniff's MITM CA as a trusted root in the macOS login keychain. The launched Chrome now accepts the proxy certificates via Chrome's `--ignore-certificate-errors-spki-list` flag (cross-platform, computed each run), so there is no keychain prompt and new installs never add a permanently trusted root. Chrome shows a cosmetic "unsupported command-line flag" warning bar instead (invisible to web pages). **If an earlier apisniff version trusted its CA in your macOS login keychain, that trust remains until you remove it** — this upgrade does not (and intentionally cannot, without re-introducing the deleted `security` subprocess) clean it up for you. Remove it with: `security delete-certificate -c "apisniff local MITM CA"`.
+
+### Fixed
+- Authenticated API captures no longer silently omit cookies. Previously the default CDP-launch engine captured zero `Cookie` headers on XHR/fetch (the authenticated API calls), producing non-replayable specs; the default proxy engine captures them from the wire.
+- `recon --json` output is now pure on both stdout and stderr in the default proxy path (no capture-engine status chatter, CA-regeneration log lines, or advisory notes leak onto the streams).
+
 ## [0.7.0] — 2026-06-14
 
 ### Added
