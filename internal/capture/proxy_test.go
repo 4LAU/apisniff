@@ -736,6 +736,66 @@ func TestCaptureProxyNoBrowserDefaultsTo8080(t *testing.T) {
 	}
 }
 
+func TestCaptureProxyPreservesCookieHeaders(t *testing.T) {
+	setTestHome(t, t.TempDir())
+	backend := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Add("Set-Cookie", "session=abc; Path=/")
+		w.Header().Add("Set-Cookie", "csrf=xyz; Path=/")
+		w.WriteHeader(http.StatusOK)
+		w.Write([]byte(`{"ok":true}`))
+	}))
+	defer backend.Close()
+
+	port := freePort(t)
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	resultCh := make(chan *Result, 1)
+	errCh := make(chan error, 1)
+	go func() {
+		result, err := CaptureProxy(ctx, Config{Domain: "127.0.0.1", Port: port, Timeout: 10 * time.Second})
+		if err != nil {
+			errCh <- err
+			return
+		}
+		resultCh <- result
+	}()
+	waitForProxy(t, port)
+
+	proxyURL, _ := url.Parse("http://127.0.0.1:" + strconv.Itoa(port))
+	client := &http.Client{Transport: &http.Transport{Proxy: http.ProxyURL(proxyURL)}}
+	req, _ := http.NewRequest("GET", backend.URL+"/api/data", nil)
+	req.Header.Set("Cookie", "session=abc")
+	resp, err := client.Do(req)
+	if err != nil {
+		t.Fatal(err)
+	}
+	resp.Body.Close()
+	cancel()
+
+	var result *Result
+	select {
+	case result = <-resultCh:
+	case err := <-errCh:
+		t.Fatal(err)
+	case <-time.After(5 * time.Second):
+		t.Fatal("timed out")
+	}
+	flows, err := adapter.LoadJSONL(result.FlowsPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(flows) != 1 {
+		t.Fatalf("flows = %d", len(flows))
+	}
+	if got := flows[0].RequestHeaders["cookie"]; got != "session=abc" {
+		t.Errorf("request cookie = %q, want session=abc", got)
+	}
+	// Two Set-Cookie values, joined with \n per headersToMap.
+	if got := flows[0].ResponseHeaders["set-cookie"]; got != "session=abc; Path=/\ncsrf=xyz; Path=/" {
+		t.Errorf("response set-cookie = %q", got)
+	}
+}
+
 func freePort(t *testing.T) int {
 	t.Helper()
 	listener, err := net.Listen("tcp", "127.0.0.1:0")
