@@ -62,6 +62,64 @@ func NewBrowserContext(ctx context.Context, mode string, port int, userDataDir s
 	}
 }
 
+// LaunchCleanBrowser starts a real Chrome routed through the given proxy and
+// isolated in its own profile, with no automation flags and no DevTools port.
+// This is the proxy-mode login path: nothing instruments the browser, so
+// navigator.webdriver stays false and there is no CDP session for a bot vendor
+// to detect — it is indistinguishable from a human's Chrome. The returned
+// process is killed when ctx is cancelled (timeout or Ctrl+C).
+func LaunchCleanBrowser(ctx context.Context, proxyAddr, spkiHash, profileDir, startURL string, headless bool) (*exec.Cmd, error) {
+	chromePath, ok := ChromeAvailable()
+	if !ok {
+		return nil, fmt.Errorf("Chrome not found; install Chrome or Chromium, or rerun with --no-browser")
+	}
+	if err := os.MkdirAll(profileDir, 0o700); err != nil {
+		return nil, err
+	}
+	cmd := exec.CommandContext(ctx, chromePath, cleanBrowserArgs(proxyAddr, spkiHash, profileDir, startURL, headless)...)
+	if err := cmd.Start(); err != nil {
+		return nil, err
+	}
+	return cmd, nil
+}
+
+// cleanBrowserArgs builds the Chrome command line for the proxy-mode login
+// path. It deliberately omits every automation signal: no --enable-automation,
+// no --remote-debugging-port, no CDP. The --disable-* flags below only suppress
+// Chrome's own phone-home (telemetry, component/variations updates,
+// captive-portal probes) so they don't pollute the capture or stall the network
+// service — none of them set navigator.webdriver.
+//
+// spkiHash is the fallback trust path: when non-empty it adds
+// --ignore-certificate-errors-spki-list so Chrome accepts the proxy MITM certs.
+// That flag triggers Chrome's "unsupported flag" warning bar, so the caller
+// passes "" once the CA is trusted at the OS level (see EnsureCATrusted),
+// yielding a warning-free, flag-free launch.
+func cleanBrowserArgs(proxyAddr, spkiHash, profileDir, startURL string, headless bool) []string {
+	args := []string{
+		"--proxy-server=" + proxyAddr,
+		"--proxy-bypass-list=<-loopback>",
+		"--user-data-dir=" + profileDir,
+		"--no-first-run",
+		"--no-default-browser-check",
+		"--disable-background-networking",
+		"--disable-component-update",
+		"--disable-sync",
+		"--disable-domain-reliability",
+		"--disable-client-side-phishing-detection",
+	}
+	if spkiHash != "" {
+		args = append(args, "--ignore-certificate-errors-spki-list="+spkiHash)
+	}
+	if headless {
+		args = append(args, "--headless=new")
+	}
+	if startURL != "" {
+		args = append(args, startURL)
+	}
+	return args
+}
+
 func FindChrome() string {
 	candidates := []string{}
 	switch runtime.GOOS {
@@ -93,7 +151,6 @@ func FindChrome() string {
 	}
 	return "google-chrome"
 }
-
 
 func DefaultPort() int {
 	return 9222 + int(time.Now().UnixNano()%1000)

@@ -8,7 +8,7 @@ One tool for API recon: preflight defenses, capture real traffic, extract a usab
 ## What you get
 
 - Probe a URL in 10 seconds, classify 25+ vendor products (Cloudflare, Akamai, DataDome, PerimeterX, Imperva, Kasada, and more)
-- Capture browser traffic through Chrome DevTools Protocol by default; use proxy mode when you need MITM fallback capture.
+- Capture browser traffic through Chrome DevTools Protocol by default, or use proxy mode to drive a clean Chrome with no automation fingerprint — enough to log in past bot detection (DataDome, PerimeterX, and similar)
 - Import HAR files or Burp Suite exports for offline analysis
 - Generate an OpenAPI spec from captured traffic with schema inference and example values
 - Replay captured calls against the live API and see what changed
@@ -35,8 +35,12 @@ apisniff probe example.com
 # Capture live traffic with Chrome DevTools Protocol
 apisniff recon example.com
 
-# Fallback: run a local MITM proxy for a browser/client you configure
-apisniff recon example.com --mode proxy --port 8080
+# Proxy mode: opens a clean Chrome routed through a MITM proxy. Log in by
+# hand (no automation fingerprint), then quit Chrome (or Ctrl+C) to finish.
+apisniff recon example.com --mode proxy
+
+# Proxy mode without launching a browser — point your own client at it
+apisniff recon example.com --mode proxy --no-browser --port 8080
 
 # Generate an API spec from the capture
 apisniff spec example.com -o spec.yaml
@@ -102,7 +106,11 @@ Use `apisniff share` to create a safe export with only derived artifacts.
 
 CDP capture records API responses, response body size metadata, and WebSocket handshake/frame summaries when Chrome exposes those events.
 
-`--mode proxy` starts a local HTTP/HTTPS MITM proxy with HTTP/2 support. For HTTPS capture, the client you route through the proxy must trust `~/.apisniff/ca-cert.pem`. Treat that CA as sensitive local configuration: a trusted CA can decrypt HTTPS traffic from clients that trust it and send traffic through this proxy. The private key is stored at `~/.apisniff/ca-key.pem` with owner-only permissions.
+`--mode proxy` starts a local HTTP/HTTPS MITM proxy with HTTP/2 support and, by default, launches a real Chrome routed through it. That Chrome carries **no automation fingerprint** — no `--enable-automation`, no DevTools/CDP attachment, so `navigator.webdriver` is false — which is what lets you log in past bot-detection vendors that block CDP-launched browsers. It uses a fresh, disposable profile (wiped on exit, separate from your everyday Chrome), so you log in by hand each session. Log in, exercise the parts of the app you want captured, then **quit Chrome (⌘Q on macOS) or press Ctrl+C** to finish.
+
+For HTTPS capture the browser must trust the proxy's certificate authority (`~/.apisniff/ca-cert.pem`). On macOS, proxy mode trusts it automatically in your login keychain the first time (a one-time approval prompt, no admin) so there is no browser warning. Treat that CA as sensitive: a trusted CA can decrypt HTTPS traffic from clients that trust it. The private key is stored at `~/.apisniff/ca-key.pem` with owner-only permissions. Remove the trust anytime with `security delete-certificate -c "apisniff local MITM CA"`.
+
+Pass `--no-browser` to start only the proxy and route your own client through `127.0.0.1:<port>` instead; in that case trust the CA in that client yourself.
 
 ### What recon can see
 
@@ -110,7 +118,7 @@ CDP modes only record traffic from the Chrome session apisniff launches or attac
 
 Other apps, other browser windows, background services, and normal device traffic are not routed through apisniff unless you configure them for the same capture mode. apisniff does not turn on device-wide network capture, install a VPN, or monitor traffic outside the chosen session.
 
-Press **Ctrl+C** to end a proxy capture session. If you see a port-in-use error, another capture session is probably still running on that port.
+To end a proxy capture session, quit the launched Chrome (**⌘Q** on macOS — closing the window or a tab is not enough) or press **Ctrl+C** in the terminal. If you see a port-in-use error, another capture session is probably still running on that port.
 
 When passive recon finds capture bundles older than 30 days, apisniff warns so you can review and clean them deliberately.
 

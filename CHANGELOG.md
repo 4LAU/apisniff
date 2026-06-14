@@ -16,9 +16,13 @@
 - Auth fingerprinting and RFC 6265 cookie-jar export
 - Recon session report with flow stats, detected vendors, auth patterns, cookies, and endpoint inventory
 - Bundle directory permissions restricted to owner-only (0o700)
+- Proxy mode launches a clean Chrome with no automation fingerprint (no `--enable-automation`, no CDP attachment; `navigator.webdriver` stays false), enabling manual login past bot-detection vendors (DataDome, PerimeterX, and similar) that block CDP-launched browsers
+- Automatic macOS login-keychain trust of the proxy CA in proxy mode (one-time, no admin), removing Chrome's certificate warning; remove with `security delete-certificate -c "apisniff local MITM CA"`
 - Documentation: CLI specification, auto-generated command reference, getting started guide, workflow recipes, and capture formats guide
 
 ### Changed
+- `--mode proxy` now drives its launched browser via a plain process launch instead of Chrome DevTools Protocol, using a fresh disposable profile that is wiped on exit; end a session by quitting Chrome (⌘Q) or pressing Ctrl+C
+- `--headless` now applies to proxy mode as well as `cdp-launch`
 - stdout/stderr discipline: human-readable output goes to stderr, machine-readable data to stdout
 - Classifier now returns a structured `ClassifyResult` with drop categories
 - Bundle I/O extracted from `recon.py` into a dedicated `bundle` module

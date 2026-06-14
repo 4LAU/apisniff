@@ -5,6 +5,7 @@ package capture
 import (
 	"context"
 	"fmt"
+	"net"
 	"net/http"
 	"net/http/httptest"
 	"os"
@@ -47,8 +48,10 @@ func TestProxyBrowserSPKIBypass(t *testing.T) {
 		ch <- outcome{result, err}
 	}()
 
-	// Give Chrome time to start and load the page through the proxy.
-	time.Sleep(5 * time.Second)
+	// Give Chrome time to start and load the page through the proxy. The
+	// clean-launch path uses a fresh on-disk profile and headless=new, which
+	// cold-starts slower than the old chromedp temp-profile launch.
+	time.Sleep(20 * time.Second)
 	cancel()
 
 	var res outcome
@@ -80,11 +83,16 @@ func TestProxyBrowserSPKIBypass(t *testing.T) {
 		t.Fatal("no flows captured — Chrome did not connect through the MITM proxy")
 	}
 
-	// At least one flow should target the test server.
-	wantHost := strings.TrimPrefix(strings.TrimPrefix(backend.URL, "https://"), "http://")
+	// At least one flow should target the test server. flow.Host carries the
+	// hostname without the port, so compare against the host part only.
+	wantHostPort := strings.TrimPrefix(strings.TrimPrefix(backend.URL, "https://"), "http://")
+	wantHost := wantHostPort
+	if h, _, err := net.SplitHostPort(wantHostPort); err == nil {
+		wantHost = h
+	}
 	found := false
 	for _, f := range flows {
-		if f.Host == wantHost {
+		if f.Host == wantHost || f.Host == wantHostPort {
 			found = true
 			break
 		}
@@ -150,8 +158,9 @@ func TestProxyBrowserDrainOnShutdown(t *testing.T) {
 		ch <- outcome{result, err}
 	}()
 
-	// Wait for Chrome to start and begin loading the slow response.
-	time.Sleep(3 * time.Second)
+	// Wait for Chrome to start and begin loading the slow response. The
+	// clean-launch path cold-starts a fresh on-disk profile, so allow more time.
+	time.Sleep(20 * time.Second)
 
 	// Cancel the context while the response is still in-flight (chunked
 	// transfer is blocked on the release channel).

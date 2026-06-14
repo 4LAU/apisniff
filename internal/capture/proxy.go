@@ -31,9 +31,6 @@ import (
 
 	"github.com/4LAU/apisniff/internal/classify"
 	"github.com/4LAU/apisniff/internal/model"
-	"github.com/chromedp/cdproto/cdp"
-	"github.com/chromedp/cdproto/target"
-	"github.com/chromedp/chromedp"
 	"github.com/elazarl/goproxy"
 )
 
@@ -219,15 +216,32 @@ func CaptureProxy(ctx context.Context, cfg Config) (*Result, error) {
 	}()
 
 	if cfg.LaunchBrowser {
+		// Fresh, disposable profile per run — wiped when capture finishes, so no
+		// login credentials persist on disk.
+		profileDir, err := os.MkdirTemp("", "apisniff-chrome-*")
+		if err != nil {
+			shutdownCtx, cancelShutdown := context.WithTimeout(context.Background(), 5*time.Second)
+			defer cancelShutdown()
+			if err := server.Shutdown(shutdownCtx); err != nil {
+				_ = server.Close()
+			}
+			<-errCh
+			return nil, err
+		}
+		defer os.RemoveAll(profileDir)
+		// Trust the CA at the OS level so Chrome accepts the proxy certs without
+		// the spki flag (and its warning bar). Falls back to the flag if trust
+		// can't be established, so capture never breaks.
+		spkiForFlag := spkiHash
+		if EnsureCATrusted(caPath, cfg.StatusWriter) {
+			spkiForFlag = ""
+		}
 		if cfg.StatusWriter != nil {
 			fmt.Fprintf(cfg.StatusWriter, "MITM proxy listening on %s\n", server.Addr)
-			fmt.Fprintf(cfg.StatusWriter, "Launching Chrome through proxy...\n")
+			fmt.Fprintf(cfg.StatusWriter, "Launching Chrome (fresh profile, no automation flags) through proxy...\n")
+			fmt.Fprintf(cfg.StatusWriter, "Log in and use the site. When done: quit Chrome completely (⌘Q on macOS) or press Ctrl+C here.\n")
 		}
-		browserCtx, cancelBrowser, err := NewBrowserContext(runCtx, "cdp-launch", 0, "", "", cfg.Headless,
-			chromedp.ProxyServer(fmt.Sprintf("127.0.0.1:%d", cfg.Port)),
-			chromedp.Flag("ignore-certificate-errors-spki-list", spkiHash),
-			chromedp.Flag("proxy-bypass-list", "<-loopback>"),
-		)
+		cmd, err := LaunchCleanBrowser(runCtx, fmt.Sprintf("127.0.0.1:%d", cfg.Port), spkiForFlag, profileDir, cfg.URL, cfg.Headless)
 		if err != nil {
 			shutdownCtx, cancelShutdown := context.WithTimeout(context.Background(), 5*time.Second)
 			defer cancelShutdown()
@@ -237,7 +251,6 @@ func CaptureProxy(ctx context.Context, cfg Config) (*Result, error) {
 			<-errCh
 			return nil, fmt.Errorf("failed to launch Chrome: %w", err)
 		}
-		defer cancelBrowser()
 
 		showStatus := cfg.StatusWriter != nil && isTerminal(cfg.StatusWriter)
 		var status *statusLine
@@ -246,71 +259,20 @@ func CaptureProxy(ctx context.Context, cfg Config) (*Result, error) {
 			status.start()
 		}
 
-		navErr := chromedp.Run(browserCtx, chromedp.Navigate(cfg.URL))
-
-		if navErr == nil {
-			tabClosed := make(chan struct{}, 1)
-			signalClose := func() {
-				select {
-				case tabClosed <- struct{}{}:
-				default:
-				}
-			}
-			go func() {
-				<-browserCtx.Done()
-				signalClose()
-			}()
-			go func() {
-				c := chromedp.FromContext(browserCtx)
-				if c == nil || c.Browser == nil {
-					return
-				}
-				consecutiveEmptyOrError := 0
-				ticker := time.NewTicker(500 * time.Millisecond)
-				defer ticker.Stop()
-				for {
-					select {
-					case <-runCtx.Done():
-						return
-					case <-ticker.C:
-						pollCtx, pollCancel := context.WithTimeout(runCtx, 2*time.Second)
-						pollExec := cdp.WithExecutor(pollCtx, c.Browser)
-						infos, err := target.GetTargets().Do(pollExec)
-						pollCancel()
-						if err != nil {
-							consecutiveEmptyOrError++
-							if consecutiveEmptyOrError >= 3 {
-								signalClose()
-								return
-							}
-							continue
-						}
-						pages := 0
-						for _, info := range infos {
-							if info.Type == "page" && !strings.HasPrefix(info.URL, "chrome://") {
-								pages++
-							}
-						}
-						if pages == 0 {
-							consecutiveEmptyOrError++
-							if consecutiveEmptyOrError >= 3 {
-								signalClose()
-								return
-							}
-						} else {
-							consecutiveEmptyOrError = 0
-						}
-					}
-				}
-			}()
-			select {
-			case <-tabClosed:
-			case <-runCtx.Done():
-			}
+		// End the session when the user closes Chrome (the process exits) or on
+		// timeout/signal — runCtx cancellation makes CommandContext kill Chrome,
+		// so cmd.Wait returns either way.
+		browserDone := make(chan struct{})
+		go func() {
+			_ = cmd.Wait()
+			close(browserDone)
+		}()
+		select {
+		case <-browserDone:
+		case <-runCtx.Done():
+			<-browserDone
 		}
 
-		// Stop Chrome first
-		cancelBrowser()
 		if status != nil {
 			status.stop()
 		}
@@ -324,17 +286,6 @@ func CaptureProxy(ctx context.Context, cfg Config) (*Result, error) {
 		select {
 		case <-drainDone:
 		case <-time.After(500 * time.Millisecond):
-		}
-
-		// Handle navigation error: if navErr != nil and no flows captured, return it
-		if navErr != nil && flowCount.Load() == 0 {
-			shutdownCtx, cancelShutdown := context.WithTimeout(context.Background(), 5*time.Second)
-			defer cancelShutdown()
-			if err := server.Shutdown(shutdownCtx); err != nil {
-				_ = server.Close()
-			}
-			<-errCh
-			return nil, navErr
 		}
 	} else {
 		if cfg.StatusWriter != nil {
