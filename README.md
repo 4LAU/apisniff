@@ -8,7 +8,7 @@ One tool for API recon: preflight defenses, capture real traffic, extract a usab
 ## What you get
 
 - Probe a URL in 10 seconds, classify 25+ vendor products (Cloudflare, Akamai, DataDome, PerimeterX, Imperva, Kasada, and more)
-- Capture browser traffic through Chrome DevTools Protocol by default, or use proxy mode to drive a clean Chrome with no automation fingerprint — enough to log in past bot detection (DataDome, PerimeterX, and similar)
+- Capture by default through a clean Chrome (no automation fingerprint) routed through a local MITM proxy — log in past bot detection (DataDome, PerimeterX, and similar) and record real on-the-wire cookies that make captures replayable; opt into CDP modes (`--mode cdp-launch` / `cdp-attach`) for WebSocket-frame capture or attaching to an existing browser
 - Import HAR files or Burp Suite exports for offline analysis
 - Generate an OpenAPI spec from captured traffic with schema inference and example values
 - Replay captured calls against the live API and see what changed
@@ -32,15 +32,17 @@ go build -ldflags="-s -w" -o apisniff ./cmd/apisniff
 # Check what defenses a site has
 apisniff probe example.com
 
-# Capture live traffic with Chrome DevTools Protocol
+# Capture real traffic: opens a clean Chrome (no automation fingerprint) routed
+# through a local MITM proxy. Log in by hand, then close the window (or Ctrl+C)
+# to finish. Records real on-the-wire cookies on XHR/fetch, so captures replay.
 apisniff recon example.com
 
-# Proxy mode: opens a clean Chrome routed through a MITM proxy. Log in by
-# hand (no automation fingerprint), then close the window (or Ctrl+C) to finish.
-apisniff recon example.com --mode proxy
+# CDP mode: capture WebSocket frames or attach to an existing browser.
+# Does not capture Cookie/Set-Cookie on XHR/fetch.
+apisniff recon example.com --mode cdp-launch
 
-# Proxy mode without launching a browser — point your own client at it
-apisniff recon example.com --mode proxy --no-browser --port 8080
+# Run only the proxy (no browser) — point your own client at 127.0.0.1:8080
+apisniff recon example.com --no-browser --port 8080
 
 # Generate an API spec from the capture
 apisniff spec example.com -o spec.yaml
@@ -64,7 +66,7 @@ apisniff share example.com
 | Command | Purpose | Docs |
 |---------|---------|------|
 | [`probe`](docs/commands/probe.md) | Defense preflight: assess defenses, detect vendors, check rate limits | [Reference →](docs/commands/probe.md) |
-| [`recon`](docs/commands/recon.md) | Capture + classify: CDP by default, proxy fallback, filter noise | [Reference →](docs/commands/recon.md) |
+| [`recon`](docs/commands/recon.md) | Capture + classify: clean-Chrome proxy by default (real cookies), CDP modes for WebSocket frames, filter noise | [Reference →](docs/commands/recon.md) |
 | [`analyze`](docs/commands/analyze.md) | Offline analysis: import HAR, Burp XML, or JSONL captures | [Reference →](docs/commands/analyze.md) |
 | [`replay`](docs/commands/replay.md) | Replay captured calls and detect API drift | [Reference →](docs/commands/replay.md) |
 | [`spec`](docs/commands/spec.md) | Generate OpenAPI 3.0.3 from captured traffic | [Reference →](docs/commands/spec.md) |
@@ -100,17 +102,15 @@ Use `apisniff share` to create a safe export with only derived artifacts.
 
 ### Recon capture modes
 
-`apisniff recon` defaults to `--mode cdp-launch`. It launches Chrome with a dedicated user data directory and a DevTools port, then captures request/response data from Chrome's Network domain. The target sees Chrome's real TLS and HTTP/2 behavior, but JavaScript-level automation signals may still exist because Chrome is launched for automation.
+`apisniff recon` defaults to proxy mode. It starts a local HTTP/HTTPS MITM proxy with HTTP/2 support and launches a real Chrome routed through it. That Chrome carries **no automation fingerprint** — no `--enable-automation`, no DevTools/CDP attachment, so `navigator.webdriver` is false — which is what lets you log in past bot-detection vendors (DataDome, PerimeterX, and similar) that block CDP-launched browsers. Because the proxy sees the wire, it captures the **real Cookie/Set-Cookie headers on XHR/fetch**, so authenticated captures are replayable. Chrome runs a fresh, disposable profile (wiped on exit, separate from your everyday Chrome), so you log in by hand each session. Log in, exercise the parts of the app you want captured, then **close the browser window** (or press Ctrl+C) to finish.
 
-`--mode cdp-attach` connects to an existing Chrome DevTools endpoint with `--remote-url` or `--port`.
+For HTTPS, the launched Chrome accepts the proxy's certificates via `--ignore-certificate-errors-spki-list` — the CA's public-key hash is passed on the command line, so **nothing is installed in any OS trust store and there is no keychain prompt**. Chrome shows a cosmetic "unsupported command-line flag" warning bar; that is browser UI only and is invisible to pages. The CA private key at `~/.apisniff/ca-key.pem` is sensitive (anything holding it can forge HTTPS certs for clients that trust the CA); it is stored with owner-only permissions.
 
-CDP capture records API responses, response body size metadata, and WebSocket handshake/frame summaries when Chrome exposes those events.
+Pass `--no-browser` to start only the proxy and route your own client through `127.0.0.1:<port>` instead; in that case trust `~/.apisniff/ca-cert.pem` in that client yourself.
 
-`--mode proxy` starts a local HTTP/HTTPS MITM proxy with HTTP/2 support and, by default, launches a real Chrome routed through it. That Chrome carries **no automation fingerprint** — no `--enable-automation`, no DevTools/CDP attachment, so `navigator.webdriver` is false — which is what lets you log in past bot-detection vendors that block CDP-launched browsers. It uses a fresh, disposable profile (wiped on exit, separate from your everyday Chrome), so you log in by hand each session. Log in, exercise the parts of the app you want captured, then **close the browser window** (or press Ctrl+C) to finish.
+`--mode cdp-launch` is the only mode that captures WebSocket frames, plus `resource_type` and cache/service-worker/body-size metadata, from Chrome's Network domain. It launches Chrome with a dedicated user data directory and a DevTools port. It does **not** capture Cookie/Set-Cookie on XHR/fetch (those are not exposed over CDP), so authenticated captures from CDP modes are not replayable the same way proxy captures are.
 
-For HTTPS capture the browser must trust the proxy's certificate authority (`~/.apisniff/ca-cert.pem`). On macOS, proxy mode trusts it automatically in your login keychain the first time (a one-time approval prompt, no admin) so there is no browser warning. Treat that CA as sensitive: a trusted CA can decrypt HTTPS traffic from clients that trust it. The private key is stored at `~/.apisniff/ca-key.pem` with owner-only permissions. Remove the trust anytime with `security delete-certificate -c "apisniff local MITM CA"`.
-
-Pass `--no-browser` to start only the proxy and route your own client through `127.0.0.1:<port>` instead; in that case trust the CA in that client yourself.
+`--mode cdp-attach` connects to an existing Chrome DevTools endpoint with `--remote-url` or `--port` and has the same capture capabilities — and the same cookie limitation — as `cdp-launch`.
 
 ### What recon can see
 

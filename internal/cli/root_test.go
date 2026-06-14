@@ -474,6 +474,181 @@ func TestReconHumanReportsFilteredCountAndPath(t *testing.T) {
 	assertContains(t, stderr, "3 filtered", "/tmp/apisniff/example/filtered.jsonl")
 }
 
+func TestReconDefaultModeIsProxy(t *testing.T) {
+	cmd := newReconCommand()
+	flag := cmd.Flags().Lookup("mode")
+	if flag == nil {
+		t.Fatal("--mode flag not defined")
+	}
+	if flag.DefValue != "proxy" {
+		t.Fatalf("--mode default = %q, want proxy", flag.DefValue)
+	}
+}
+
+func TestReconDefaultConfig(t *testing.T) {
+	previous := captureRun
+	previousCount := bundleCountOlderThan
+	t.Cleanup(func() {
+		captureRun = previous
+		bundleCountOlderThan = previousCount
+	})
+	bundleCountOlderThan = func(time.Duration) (int, error) { return 0, nil }
+
+	for _, tc := range []struct {
+		name       string
+		args       []string
+		wantMode   string
+		wantLaunch bool
+		wantPort   int // effective Config.Port (0 = ephemeral, resolved in CaptureProxy)
+	}{
+		{"default", []string{"example.com"}, "proxy", true, 0},
+		{"no-browser", []string{"example.com", "--no-browser"}, "proxy", false, 8080},
+		{"cdp-launch", []string{"example.com", "--mode", "cdp-launch"}, "cdp-launch", false, 0},
+		{"cdp-attach", []string{"example.com", "--mode", "cdp-attach"}, "cdp-attach", false, 9222},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			var got capture.Config
+			captureRun = func(_ context.Context, cfg capture.Config) (*capture.Result, error) {
+				got = cfg
+				return &capture.Result{
+					BundleDir: "/tmp/apisniff/example",
+					FlowsPath: "/tmp/apisniff/example/flows.jsonl",
+					Stats:     model.SessionStats{Domain: "example.com", Dropped: map[string]int{}},
+				}, nil
+			}
+			if _, _, err := executeForTest(newReconCommand(), tc.args...); err != nil {
+				t.Fatalf("recon returned error: %v", err)
+			}
+			if got.Mode != tc.wantMode {
+				t.Errorf("Mode = %q, want %q", got.Mode, tc.wantMode)
+			}
+			if got.LaunchBrowser != tc.wantLaunch {
+				t.Errorf("LaunchBrowser = %v, want %v", got.LaunchBrowser, tc.wantLaunch)
+			}
+			if got.Port != tc.wantPort {
+				t.Errorf("Port = %d, want %d", got.Port, tc.wantPort)
+			}
+		})
+	}
+}
+
+func TestReconWarnsCookiesNotCapturedInCDPMode(t *testing.T) {
+	previous := captureRun
+	previousCount := bundleCountOlderThan
+	t.Cleanup(func() {
+		captureRun = previous
+		bundleCountOlderThan = previousCount
+	})
+	bundleCountOlderThan = func(time.Duration) (int, error) { return 0, nil }
+	captureRun = func(_ context.Context, _ capture.Config) (*capture.Result, error) {
+		return &capture.Result{
+			BundleDir: "/tmp/apisniff/example",
+			FlowsPath: "/tmp/apisniff/example/flows.jsonl",
+			Stats:     model.SessionStats{Domain: "example.com", Dropped: map[string]int{}},
+		}, nil
+	}
+
+	for _, mode := range []string{"cdp-launch", "cdp-attach"} {
+		t.Run(mode, func(t *testing.T) {
+			_, stderr, err := executeForTest(newReconCommand(), "example.com", "--mode", mode)
+			if err != nil {
+				t.Fatalf("recon returned error: %v", err)
+			}
+			assertContains(t, stderr, "does not capture", "proxy mode")
+		})
+	}
+}
+
+func TestReconProxyModeHasNoCookieWarning(t *testing.T) {
+	previous := captureRun
+	previousCount := bundleCountOlderThan
+	t.Cleanup(func() {
+		captureRun = previous
+		bundleCountOlderThan = previousCount
+	})
+	bundleCountOlderThan = func(time.Duration) (int, error) { return 0, nil }
+	captureRun = func(_ context.Context, _ capture.Config) (*capture.Result, error) {
+		return &capture.Result{
+			BundleDir: "/tmp/apisniff/example",
+			FlowsPath: "/tmp/apisniff/example/flows.jsonl",
+			Stats:     model.SessionStats{Domain: "example.com", Dropped: map[string]int{}},
+		}, nil
+	}
+
+	_, stderr, err := executeForTest(newReconCommand(), "example.com")
+	if err != nil {
+		t.Fatalf("recon returned error: %v", err)
+	}
+	if strings.Contains(stderr, "does not capture") {
+		t.Fatalf("proxy (default) mode should not warn about cookies; stderr=%q", stderr)
+	}
+}
+
+func TestReconJSONNullsStatusWriter(t *testing.T) {
+	previous := captureRun
+	previousCount := bundleCountOlderThan
+	t.Cleanup(func() {
+		captureRun = previous
+		bundleCountOlderThan = previousCount
+	})
+	bundleCountOlderThan = func(time.Duration) (int, error) { return 0, nil }
+	for _, tc := range []struct {
+		name    string
+		args    []string
+		wantNil bool
+	}{
+		{"json nulls status writer", []string{"example.com", "--json"}, true},
+		{"human keeps status writer", []string{"example.com"}, false},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			var got capture.Config
+			captureRun = func(_ context.Context, cfg capture.Config) (*capture.Result, error) {
+				got = cfg
+				return &capture.Result{
+					BundleDir: "/tmp/apisniff/example",
+					FlowsPath: "/tmp/apisniff/example/flows.jsonl",
+					Stats:     model.SessionStats{Domain: "example.com", Dropped: map[string]int{}},
+				}, nil
+			}
+			if _, _, err := executeForTest(newReconCommand(), tc.args...); err != nil {
+				t.Fatalf("recon returned error: %v", err)
+			}
+			if (got.StatusWriter == nil) != tc.wantNil {
+				t.Errorf("StatusWriter nil = %v, want %v", got.StatusWriter == nil, tc.wantNil)
+			}
+		})
+	}
+}
+
+func TestReconJSONSuppressesAdvisoryNotes(t *testing.T) {
+	previous := captureRun
+	previousCount := bundleCountOlderThan
+	t.Cleanup(func() {
+		captureRun = previous
+		bundleCountOlderThan = previousCount
+	})
+	bundleCountOlderThan = func(time.Duration) (int, error) { return 0, nil }
+	captureRun = func(_ context.Context, _ capture.Config) (*capture.Result, error) {
+		return &capture.Result{
+			BundleDir: "/tmp/apisniff/example",
+			FlowsPath: "/tmp/apisniff/example/flows.jsonl",
+			Stats:     model.SessionStats{Domain: "example.com", Dropped: map[string]int{}},
+		}, nil
+	}
+	for _, args := range [][]string{
+		{"example.com", "--json"},
+		{"example.com", "--json", "--mode", "cdp-launch"},
+	} {
+		_, stderr, err := executeForTest(newReconCommand(), args...)
+		if err != nil {
+			t.Fatalf("recon %v returned error: %v", args, err)
+		}
+		if stderr != "" {
+			t.Fatalf("args %v: --json must suppress advisory notes; stderr=%q", args, stderr)
+		}
+	}
+}
+
 func executeForTest(cmd *cobra.Command, args ...string) (string, string, error) {
 	var stdout bytes.Buffer
 	var stderr bytes.Buffer

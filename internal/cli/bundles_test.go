@@ -118,7 +118,7 @@ func TestBundlesCredentialsReadsFlowsAndMapsLabels(t *testing.T) {
 	}
 }
 
-func TestReconAgeWarningStaysOnStderr(t *testing.T) {
+func TestReconAgeWarningHumanOnly(t *testing.T) {
 	restoreBundleStubs(t)
 	previousCaptureRun := captureRun
 	t.Cleanup(func() { captureRun = previousCaptureRun })
@@ -136,12 +136,24 @@ func TestReconAgeWarningStaysOnStderr(t *testing.T) {
 		}, nil
 	}
 
-	stdout, stderr, err := executeForTest(newReconCommand(), "example.com", "--json")
-	if err != nil {
-		t.Fatalf("recon --json returned error: %v", err)
-	}
-	assertPureJSON(t, stdout)
-	assertContains(t, stderr, "older than 30 days", "apisniff clean --older-than 30d")
+	t.Run("human", func(t *testing.T) {
+		_, stderr, err := executeForTest(newReconCommand(), "example.com")
+		if err != nil {
+			t.Fatalf("recon returned error: %v", err)
+		}
+		assertContains(t, stderr, "older than 30 days", "apisniff clean --older-than 30d")
+	})
+
+	t.Run("json", func(t *testing.T) {
+		stdout, stderr, err := executeForTest(newReconCommand(), "example.com", "--json")
+		if err != nil {
+			t.Fatalf("recon --json returned error: %v", err)
+		}
+		assertPureJSON(t, stdout)
+		if stderr != "" {
+			t.Fatalf("--json must suppress the age warning; stderr=%q", stderr)
+		}
+	})
 }
 
 func restoreBundleStubs(t *testing.T) {

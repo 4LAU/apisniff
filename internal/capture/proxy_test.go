@@ -14,6 +14,7 @@ import (
 	"encoding/json"
 	"encoding/pem"
 	"io"
+	"log"
 	"math/big"
 	"net"
 	"net/http"
@@ -109,7 +110,7 @@ func TestCaptureProxyCapturesHTTPFlow(t *testing.T) {
 
 func TestCaptureProxyCapturesHTTPSMITMFlow(t *testing.T) {
 	setTestHome(t, t.TempDir())
-	caPath, _, err := EnsureProxyCA()
+	caPath, _, err := EnsureProxyCA(nil)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -177,7 +178,7 @@ func TestCaptureProxyCapturesHTTPSMITMFlow(t *testing.T) {
 
 func TestCaptureProxyUsesHTTP2UpstreamWhenAvailable(t *testing.T) {
 	setTestHome(t, t.TempDir())
-	caPath, _, err := EnsureProxyCA()
+	caPath, _, err := EnsureProxyCA(nil)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -311,7 +312,7 @@ func TestCaptureProxyStreamsResponseBeforeCompletion(t *testing.T) {
 	// connection. The plain-HTTP proxy path buffers inside net/http and is
 	// not exercised here.
 	setTestHome(t, t.TempDir())
-	caPath, _, err := EnsureProxyCA()
+	caPath, _, err := EnsureProxyCA(nil)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -718,6 +719,90 @@ func TestCaptureProxyConcurrentRequestsRecordAllFlows(t *testing.T) {
 	}
 }
 
+func TestCaptureProxyNoBrowserDefaultsTo8080(t *testing.T) {
+	setTestHome(t, t.TempDir())
+	// Occupy 8080; a no-browser, port-omitted call must TRY 8080 (and thus
+	// fail to bind), proving the !LaunchBrowser default is preserved.
+	blocker, err := net.Listen("tcp", "127.0.0.1:8080")
+	if err != nil {
+		t.Skipf("cannot occupy 127.0.0.1:8080 (in use): %v", err)
+	}
+	defer blocker.Close()
+
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel()
+	_, err = CaptureProxy(ctx, Config{Domain: "127.0.0.1", Port: 0, LaunchBrowser: false})
+	if err == nil {
+		t.Fatal("no-browser Port:0 should default to 8080 and fail to bind (8080 occupied)")
+	}
+}
+
+func TestCaptureProxyPreservesCookieHeaders(t *testing.T) {
+	setTestHome(t, t.TempDir())
+	backend := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Add("Set-Cookie", "session=abc; Path=/")
+		w.Header().Add("Set-Cookie", "csrf=xyz; Path=/")
+		w.WriteHeader(http.StatusOK)
+		w.Write([]byte(`{"ok":true}`))
+	}))
+	defer backend.Close()
+
+	port := freePort(t)
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	resultCh := make(chan *Result, 1)
+	errCh := make(chan error, 1)
+	go func() {
+		result, err := CaptureProxy(ctx, Config{Domain: "127.0.0.1", Port: port, Timeout: 10 * time.Second})
+		if err != nil {
+			errCh <- err
+			return
+		}
+		resultCh <- result
+	}()
+	waitForProxy(t, port)
+
+	proxyURL, err := url.Parse("http://127.0.0.1:" + strconv.Itoa(port))
+	if err != nil {
+		t.Fatal(err)
+	}
+	client := &http.Client{Transport: &http.Transport{Proxy: http.ProxyURL(proxyURL)}}
+	req, err := http.NewRequest("GET", backend.URL+"/api/data", nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	req.Header.Set("Cookie", "session=abc")
+	resp, err := client.Do(req)
+	if err != nil {
+		t.Fatal(err)
+	}
+	resp.Body.Close()
+	cancel()
+
+	var result *Result
+	select {
+	case result = <-resultCh:
+	case err := <-errCh:
+		t.Fatal(err)
+	case <-time.After(5 * time.Second):
+		t.Fatal("timed out")
+	}
+	flows, err := adapter.LoadJSONL(result.FlowsPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(flows) != 1 {
+		t.Fatalf("flows = %d", len(flows))
+	}
+	if got := flows[0].RequestHeaders["cookie"]; got != "session=abc" {
+		t.Errorf("request cookie = %q, want session=abc", got)
+	}
+	// Two Set-Cookie values, joined with \n per headersToMap.
+	if got := flows[0].ResponseHeaders["set-cookie"]; got != "session=abc; Path=/\ncsrf=xyz; Path=/" {
+		t.Errorf("response set-cookie = %q", got)
+	}
+}
+
 func freePort(t *testing.T) int {
 	t.Helper()
 	listener, err := net.Listen("tcp", "127.0.0.1:0")
@@ -929,7 +1014,7 @@ func TestEnsureProxyCAValidatesExistingCert(t *testing.T) {
 	}
 
 	// EnsureProxyCA must detect the invalid cert and regenerate.
-	gotPath, spkiHash, err := EnsureProxyCA()
+	gotPath, spkiHash, err := EnsureProxyCA(nil)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -951,5 +1036,60 @@ func TestEnsureProxyCAValidatesExistingCert(t *testing.T) {
 	pool := x509.NewCertPool()
 	if !pool.AppendCertsFromPEM(newCertPEM) {
 		t.Fatal("regenerated cert PEM could not be parsed")
+	}
+}
+
+// writeInvalidButLoadableCA writes a parseable cert/key pair into the config dir
+// that loads via tls.X509KeyPair but fails validateCA (expired, non-CA), forcing
+// EnsureProxyCA down the regenerate branch that previously logged via log.Printf.
+func writeInvalidButLoadableCA(t *testing.T, home string) {
+	t.Helper()
+	key, err := ecdsa.GenerateKey(elliptic.P256(), rand.Reader)
+	if err != nil {
+		t.Fatal(err)
+	}
+	serial, _ := rand.Int(rand.Reader, new(big.Int).Lsh(big.NewInt(1), 128))
+	tmpl := &x509.Certificate{
+		SerialNumber:          serial,
+		Subject:               pkix.Name{CommonName: "expired"},
+		NotBefore:             time.Now().Add(-48 * time.Hour),
+		NotAfter:              time.Now().Add(-24 * time.Hour), // expired
+		BasicConstraintsValid: true,
+		IsCA:                  false, // not a CA
+	}
+	der, err := x509.CreateCertificate(rand.Reader, tmpl, tmpl, &key.PublicKey, key)
+	if err != nil {
+		t.Fatal(err)
+	}
+	certPEM := pem.EncodeToMemory(&pem.Block{Type: "CERTIFICATE", Bytes: der})
+	keyDER, err := x509.MarshalECPrivateKey(key)
+	if err != nil {
+		t.Fatal(err)
+	}
+	keyPEM := pem.EncodeToMemory(&pem.Block{Type: "EC PRIVATE KEY", Bytes: keyDER})
+	configDir := filepath.Join(home, ".apisniff")
+	if err := os.MkdirAll(configDir, 0o700); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(configDir, "ca-cert.pem"), certPEM, 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(configDir, "ca-key.pem"), keyPEM, 0o600); err != nil {
+		t.Fatal(err)
+	}
+}
+
+func TestEnsureProxyCANilStatusSilentOnRegen(t *testing.T) {
+	home := t.TempDir()
+	setTestHome(t, home)
+	writeInvalidButLoadableCA(t, home)
+	var logBuf bytes.Buffer
+	log.SetOutput(&logBuf)
+	t.Cleanup(func() { log.SetOutput(os.Stderr) })
+	if _, _, err := EnsureProxyCA(nil); err != nil {
+		t.Fatalf("EnsureProxyCA(nil) returned error: %v", err)
+	}
+	if logBuf.Len() != 0 {
+		t.Fatalf("EnsureProxyCA(nil) leaked to the global logger: %q", logBuf.String())
 	}
 }

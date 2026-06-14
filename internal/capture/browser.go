@@ -92,11 +92,10 @@ func LaunchCleanBrowser(ctx context.Context, proxyAddr, spkiHash, profileDir, st
 // captive-portal probes) so they don't pollute the capture or stall the network
 // service — none of them set navigator.webdriver.
 //
-// spkiHash is the fallback trust path: when non-empty it adds
-// --ignore-certificate-errors-spki-list so Chrome accepts the proxy MITM certs.
-// That flag triggers Chrome's "unsupported flag" warning bar, so the caller
-// passes "" once the CA is trusted at the OS level (see EnsureCATrusted),
-// yielding a warning-free, flag-free launch.
+// spkiHash is the trust path: when non-empty it adds
+// --ignore-certificate-errors-spki-list so Chrome accepts the proxy MITM certs
+// without any OS trust-store change. Chrome shows a cosmetic "unsupported flag"
+// infobar (browser UI only, invisible to pages).
 func cleanBrowserArgs(proxyAddr, spkiHash, profileDir, startURL string, headless bool) []string {
 	args := []string{
 		"--proxy-server=" + proxyAddr,

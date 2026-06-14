@@ -150,24 +150,35 @@ func newReconCommand() *cobra.Command {
 	)
 	cmd := &cobra.Command{
 		Use:   "recon DOMAIN",
-		Short: "Capture traffic with Chrome DevTools Protocol",
+		Short: "Capture live API traffic (clean-Chrome proxy mode by default)",
 		Args:  cobra.ExactArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			if proxyURL != "" {
 				return errors.New("--proxy as an upstream proxy is not implemented; use --mode proxy to run the apisniff MITM proxy")
 			}
 			domain, launchURL := normalizeTarget(args[0])
-			if oldBundles, err := bundleCountOlderThan(30 * 24 * time.Hour); err == nil && oldBundles > 0 {
-				fmt.Fprintf(cmd.ErrOrStderr(), "Warning: %d capture bundle(s) are older than 30 days; run apisniff clean --older-than 30d to remove stale captures.\n", oldBundles)
+			if !jsonOutput {
+				if oldBundles, err := bundleCountOlderThan(30 * 24 * time.Hour); err == nil && oldBundles > 0 {
+					fmt.Fprintf(cmd.ErrOrStderr(), "Warning: %d capture bundle(s) are older than 30 days; run apisniff clean --older-than 30d to remove stale captures.\n", oldBundles)
+				}
+			}
+			if !jsonOutput && (mode == "cdp-launch" || mode == "cdp-attach") {
+				fmt.Fprintf(cmd.ErrOrStderr(), "Note: %s does not capture Cookie/Set-Cookie on XHR/fetch API calls; use the default proxy mode for authenticated capture.\n", mode)
 			}
 			if !cmd.Flags().Changed("port") {
 				switch mode {
 				case "proxy":
-					port = 8080
+					if noBrowser {
+						port = 8080 // stable endpoint for a user-supplied client
+					}
+					// launched proxy: leave port=0 → CaptureProxy binds an ephemeral port
 				case "cdp-attach":
 					port = 9222
-					// cdp-launch and default: leave port=0, resolved internally via DefaultPort()
 				}
+			}
+			statusWriter := io.Writer(cmd.ErrOrStderr())
+			if jsonOutput {
+				statusWriter = nil
 			}
 			result, err := captureRun(cmd.Context(), capture.Config{
 				Domain:        domain,
@@ -177,7 +188,7 @@ func newReconCommand() *cobra.Command {
 				AttachURL:     attachURL,
 				Headless:      headless,
 				LaunchBrowser: mode == "proxy" && !noBrowser,
-				StatusWriter:  cmd.ErrOrStderr(),
+				StatusWriter:  statusWriter,
 			})
 			if err != nil {
 				return err
@@ -204,8 +215,8 @@ func newReconCommand() *cobra.Command {
 	}
 	cmd.Flags().BoolVar(&jsonOutput, "json", false, "output as JSON")
 	cmd.Flags().StringVar(&proxyURL, "proxy", "", "reserved for future upstream proxy chaining")
-	cmd.Flags().IntVar(&port, "port", 0, "capture port (proxy: 8080, cdp-attach: 9222, cdp-launch: auto)")
-	cmd.Flags().StringVar(&mode, "mode", "cdp-launch", "capture mode: cdp-launch, cdp-attach, proxy")
+	cmd.Flags().IntVar(&port, "port", 0, "capture port (proxy launch: ephemeral; proxy --no-browser: 8080; cdp-attach: 9222; cdp-launch: auto)")
+	cmd.Flags().StringVar(&mode, "mode", "proxy", "capture mode: proxy (default), cdp-launch, cdp-attach")
 	cmd.Flags().StringVar(&attachURL, "remote-url", "", "CDP URL for cdp-attach")
 	cmd.Flags().BoolVar(&headless, "headless", false, "launch Chrome headless")
 	cmd.Flags().BoolVar(&noBrowser, "no-browser", false, "skip Chrome launch in proxy mode")
