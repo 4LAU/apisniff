@@ -13,6 +13,7 @@ import (
 	"testing"
 
 	"github.com/4LAU/apisniff/internal/adapter"
+	"github.com/4LAU/apisniff/internal/jsonschema"
 	"github.com/4LAU/apisniff/internal/model"
 	"github.com/4LAU/apisniff/internal/testutil"
 	"github.com/getkin/kin-openapi/openapi3"
@@ -247,7 +248,7 @@ func TestRoundTripResponseSchemasMatchTraffic(t *testing.T) {
 				if len(flow.ResponseBody) == 0 {
 					continue
 				}
-				parsed := ParseJSONBody(flow.ResponseBody)
+				parsed := jsonschema.ParseJSONBody(flow.ResponseBody)
 				if parsed == nil {
 					continue
 				}

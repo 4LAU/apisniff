@@ -7,6 +7,7 @@ import (
 	"testing"
 
 	"github.com/4LAU/apisniff/internal/auth"
+	"github.com/4LAU/apisniff/internal/jsonschema"
 	"github.com/4LAU/apisniff/internal/model"
 )
 
@@ -190,33 +191,33 @@ func fuzzJSONBody(seed []byte) []byte {
 }
 
 func TestInferSchemaObjectAndArray(t *testing.T) {
-	schema := InferSchema(map[string]any{"id": float64(1), "name": "Alice", "active": true}, false, "")
+	schema := jsonschema.InferSchema(map[string]any{"id": float64(1), "name": "Alice", "active": true}, false, "")
 	props := asMap(schema["properties"])
 	if schema["type"] != "object" || asMap(props["id"])["type"] != "integer" || asMap(props["name"])["type"] != "string" || asMap(props["active"])["type"] != "boolean" {
 		t.Fatalf("schema = %#v", schema)
 	}
-	array := InferSchema([]any{map[string]any{"id": float64(1)}}, false, "")
+	array := jsonschema.InferSchema([]any{map[string]any{"id": float64(1)}}, false, "")
 	if array["type"] != "array" || asMap(array["items"])["type"] != "object" {
 		t.Fatalf("array = %#v", array)
 	}
 }
 
 func TestInferSchemaNullIsNullableString(t *testing.T) {
-	schema := InferSchema(nil, false, "")
+	schema := jsonschema.InferSchema(nil, false, "")
 	if schema["type"] != "string" || schema["nullable"] != true {
 		t.Fatalf("schema = %#v", schema)
 	}
 }
 
 func TestInferSchemaEmptyArrayHasOpenItems(t *testing.T) {
-	schema := InferSchema([]any{}, false, "")
+	schema := jsonschema.InferSchema([]any{}, false, "")
 	if schema["type"] != "array" || len(asMap(schema["items"])) != 0 {
 		t.Fatalf("schema = %#v", schema)
 	}
 }
 
 func TestInferSchemaNestedArraysMergeItemSchemas(t *testing.T) {
-	schema := InferSchema([]any{
+	schema := jsonschema.InferSchema([]any{
 		[]any{map[string]any{"id": float64(1)}},
 		[]any{map[string]any{"name": "Alice"}},
 	}, false, "")
@@ -229,7 +230,7 @@ func TestInferSchemaNestedArraysMergeItemSchemas(t *testing.T) {
 }
 
 func TestInferSchemaNumericKeyedObjectAsMap(t *testing.T) {
-	schema := InferSchema(map[string]any{
+	schema := jsonschema.InferSchema(map[string]any{
 		"123": map[string]any{"name": "Alice"},
 		"456": map[string]any{"name": "Bob"},
 	}, false, "")
@@ -243,14 +244,14 @@ func TestInferSchemaNumericKeyedObjectAsMap(t *testing.T) {
 }
 
 func TestInferSchemaEmptyNumericKeyedObjectFallsBackToObjectProperties(t *testing.T) {
-	schema := InferSchema(map[string]any{}, false, "")
+	schema := jsonschema.InferSchema(map[string]any{}, false, "")
 	if schema["type"] != "object" || schema["properties"] == nil || schema["additionalProperties"] != nil {
 		t.Fatalf("schema = %#v", schema)
 	}
 }
 
 func TestInferSchemaNullableArrayItems(t *testing.T) {
-	schema := InferSchema([]any{nil, "Alice"}, false, "")
+	schema := jsonschema.InferSchema([]any{nil, "Alice"}, false, "")
 	items := asMap(schema["items"])
 	if items["type"] != "string" || items["nullable"] != true {
 		t.Fatalf("items = %#v", items)
@@ -258,7 +259,7 @@ func TestInferSchemaNullableArrayItems(t *testing.T) {
 }
 
 func TestInferSchemaArrayFallsBackToStringForMixedScalarTypes(t *testing.T) {
-	schema := InferSchema([]any{float64(1), "two"}, false, "")
+	schema := jsonschema.InferSchema([]any{float64(1), "two"}, false, "")
 	items := asMap(schema["items"])
 	if items["type"] != "string" {
 		t.Fatalf("items schema = %#v", items)
@@ -270,7 +271,7 @@ func TestInferSchemaArrayFallsBackToStringForMixedScalarTypes(t *testing.T) {
 }
 
 func TestMergeSchemasConflictingScalarTypesFallBackToString(t *testing.T) {
-	merged := MergeSchemas(map[string]any{"type": "integer"}, map[string]any{"type": "string"})
+	merged := jsonschema.MergeSchemas(map[string]any{"type": "integer"}, map[string]any{"type": "string"})
 	observed := toAnySlice(merged["x-apisniff-observed-types"])
 	if merged["type"] != "string" || len(observed) != 2 || observed[0] != "integer" || observed[1] != "string" {
 		t.Fatalf("merged = %#v", merged)
@@ -278,14 +279,14 @@ func TestMergeSchemasConflictingScalarTypesFallBackToString(t *testing.T) {
 }
 
 func TestMergeSchemasPromotesNullableSameType(t *testing.T) {
-	merged := MergeSchemas(map[string]any{"type": "string"}, map[string]any{"type": "string", "nullable": true})
+	merged := jsonschema.MergeSchemas(map[string]any{"type": "string"}, map[string]any{"type": "string", "nullable": true})
 	if merged["type"] != "string" || merged["nullable"] != true {
 		t.Fatalf("merged = %#v", merged)
 	}
 }
 
 func TestMergeSchemasMergesObjectProperties(t *testing.T) {
-	merged := MergeSchemas(
+	merged := jsonschema.MergeSchemas(
 		map[string]any{"type": "object", "properties": map[string]any{"id": map[string]any{"type": "integer"}}},
 		map[string]any{"type": "object", "properties": map[string]any{"email": map[string]any{"type": "string"}}},
 	)
@@ -296,7 +297,7 @@ func TestMergeSchemasMergesObjectProperties(t *testing.T) {
 }
 
 func TestMergeSchemasEnrichesEmptyArrayItems(t *testing.T) {
-	merged := MergeSchemas(
+	merged := jsonschema.MergeSchemas(
 		map[string]any{"type": "array", "items": map[string]any{}},
 		map[string]any{"type": "array", "items": map[string]any{"type": "object", "properties": map[string]any{"id": map[string]any{"type": "integer"}}}},
 	)
@@ -307,7 +308,7 @@ func TestMergeSchemasEnrichesEmptyArrayItems(t *testing.T) {
 }
 
 func TestMergeSchemasKeepsStructuredTypeOverScalar(t *testing.T) {
-	merged := MergeSchemas(
+	merged := jsonschema.MergeSchemas(
 		map[string]any{"type": "string", "nullable": true},
 		map[string]any{"type": "object", "properties": map[string]any{"id": map[string]any{"type": "integer"}}},
 	)
@@ -317,7 +318,7 @@ func TestMergeSchemasKeepsStructuredTypeOverScalar(t *testing.T) {
 }
 
 func TestMergeSchemasAdditionalPropertiesWinsOverProperties(t *testing.T) {
-	merged := MergeSchemas(
+	merged := jsonschema.MergeSchemas(
 		map[string]any{"type": "object", "properties": map[string]any{"id": map[string]any{"type": "integer"}}},
 		map[string]any{"type": "object", "additionalProperties": map[string]any{"type": "string"}},
 	)

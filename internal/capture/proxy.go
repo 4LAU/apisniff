@@ -30,6 +30,7 @@ import (
 	"time"
 
 	"github.com/4LAU/apisniff/internal/classify"
+	"github.com/4LAU/apisniff/internal/finalize"
 	"github.com/4LAU/apisniff/internal/model"
 	"github.com/4LAU/apisniff/internal/vendor"
 	"github.com/elazarl/goproxy"
@@ -375,7 +376,9 @@ func CaptureProxy(ctx context.Context, cfg Config) (*Result, error) {
 	if err := WriteSession(bundle, statsCopy); err != nil {
 		return nil, err
 	}
-	return &Result{BundleDir: bundle, FlowsPath: flowsPath, FilteredPath: resultFilteredPath, CAPath: caPath, SPKIHash: spkiHash, Stats: statsCopy}, nil
+	// Non-fatal: capture already succeeded. Co-locate spec + private catalog.
+	gqlSummary := finalize.FromBundle(bundle, flowsPath, statsCopy.Domain)
+	return &Result{BundleDir: bundle, FlowsPath: flowsPath, FilteredPath: resultFilteredPath, CAPath: caPath, SPKIHash: spkiHash, Stats: statsCopy, GraphQL: gqlSummary}, nil
 }
 
 func EnsureProxyCA() (string, string, error) {

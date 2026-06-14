@@ -17,6 +17,12 @@ type ReconResult struct {
 	FilteredFlows       int
 	Defenses            []model.VendorMatch
 	UnattributedAntibot int
+
+	// GraphQL catalog counts, printed only when GraphQLOperations > 0.
+	GraphQLOperations    int
+	GraphQLFlows         int
+	GraphQLCapturedQuery int
+	GraphQLPersistedHash int
 }
 
 type SpecStatusResult struct {
@@ -61,7 +67,33 @@ func WriteRecon(cfg Config, result ReconResult) error {
 	if len(result.Defenses) > 0 || result.UnattributedAntibot > 0 {
 		lines = append(lines, "", s.panel("Defenses observed", defensePanelBody(result)))
 	}
+	lines = append(lines, graphQLReconLines(result)...)
 	return s.writeLines(lines...)
+}
+
+// graphQLReconLines renders the catalog summary, only when operations exist.
+func graphQLReconLines(result ReconResult) []string {
+	return graphQLSummaryLines(
+		result.GraphQLOperations,
+		result.GraphQLFlows,
+		result.GraphQLCapturedQuery,
+		result.GraphQLPersistedHash,
+	)
+}
+
+// graphQLSummaryLines renders the two-line catalog block shared by the recon
+// and analyze paths, only when operations exist.
+func graphQLSummaryLines(operations, flows, capturedQuery, persistedHash int) []string {
+	if operations <= 0 {
+		return nil
+	}
+	return []string{
+		"",
+		fmt.Sprintf("GraphQL: %d operations cataloged from %d flows → graphql-operations.json",
+			operations, flows),
+		fmt.Sprintf("         (%d with captured query text, %d persisted-hash only)",
+			capturedQuery, persistedHash),
+	}
 }
 
 func WriteSpecStatus(cfg Config, result SpecStatusResult) error {

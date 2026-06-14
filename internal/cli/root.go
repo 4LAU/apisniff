@@ -186,15 +186,19 @@ func newReconCommand() *cobra.Command {
 				return writeJSON(cmd.OutOrStdout(), result)
 			}
 			return output.WriteRecon(humanOutputConfig(cmd), output.ReconResult{
-				Domain:              result.Stats.Domain,
-				BundleDir:           result.BundleDir,
-				FlowsPath:           result.FlowsPath,
-				KeptFlows:           result.Stats.KeptFlows,
-				TotalFlows:          result.Stats.TotalFlows,
-				FilteredFlows:       sumDroppedFlows(result.Stats.Dropped),
-				FilteredPath:        result.FilteredPath,
-				Defenses:            result.Stats.Defenses,
-				UnattributedAntibot: result.Stats.UnattributedAntibot,
+				Domain:               result.Stats.Domain,
+				BundleDir:            result.BundleDir,
+				FlowsPath:            result.FlowsPath,
+				KeptFlows:            result.Stats.KeptFlows,
+				TotalFlows:           result.Stats.TotalFlows,
+				FilteredFlows:        sumDroppedFlows(result.Stats.Dropped),
+				FilteredPath:         result.FilteredPath,
+				Defenses:             result.Stats.Defenses,
+				UnattributedAntibot:  result.Stats.UnattributedAntibot,
+				GraphQLOperations:    result.GraphQL.OperationCount,
+				GraphQLFlows:         result.GraphQL.FlowCount,
+				GraphQLCapturedQuery: result.GraphQL.CapturedQueryCount,
+				GraphQLPersistedHash: result.GraphQL.PersistedHashCount,
 			})
 		},
 	}
@@ -267,9 +271,14 @@ func newAnalyzeCommand() *cobra.Command {
 					KeptFlows:  len(flows),
 					Dropped:    map[string]int{},
 				}
-				if err := report.WriteBundle(outputDir, flows, session); err != nil {
+				summary, err := report.WriteBundle(outputDir, flows, session)
+				if err != nil {
 					return err
 				}
+				result.GraphQLOperations = summary.OperationCount
+				result.GraphQLFlows = summary.FlowCount
+				result.GraphQLCapturedQuery = summary.CapturedQueryCount
+				result.GraphQLPersistedHash = summary.PersistedHashCount
 				if fetchGraphQL {
 					graphQL, err := report.FetchGraphQLSchemas(cmd.Context(), flows)
 					if err != nil {

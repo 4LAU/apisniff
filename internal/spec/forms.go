@@ -5,6 +5,8 @@ import (
 	"net/url"
 	"regexp"
 	"strings"
+
+	"github.com/4LAU/apisniff/internal/jsonschema"
 )
 
 var multipartNameRe = regexp.MustCompile(`name="([^"]+)"`)
@@ -66,7 +68,7 @@ func ParseMultipart(body []byte, contentType string) map[string]any {
 		}
 		name := nameMatch[1]
 		if multipartFilenameRe.MatchString(segment) {
-			out[name] = fileSentinel
+			out[name] = jsonschema.FileSentinel
 			continue
 		}
 		value := ""
