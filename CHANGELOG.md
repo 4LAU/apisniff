@@ -2,6 +2,11 @@
 
 ## [Unreleased]
 
+## [0.6.0] — 2026-06-13
+
+### Added
+- `recon` now ends with a "Defenses observed" panel naming the anti-bot/WAF vendors seen in the target's own traffic, each with confidence and the matched signals (e.g. `cloudflare (medium) — cf_clearance`). Anti-bot flows that match no known vendor are reported as `unattributed antibot (N flows)`. The panel is passive (no active probing) and is omitted entirely for undefended targets. Detection is scoped to the target's own responses and ignores bare CDN/infrastructure headers (e.g. `cf-ray`, `x-amzn-requestid`), so a merely CDN-fronted site is not reported as defended. The `--json` output gains optional `defenses` and `unattributed_antibot` fields under `stats`.
+
 ## [0.5.1] — 2026-06-13
 
 ### Changed
