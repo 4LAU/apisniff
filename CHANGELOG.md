@@ -2,6 +2,13 @@
 
 ## [Unreleased]
 
+## [0.7.0] — 2026-06-14
+
+### Added
+- GraphQL operation catalog: captured GraphQL traffic is no longer collapsed into a single misleading endpoint. apisniff detects GraphQL across transports (JSON, batched arrays, GET query params, and multipart uploads) and writes a `graphql-operations.json` catalog into the private capture bundle — one entry per operation, with query text (when captured), variables example and shape, response shape, observed counts, and a provenance label distinguishing operations seen with full query text (`captured-query`) from persisted-query/APQ operations seen only as a hash (`persisted-hash`). A companion `operations.graphql` document is written for the operations whose query text was captured (colliding operation names are suffixed to stay valid). Bodies captured truncated or incomplete are marked `partial` rather than treated as authoritative, and APQ hash mismatches are flagged.
+- The OpenAPI spec now represents a GraphQL endpoint honestly: a single entry with generic request/response envelopes plus an `x-apisniff-graphql` extension that lists the operations (normalized host/path, name, type, source) and points at the catalog — instead of a meaningless merged union of every operation's variables and responses. The extension is share-safe by construction: it carries only normalized identity, never raw URLs or variable values, so `share` output cannot leak path IDs or captured inputs.
+- `analyze` now prints the same `GraphQL: N operations cataloged` summary that `recon` prints.
+
 ## [0.6.0] — 2026-06-13
 
 ### Added
