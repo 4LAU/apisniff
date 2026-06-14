@@ -206,16 +206,16 @@ func TestIsDynamicSegmentOpaqueIDs(t *testing.T) {
 	}
 
 	static := []string{
-		"payment_processors",        // prefix ok, tail <12 chars
-		"event_acknowledgements",    // prefix ok, tail >=12 but all-lowercase, no digit -> readable
-		"internal_configuration",    // prefix ok, readable lowercase tail
-		"org_MemberRoles",           // valid prefix shape, CamelCase but tail <12 -> readable
-		"receiptmanagementenabled",  // 24 chars, no digit -> long route word, not a token
-		"sixmonthspendbycurrency",   // 23 chars, no digit -> long route word
-		"outofpocketexpenses",       // 19 chars, no digit
-		"creditcardsv2",             // no underscore, <20, has digit but short
-		"Sign_Up",                   // uppercase prefix fails the lowercase-prefix shape gate
-		"tok_visa",                  // tail too short
+		"payment_processors",       // prefix ok, tail <12 chars
+		"event_acknowledgements",   // prefix ok, tail >=12 but all-lowercase, no digit -> readable
+		"internal_configuration",   // prefix ok, readable lowercase tail
+		"org_MemberRoles",          // valid prefix shape, CamelCase but tail <12 -> readable
+		"receiptmanagementenabled", // 24 chars, no digit -> long route word, not a token
+		"sixmonthspendbycurrency",  // 23 chars, no digit -> long route word
+		"outofpocketexpenses",      // 19 chars, no digit
+		"creditcardsv2",            // no underscore, <20, has digit but short
+		"Sign_Up",                  // uppercase prefix fails the lowercase-prefix shape gate
+		"tok_visa",                 // tail too short
 	}
 	for _, part := range static {
 		if IsDynamicSegment(part) {
