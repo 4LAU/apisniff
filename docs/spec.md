@@ -12,7 +12,7 @@
 - Short flags use single letters where useful: `-i`, `-o`, `-f`, `-d`, `-H`.
 - `--header` / `-H` accepts `key:value` and can be repeated.
 - `probe --proxy` routes probe requests through an HTTP/SOCKS proxy.
-- `recon --mode proxy` starts apisniff's local MITM proxy. `recon --proxy` is reserved for future upstream proxy chaining.
+- `recon` runs apisniff's local MITM proxy by default (`--mode proxy`); CDP modes are opt-in via `--mode cdp-launch` / `cdp-attach`. `recon --proxy` is reserved for future upstream proxy chaining.
 - Replay sends only `GET`, `HEAD`, and `OPTIONS` by default. `--include-unsafe` opts into mutating methods.
 
 ## Bundle Layout
@@ -42,7 +42,7 @@ Bundle directories are created owner-only.
 - `recon` and `analyze` can process full HTTP traffic, including credentials. Raw bundles must not be shared.
 - `share` produces only derived artifacts and redacts cookie values.
 - CDP capture preserves browser TLS/HTTP behavior but can still expose JavaScript automation signals.
-- Proxy capture requires clients to trust `~/.apisniff/ca-cert.pem` for HTTPS MITM. Trust it only in clients/profiles you control.
+- Proxy capture decrypts HTTPS via a local MITM CA. The default launched Chrome accepts the proxy certs through `--ignore-certificate-errors-spki-list` (nothing installed in any OS trust store). With `--no-browser`, trust `~/.apisniff/ca-cert.pem` only in clients/profiles you control. The CA private key (`~/.apisniff/ca-key.pem`) is sensitive — anything holding it can forge HTTPS certs for clients that trust the CA.
 - `probe` and `replay` send real requests from your network.
 
 ## Supported Input Formats

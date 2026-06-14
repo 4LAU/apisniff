@@ -18,7 +18,7 @@ apisniff spec example.com -o spec.yaml
 cat spec.yaml
 ```
 
-If CDP capture is not suitable for the target, use `recon --mode proxy` and read the proxy CA note in [Getting Started](getting-started.md#step-2-capture-traffic).
+`recon` uses proxy mode by default (a clean Chrome routed through a local MITM proxy); read the proxy CA note in [Getting Started](getting-started.md#step-2-capture-traffic). Add `--mode cdp-launch` only if you need WebSocket-frame capture — CDP modes do not capture cookies on XHR/fetch.
 
 ## Check if an API has changed since your last capture
 

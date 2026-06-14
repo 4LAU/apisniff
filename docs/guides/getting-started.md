@@ -28,15 +28,17 @@ Probe compares multiple client profiles and reports a verdict plus vendor signal
 apisniff recon example.com
 ```
 
-By default, `recon` launches Chrome and captures via Chrome DevTools Protocol. Browse the site normally in that Chrome session, then wait for the command to finish or stop it with Ctrl+C where appropriate.
+By default, `recon` opens a clean Chrome (no automation fingerprint) routed through a local MITM proxy. Log in by hand and exercise the parts of the app you want to capture, then close the browser window (or press Ctrl+C) to finish. Because the proxy sees the wire, it captures the **real Cookie/Set-Cookie headers on XHR/fetch**, so authenticated captures are replayable. The launched Chrome accepts the proxy's certificates via a command-line flag (`--ignore-certificate-errors-spki-list`) — nothing is installed in your OS trust store and there is no keychain prompt. Chrome shows a harmless "unsupported command-line flag" warning bar (browser UI only).
 
-For the MITM proxy fallback:
+To capture WebSocket frames or attach to an existing browser, opt into a CDP mode (`--mode cdp-launch` / `--mode cdp-attach`). CDP modes do **not** capture Cookie/Set-Cookie on XHR/fetch.
+
+To run only the proxy without launching a browser:
 
 ```bash
-apisniff recon example.com --mode proxy --port 8080
+apisniff recon example.com --no-browser --port 8080
 ```
 
-Route a browser or client through `http://127.0.0.1:8080`. For HTTPS capture, trust `~/.apisniff/ca-cert.pem` in that client profile. The CA private key is stored at `~/.apisniff/ca-key.pem`; treat it as sensitive local configuration.
+Route your own browser or client through `http://127.0.0.1:8080`. For HTTPS capture, trust `~/.apisniff/ca-cert.pem` in that client profile yourself. The CA private key is stored at `~/.apisniff/ca-key.pem`; treat it as sensitive local configuration.
 
 Results are saved to `~/apisniff-captures/<domain>_<timestamp>/`.
 
