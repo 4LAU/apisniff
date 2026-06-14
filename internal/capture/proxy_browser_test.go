@@ -27,7 +27,15 @@ func TestProxyBrowserSPKIBypass(t *testing.T) {
 	}))
 	defer backend.Close()
 
-	port := freePort(t)
+	// Occupy 8080 so a regression to fixed-8080 binding would fail; a launched
+	// browser with Port:0 must bind an ephemeral port and still capture traffic,
+	// proving Chrome was pointed at the resolved (non-8080) port.
+	blocker, err := net.Listen("tcp", "127.0.0.1:8080")
+	if err != nil {
+		t.Skipf("cannot occupy 127.0.0.1:8080 (in use): %v", err)
+	}
+	defer blocker.Close()
+
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 
@@ -39,7 +47,7 @@ func TestProxyBrowserSPKIBypass(t *testing.T) {
 	go func() {
 		result, err := CaptureProxy(ctx, Config{
 			Domain:        "127.0.0.1",
-			Port:          port,
+			Port:          0,
 			LaunchBrowser: true,
 			Headless:      true,
 			URL:           backend.URL,

@@ -718,6 +718,24 @@ func TestCaptureProxyConcurrentRequestsRecordAllFlows(t *testing.T) {
 	}
 }
 
+func TestCaptureProxyNoBrowserDefaultsTo8080(t *testing.T) {
+	setTestHome(t, t.TempDir())
+	// Occupy 8080; a no-browser, port-omitted call must TRY 8080 (and thus
+	// fail to bind), proving the !LaunchBrowser default is preserved.
+	blocker, err := net.Listen("tcp", "127.0.0.1:8080")
+	if err != nil {
+		t.Skipf("cannot occupy 127.0.0.1:8080 (in use): %v", err)
+	}
+	defer blocker.Close()
+
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel()
+	_, err = CaptureProxy(ctx, Config{Domain: "127.0.0.1", Port: 0, LaunchBrowser: false})
+	if err == nil {
+		t.Fatal("no-browser Port:0 should default to 8080 and fail to bind (8080 occupied)")
+	}
+}
+
 func freePort(t *testing.T) int {
 	t.Helper()
 	listener, err := net.Listen("tcp", "127.0.0.1:0")

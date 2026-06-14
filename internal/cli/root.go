@@ -163,10 +163,12 @@ func newReconCommand() *cobra.Command {
 			if !cmd.Flags().Changed("port") {
 				switch mode {
 				case "proxy":
-					port = 8080
+					if noBrowser {
+						port = 8080 // stable endpoint for a user-supplied client
+					}
+					// launched proxy: leave port=0 → CaptureProxy binds an ephemeral port
 				case "cdp-attach":
 					port = 9222
-					// cdp-launch and default: leave port=0, resolved internally via DefaultPort()
 				}
 			}
 			result, err := captureRun(cmd.Context(), capture.Config{
@@ -204,7 +206,7 @@ func newReconCommand() *cobra.Command {
 	}
 	cmd.Flags().BoolVar(&jsonOutput, "json", false, "output as JSON")
 	cmd.Flags().StringVar(&proxyURL, "proxy", "", "reserved for future upstream proxy chaining")
-	cmd.Flags().IntVar(&port, "port", 0, "capture port (proxy: 8080, cdp-attach: 9222, cdp-launch: auto)")
+	cmd.Flags().IntVar(&port, "port", 0, "capture port (proxy launch: ephemeral; proxy --no-browser: 8080; cdp-attach: 9222; cdp-launch: auto)")
 	cmd.Flags().StringVar(&mode, "mode", "proxy", "capture mode: proxy (default), cdp-launch, cdp-attach")
 	cmd.Flags().StringVar(&attachURL, "remote-url", "", "CDP URL for cdp-attach")
 	cmd.Flags().BoolVar(&headless, "headless", false, "launch Chrome headless")

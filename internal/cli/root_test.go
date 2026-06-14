@@ -501,6 +501,8 @@ func TestReconDefaultConfig(t *testing.T) {
 		wantLaunch bool
 		wantPort   int // effective Config.Port (0 = ephemeral, resolved in CaptureProxy)
 	}{
+		{"default", []string{"example.com"}, "proxy", true, 0},
+		{"no-browser", []string{"example.com", "--no-browser"}, "proxy", false, 8080},
 		{"cdp-launch", []string{"example.com", "--mode", "cdp-launch"}, "cdp-launch", false, 0},
 		{"cdp-attach", []string{"example.com", "--mode", "cdp-attach"}, "cdp-attach", false, 9222},
 	} {

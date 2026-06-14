@@ -49,7 +49,11 @@ func CaptureProxy(ctx context.Context, cfg Config) (*Result, error) {
 			return nil, fmt.Errorf("Chrome not found; install Chrome or Chromium, or rerun with --no-browser")
 		}
 	}
-	if cfg.Port == 0 {
+	// No-browser callers (CLI --no-browser AND direct library callers) need a
+	// stable, knowable endpoint to point their own client at; default to 8080.
+	// A launched browser is pointed at whatever port we bind, so it can be
+	// ephemeral — leave Port==0 to bind 127.0.0.1:0 below.
+	if cfg.Port == 0 && !cfg.LaunchBrowser {
 		cfg.Port = 8080
 	}
 	if cfg.Timeout == 0 {
@@ -221,11 +225,13 @@ func CaptureProxy(ctx context.Context, cfg Config) (*Result, error) {
 		return resp
 	})
 
-	server := &http.Server{Addr: fmt.Sprintf("127.0.0.1:%d", cfg.Port), Handler: proxy}
-	listener, err := net.Listen("tcp", server.Addr)
+	server := &http.Server{Handler: proxy}
+	listener, err := net.Listen("tcp", fmt.Sprintf("127.0.0.1:%d", cfg.Port))
 	if err != nil {
 		return nil, err
 	}
+	cfg.Port = listener.Addr().(*net.TCPAddr).Port // resolve ephemeral → actual
+	server.Addr = listener.Addr().String()
 	runCtx, stopSignals := signal.NotifyContext(ctx, gracefulSignals...)
 	defer stopSignals()
 	runCtx, cancelTimeout := context.WithTimeout(runCtx, cfg.Timeout)
