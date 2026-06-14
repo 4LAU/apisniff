@@ -152,14 +152,12 @@ func aggregateGroup(g *group) CatalogOp {
 	}
 	out.Source = groupSource(g)
 	out.StatusCodes = collectStatuses(g)
-	if out.Source == "persisted-hash" {
-		hash := first.PersistedHash
-		out.PersistedHash = &hash
-	} else {
+	if out.Source != "persisted-hash" {
 		applyQueryAggregates(&out, g)
 	}
-	if first.PersistedHash != "" && out.PersistedHash == nil {
-		// captured-query group that also carries a hash (e.g. APQ mismatch).
+	// Carry the hash for any group that has one: a persisted-hash group, or a
+	// captured-query group that also observed a hash (e.g. APQ mismatch).
+	if first.PersistedHash != "" {
 		hash := first.PersistedHash
 		out.PersistedHash = &hash
 	}
@@ -326,11 +324,9 @@ func sortCatalogOps(ops []CatalogOp) {
 	})
 }
 
-// opDiscriminator returns the discriminator hash used for tie-break ordering.
+// opDiscriminator returns the discriminator hash used for tie-break ordering:
+// the query hash when a query is present, else the persisted hash, else "".
 func opDiscriminator(op CatalogOp) string {
-	if op.PersistedHash != nil && op.Query == nil {
-		return *op.PersistedHash
-	}
 	if op.Query != nil {
 		return sha256hex(strings.TrimSpace(*op.Query))
 	}

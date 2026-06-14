@@ -111,30 +111,36 @@ func isGraphQLEnvelope(e envelope) bool {
 
 // extractJSONBody handles the json and json-batch transports.
 func extractJSONBody(flow model.CapturedFlow) []Operation {
-	trimmed := strings.TrimSpace(string(flow.RequestBody))
-	if strings.HasPrefix(trimmed, "[") {
-		return extractBatch(flow)
+	if strings.HasPrefix(strings.TrimSpace(string(flow.RequestBody)), "[") {
+		return extractBatch(flow.RequestBody, flow, "json-batch")
 	}
 	var e envelope
 	if json.Unmarshal(flow.RequestBody, &e) != nil || !isGraphQLEnvelope(e) {
 		return nil
 	}
-	op := operationFromEnvelope(e, flow, "json")
+	return singleOp(e, flow, "json")
+}
+
+// singleOp builds the one-element Operation slice for a single-object transport,
+// attaching the whole-flow response body.
+func singleOp(e envelope, flow model.CapturedFlow, transport string) []Operation {
+	op := operationFromEnvelope(e, flow, transport)
 	op.ResponseBody = jsonOrNil(flow.ResponseBody)
 	return []Operation{op}
 }
 
-// extractBatch handles json-batch: one Operation per request element, with the
-// response array index-matched. Any response shape mismatch nils all responses.
-func extractBatch(flow model.CapturedFlow) []Operation {
+// extractBatch decodes a request batch array (from requestBody) into one
+// Operation per element, index-matching the response array; any response shape
+// mismatch nils all responses. An empty or undecodable array yields nil.
+func extractBatch(requestBody []byte, flow model.CapturedFlow, transport string) []Operation {
 	var reqs []envelope
-	if json.Unmarshal(flow.RequestBody, &reqs) != nil {
+	if json.Unmarshal(requestBody, &reqs) != nil || len(reqs) == 0 {
 		return nil
 	}
 	responses := batchResponses(flow.ResponseBody, len(reqs))
 	ops := make([]Operation, 0, len(reqs))
 	for i, e := range reqs {
-		op := operationFromEnvelope(e, flow, "json-batch")
+		op := operationFromEnvelope(e, flow, transport)
 		if responses != nil {
 			op.ResponseBody = jsonOrNil(responses[i])
 		}
@@ -165,9 +171,7 @@ func extractGet(flow model.CapturedFlow) []Operation {
 		Variables:     rawJSONParam(values.Get("variables")),
 		Extensions:    rawJSONParam(values.Get("extensions")),
 	}
-	op := operationFromEnvelope(e, flow, "get")
-	op.ResponseBody = jsonOrNil(flow.ResponseBody)
-	return []Operation{op}
+	return singleOp(e, flow, "get")
 }
 
 // extractMultipart parses the graphql-multipart-request "operations" field,
@@ -177,35 +181,14 @@ func extractMultipart(flow model.CapturedFlow) []Operation {
 	if operations == nil {
 		return nil
 	}
-	trimmed := strings.TrimSpace(string(operations))
-	if strings.HasPrefix(trimmed, "[") {
-		return multipartBatch(operations, flow)
+	if strings.HasPrefix(strings.TrimSpace(string(operations)), "[") {
+		return extractBatch(operations, flow, "multipart")
 	}
 	var e envelope
 	if json.Unmarshal(operations, &e) != nil || !isGraphQLEnvelope(e) {
 		return nil
 	}
-	op := operationFromEnvelope(e, flow, "multipart")
-	op.ResponseBody = jsonOrNil(flow.ResponseBody)
-	return []Operation{op}
-}
-
-// multipartBatch handles a multipart "operations" array (batched mutations).
-func multipartBatch(operations []byte, flow model.CapturedFlow) []Operation {
-	var reqs []envelope
-	if json.Unmarshal(operations, &reqs) != nil || len(reqs) == 0 {
-		return nil
-	}
-	responses := batchResponses(flow.ResponseBody, len(reqs))
-	ops := make([]Operation, 0, len(reqs))
-	for i, e := range reqs {
-		op := operationFromEnvelope(e, flow, "multipart")
-		if responses != nil {
-			op.ResponseBody = jsonOrNil(responses[i])
-		}
-		ops = append(ops, op)
-	}
-	return ops
+	return singleOp(e, flow, "multipart")
 }
 
 // multipartOperations returns the raw "operations" form field, or nil.
