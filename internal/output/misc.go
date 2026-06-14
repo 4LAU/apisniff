@@ -3,16 +3,20 @@ package output
 import (
 	"fmt"
 	"strings"
+
+	"github.com/4LAU/apisniff/internal/model"
 )
 
 type ReconResult struct {
-	Domain        string
-	BundleDir     string
-	FlowsPath     string
-	FilteredPath  string
-	KeptFlows     int
-	TotalFlows    int
-	FilteredFlows int
+	Domain              string
+	BundleDir           string
+	FlowsPath           string
+	FilteredPath        string
+	KeptFlows           int
+	TotalFlows          int
+	FilteredFlows       int
+	Defenses            []model.VendorMatch
+	UnattributedAntibot int
 }
 
 type SpecStatusResult struct {
@@ -53,6 +57,9 @@ func WriteRecon(cfg Config, result ReconResult) error {
 	}
 	if result.FilteredPath != "" {
 		lines = append(lines, s.kv("filtered", result.FilteredPath))
+	}
+	if len(result.Defenses) > 0 || result.UnattributedAntibot > 0 {
+		lines = append(lines, "", s.panel("Defenses observed", defensePanelBody(result)))
 	}
 	return s.writeLines(lines...)
 }
@@ -95,4 +102,29 @@ func WriteShare(cfg Config, result ShareResult) error {
 		}
 	}
 	return s.writeLines(lines...)
+}
+
+func defensePanelBody(result ReconResult) string {
+	var lines []string
+	for _, m := range result.Defenses {
+		vendor := strings.ReplaceAll(m.Vendor, "_", " ")
+		sigs := make([]string, 0, len(m.Signals))
+		for _, label := range m.Signals {
+			parts := strings.SplitN(label, ":", 3)
+			if len(parts) == 3 {
+				sigs = append(sigs, parts[2])
+			} else {
+				sigs = append(sigs, label)
+			}
+		}
+		line := fmt.Sprintf("%s (%s)", vendor, m.Confidence)
+		if len(sigs) > 0 {
+			line += " — " + strings.Join(sigs, ", ")
+		}
+		lines = append(lines, line)
+	}
+	if result.UnattributedAntibot > 0 {
+		lines = append(lines, fmt.Sprintf("unattributed antibot (%d flows)", result.UnattributedAntibot))
+	}
+	return strings.Join(lines, "\n")
 }
