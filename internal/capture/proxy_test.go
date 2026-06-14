@@ -762,9 +762,15 @@ func TestCaptureProxyPreservesCookieHeaders(t *testing.T) {
 	}()
 	waitForProxy(t, port)
 
-	proxyURL, _ := url.Parse("http://127.0.0.1:" + strconv.Itoa(port))
+	proxyURL, err := url.Parse("http://127.0.0.1:" + strconv.Itoa(port))
+	if err != nil {
+		t.Fatal(err)
+	}
 	client := &http.Client{Transport: &http.Transport{Proxy: http.ProxyURL(proxyURL)}}
-	req, _ := http.NewRequest("GET", backend.URL+"/api/data", nil)
+	req, err := http.NewRequest("GET", backend.URL+"/api/data", nil)
+	if err != nil {
+		t.Fatal(err)
+	}
 	req.Header.Set("Cookie", "session=abc")
 	resp, err := client.Do(req)
 	if err != nil {

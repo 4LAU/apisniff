@@ -206,3 +206,13 @@ func TestCaptureExplicitProxyNoBrowserPreserved(t *testing.T) {
 		t.Error("explicit Mode:proxy must NOT be forced to launch a browser")
 	}
 }
+
+func TestCaptureExplicitCDPLaunchPreserved(t *testing.T) {
+	got := applyDefaults(Config{Domain: "example.com", Mode: "cdp-launch"})
+	if got.Mode != "cdp-launch" {
+		t.Errorf("Mode = %q, want cdp-launch (no proxy regression)", got.Mode)
+	}
+	if got.LaunchBrowser {
+		t.Error("explicit cdp-launch must NOT be flipped to a proxy-launched browser")
+	}
+}
