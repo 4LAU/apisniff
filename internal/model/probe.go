@@ -141,12 +141,14 @@ type ClassifyResult struct {
 }
 
 type SessionStats struct {
-	Domain          string         `json:"domain"`
-	StartedAt       string         `json:"started_at"`
-	DurationSeconds float64        `json:"duration_seconds"`
-	TotalFlows      int            `json:"total_flows"`
-	KeptFlows       int            `json:"kept_flows"`
-	Dropped         map[string]int `json:"dropped"`
+	Domain              string         `json:"domain"`
+	StartedAt           string         `json:"started_at"`
+	DurationSeconds     float64        `json:"duration_seconds"`
+	TotalFlows          int            `json:"total_flows"`
+	KeptFlows           int            `json:"kept_flows"`
+	Dropped             map[string]int `json:"dropped"`
+	Defenses            []VendorMatch  `json:"defenses,omitempty"`
+	UnattributedAntibot int            `json:"unattributed_antibot,omitempty"`
 }
 
 type ReplayOutcome string
