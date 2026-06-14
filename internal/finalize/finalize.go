@@ -5,9 +5,11 @@ package finalize
 
 import (
 	"errors"
+	"log"
 	"os"
 	"path/filepath"
 
+	"github.com/4LAU/apisniff/internal/adapter"
 	"github.com/4LAU/apisniff/internal/graphql"
 	"github.com/4LAU/apisniff/internal/model"
 	"github.com/4LAU/apisniff/internal/spec"
@@ -39,6 +41,24 @@ func FinalizeBundle(dir string, flows []model.CapturedFlow, domain string) (Summ
 		return Summary{}, err
 	}
 	return summarize(cat), nil
+}
+
+// FromBundle reloads the captured flows from flowsPath and finalizes the bundle
+// (writes spec.yaml + the private GraphQL catalog into bundleDir). It is non-fatal:
+// the capture already succeeded, so any error is logged and an empty Summary
+// returned rather than propagated. bundleDir must be a private capture-bundle dir.
+func FromBundle(bundleDir, flowsPath, domain string) Summary {
+	flows, err := adapter.LoadJSONL(flowsPath)
+	if err != nil {
+		log.Printf("graphql catalog skipped: load flows: %v", err)
+		return Summary{}
+	}
+	sum, err := FinalizeBundle(bundleDir, flows, domain)
+	if err != nil {
+		log.Printf("graphql catalog skipped: %v", err)
+		return Summary{}
+	}
+	return sum
 }
 
 // writeSpec generates and writes spec.yaml at mode 0o600, skipping the write

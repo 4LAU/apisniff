@@ -29,3 +29,10 @@ func TestFinalizeWritesSpecAndCatalog(t *testing.T) {
 		}
 	}
 }
+
+func TestFromBundleMissingFlowsIsNonFatal(t *testing.T) {
+	sum := FromBundle(t.TempDir(), filepath.Join(t.TempDir(), "nope.jsonl"), "x.com")
+	if sum != (Summary{}) {
+		t.Fatalf("expected empty Summary on missing flows, got %+v", sum)
+	}
+}

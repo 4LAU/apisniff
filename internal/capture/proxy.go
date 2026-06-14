@@ -29,7 +29,6 @@ import (
 	"sync/atomic"
 	"time"
 
-	"github.com/4LAU/apisniff/internal/adapter"
 	"github.com/4LAU/apisniff/internal/classify"
 	"github.com/4LAU/apisniff/internal/finalize"
 	"github.com/4LAU/apisniff/internal/model"
@@ -355,11 +354,8 @@ func CaptureProxy(ctx context.Context, cfg Config) (*Result, error) {
 	if err := WriteSession(bundle, statsCopy); err != nil {
 		return nil, err
 	}
-	var gqlSummary finalize.Summary
-	if loaded, lerr := adapter.LoadJSONL(flowsPath); lerr == nil {
-		// Non-fatal: capture already succeeded. Co-locate spec + private catalog.
-		gqlSummary, _ = finalize.FinalizeBundle(bundle, loaded, statsCopy.Domain)
-	}
+	// Non-fatal: capture already succeeded. Co-locate spec + private catalog.
+	gqlSummary := finalize.FromBundle(bundle, flowsPath, statsCopy.Domain)
 	return &Result{BundleDir: bundle, FlowsPath: flowsPath, FilteredPath: resultFilteredPath, CAPath: caPath, SPKIHash: spkiHash, Stats: statsCopy, GraphQL: gqlSummary}, nil
 }
 

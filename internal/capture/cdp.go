@@ -15,7 +15,6 @@ import (
 	"sync/atomic"
 	"time"
 
-	"github.com/4LAU/apisniff/internal/adapter"
 	"github.com/4LAU/apisniff/internal/classify"
 	"github.com/4LAU/apisniff/internal/finalize"
 	"github.com/4LAU/apisniff/internal/model"
@@ -252,11 +251,8 @@ func Capture(ctx context.Context, cfg Config) (*Result, error) {
 	if runErr != nil && writer.Count() == 0 {
 		return nil, runErr
 	}
-	var gqlSummary finalize.Summary
-	if loaded, lerr := adapter.LoadJSONL(flowsPath); lerr == nil {
-		// Non-fatal: capture already succeeded. Co-locate spec + private catalog.
-		gqlSummary, _ = finalize.FinalizeBundle(bundle, loaded, stats.Domain)
-	}
+	// Non-fatal: capture already succeeded. Co-locate spec + private catalog.
+	gqlSummary := finalize.FromBundle(bundle, flowsPath, stats.Domain)
 	return &Result{BundleDir: bundle, FlowsPath: flowsPath, FilteredPath: resultFilteredPath, Stats: stats, GraphQL: gqlSummary}, nil
 }
 
