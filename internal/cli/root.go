@@ -166,7 +166,7 @@ func newReconCommand() *cobra.Command {
 					port = 8080
 				case "cdp-attach":
 					port = 9222
-				// cdp-launch and default: leave port=0, resolved internally via DefaultPort()
+					// cdp-launch and default: leave port=0, resolved internally via DefaultPort()
 				}
 			}
 			result, err := captureRun(cmd.Context(), capture.Config{
@@ -186,13 +186,17 @@ func newReconCommand() *cobra.Command {
 				return writeJSON(cmd.OutOrStdout(), result)
 			}
 			return output.WriteRecon(humanOutputConfig(cmd), output.ReconResult{
-				Domain:        result.Stats.Domain,
-				BundleDir:     result.BundleDir,
-				FlowsPath:     result.FlowsPath,
-				KeptFlows:     result.Stats.KeptFlows,
-				TotalFlows:    result.Stats.TotalFlows,
-				FilteredFlows: sumDroppedFlows(result.Stats.Dropped),
-				FilteredPath:  result.FilteredPath,
+				Domain:               result.Stats.Domain,
+				BundleDir:            result.BundleDir,
+				FlowsPath:            result.FlowsPath,
+				KeptFlows:            result.Stats.KeptFlows,
+				TotalFlows:           result.Stats.TotalFlows,
+				FilteredFlows:        sumDroppedFlows(result.Stats.Dropped),
+				FilteredPath:         result.FilteredPath,
+				GraphQLOperations:    result.GraphQL.OperationCount,
+				GraphQLFlows:         result.GraphQL.FlowCount,
+				GraphQLCapturedQuery: result.GraphQL.CapturedQueryCount,
+				GraphQLPersistedHash: result.GraphQL.PersistedHashCount,
 			})
 		},
 	}

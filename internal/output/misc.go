@@ -13,6 +13,12 @@ type ReconResult struct {
 	KeptFlows     int
 	TotalFlows    int
 	FilteredFlows int
+
+	// GraphQL catalog counts, printed only when GraphQLOperations > 0.
+	GraphQLOperations    int
+	GraphQLFlows         int
+	GraphQLCapturedQuery int
+	GraphQLPersistedHash int
 }
 
 type SpecStatusResult struct {
@@ -54,7 +60,22 @@ func WriteRecon(cfg Config, result ReconResult) error {
 	if result.FilteredPath != "" {
 		lines = append(lines, s.kv("filtered", result.FilteredPath))
 	}
+	lines = append(lines, graphQLReconLines(result)...)
 	return s.writeLines(lines...)
+}
+
+// graphQLReconLines renders the catalog summary, only when operations exist.
+func graphQLReconLines(result ReconResult) []string {
+	if result.GraphQLOperations <= 0 {
+		return nil
+	}
+	return []string{
+		"",
+		fmt.Sprintf("GraphQL: %d operations cataloged from %d flows → graphql-operations.json",
+			result.GraphQLOperations, result.GraphQLFlows),
+		fmt.Sprintf("         (%d with captured query text, %d persisted-hash only)",
+			result.GraphQLCapturedQuery, result.GraphQLPersistedHash),
+	}
 }
 
 func WriteSpecStatus(cfg Config, result SpecStatusResult) error {

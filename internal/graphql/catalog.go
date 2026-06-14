@@ -28,6 +28,8 @@ var requestTruncationTags = []string{"request_body_truncated", "request_body_inc
 var responseTruncationTags = []string{"response_body_truncated", "response_body_incomplete", "body_stripped"}
 
 // Catalog is the deduplicated set of GraphQL operations observed across flows.
+// It carries RAW endpoint URLs and RAW variable values (private use only — never
+// emit publicly); write it only into a private capture bundle, never a share.
 type Catalog struct {
 	SchemaVersion  int         `json:"schema_version"`
 	OperationCount int         `json:"operation_count"`
@@ -355,7 +357,9 @@ func sha256hex(s string) string {
 }
 
 // WriteCatalog writes the catalog JSON and SDL to dir, or removes stale files
-// when the catalog is empty (IR-5).
+// when the catalog is empty (IR-5). The artifacts carry RAW URLs and RAW
+// variable values (private use only — never emit publicly); dir MUST be a
+// private capture bundle, never a share output directory.
 func WriteCatalog(dir string, cat Catalog) error {
 	if cat.OperationCount == 0 {
 		return removeStale(dir)

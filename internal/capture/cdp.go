@@ -15,7 +15,9 @@ import (
 	"sync/atomic"
 	"time"
 
+	"github.com/4LAU/apisniff/internal/adapter"
 	"github.com/4LAU/apisniff/internal/classify"
+	"github.com/4LAU/apisniff/internal/finalize"
 	"github.com/4LAU/apisniff/internal/model"
 	"github.com/chromedp/cdproto/cdp"
 	"github.com/chromedp/cdproto/network"
@@ -43,6 +45,7 @@ type Result struct {
 	CAPath       string             `json:"ca_path,omitempty"`
 	SPKIHash     string             `json:"spki_hash,omitempty"`
 	Stats        model.SessionStats `json:"stats"`
+	GraphQL      finalize.Summary   `json:"graphql,omitempty"`
 }
 
 type partialFlow struct {
@@ -249,7 +252,12 @@ func Capture(ctx context.Context, cfg Config) (*Result, error) {
 	if runErr != nil && writer.Count() == 0 {
 		return nil, runErr
 	}
-	return &Result{BundleDir: bundle, FlowsPath: flowsPath, FilteredPath: resultFilteredPath, Stats: stats}, nil
+	var gqlSummary finalize.Summary
+	if loaded, lerr := adapter.LoadJSONL(flowsPath); lerr == nil {
+		// Non-fatal: capture already succeeded. Co-locate spec + private catalog.
+		gqlSummary, _ = finalize.FinalizeBundle(bundle, loaded, stats.Domain)
+	}
+	return &Result{BundleDir: bundle, FlowsPath: flowsPath, FilteredPath: resultFilteredPath, Stats: stats, GraphQL: gqlSummary}, nil
 }
 
 func (r *recorder) listen(ctx context.Context) func(any) {

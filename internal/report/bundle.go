@@ -14,6 +14,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/4LAU/apisniff/internal/finalize"
 	"github.com/4LAU/apisniff/internal/model"
 	"github.com/4LAU/apisniff/internal/spec"
 )
@@ -129,7 +130,15 @@ func WriteBundle(dir string, flows []model.CapturedFlow, session model.SessionSt
 	// Imported flows carry no category tags; classify so the report shows
 	// real categories instead of "uncategorized".
 	inventory.Categories = spec.BuildSurfaceInventory(flows, session.Domain).Categories
-	return writePrivateFile(filepath.Join(dir, "report.md"), Markdown(inventory))
+	if err := writePrivateFile(filepath.Join(dir, "report.md"), Markdown(inventory)); err != nil {
+		return err
+	}
+	// Co-locate spec.yaml + the private GraphQL catalog (raw URLs/variables —
+	// never shareable). dir is already a 0o600 private bundle.
+	if _, err := finalize.FinalizeBundle(dir, flows, session.Domain); err != nil {
+		return err
+	}
+	return nil
 }
 
 func FetchGraphQLSchemas(ctx context.Context, flows []model.CapturedFlow) ([]GraphQLFetchResult, error) {
