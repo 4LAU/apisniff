@@ -31,6 +31,7 @@ import (
 
 	"github.com/4LAU/apisniff/internal/classify"
 	"github.com/4LAU/apisniff/internal/model"
+	"github.com/4LAU/apisniff/internal/vendor"
 	"github.com/elazarl/goproxy"
 )
 
@@ -80,6 +81,16 @@ func CaptureProxy(ctx context.Context, cfg Config) (*Result, error) {
 	if err != nil {
 		return nil, err
 	}
+	// The defense panel is fail-soft: a signature-load failure must never abort
+	// browser capture, so we log and continue with det == nil.
+	det, err := vendor.NewDetector()
+	if err != nil {
+		if cfg.StatusWriter != nil {
+			fmt.Fprintf(cfg.StatusWriter, "defense detection disabled: %v\n", err)
+		}
+		det = nil
+	}
+	targetRD := classify.ExtractRegisteredDomain(cfg.Domain)
 
 	var mu sync.Mutex
 	var flowCount atomic.Int64
@@ -89,6 +100,8 @@ func CaptureProxy(ctx context.Context, cfg Config) (*Result, error) {
 		StartedAt: start.UTC().Format(time.RFC3339),
 		Dropped:   map[string]int{},
 	}
+	defenses := map[string]model.VendorMatch{}
+	var unattributedAntibot int
 	proxy := goproxy.NewProxyHttpServer()
 	proxy.Verbose = false
 	proxy.Logger = log.New(io.Discard, "", 0)
@@ -101,8 +114,15 @@ func CaptureProxy(ctx context.Context, cfg Config) (*Result, error) {
 	}
 	recordFlow := func(flow model.CapturedFlow) {
 		classification, kept := classifier.Classify(flow)
+		// det.Match lowercases up to 500KB of body; run it outside mu so the
+		// shared lock only covers the cheap accumulation below.
+		matches, scoped := detectDefenses(det, targetRD, flow, classification)
 		mu.Lock()
 		defer mu.Unlock()
+		mergeDefenses(defenses, matches)
+		if scoped && isAntibot(classification) && len(matches) == 0 {
+			unattributedAntibot++
+		}
 		stats.TotalFlows++
 		flowCount.Add(1)
 		if classification.Action == "drop" || kept == nil {
@@ -341,6 +361,8 @@ func CaptureProxy(ctx context.Context, cfg Config) (*Result, error) {
 	resultFilteredPath := filtered.Close()
 	writerClosed = true
 	closeErr := writer.Close()
+	stats.Defenses = sortedDefenses(defenses)
+	stats.UnattributedAntibot = unattributedAntibot
 	statsCopy := stats
 	statsCopy.Dropped = make(map[string]int, len(stats.Dropped))
 	for key, count := range stats.Dropped {

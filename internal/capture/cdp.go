@@ -17,6 +17,7 @@ import (
 
 	"github.com/4LAU/apisniff/internal/classify"
 	"github.com/4LAU/apisniff/internal/model"
+	"github.com/4LAU/apisniff/internal/vendor"
 	"github.com/chromedp/cdproto/cdp"
 	"github.com/chromedp/cdproto/network"
 	"github.com/chromedp/cdproto/target"
@@ -122,6 +123,17 @@ func Capture(ctx context.Context, cfg Config) (*Result, error) {
 	if err != nil {
 		return nil, err
 	}
+	// Fail-soft: a signature-load failure must never abort capture.
+	det, err := vendor.NewDetector()
+	if err != nil {
+		if cfg.StatusWriter != nil {
+			fmt.Fprintf(cfg.StatusWriter, "defense detection disabled: %v\n", err)
+		}
+		det = nil
+	}
+	targetRD := classify.ExtractRegisteredDomain(cfg.Domain)
+	defenses := map[string]model.VendorMatch{}
+	var unattributedAntibot int
 
 	showStatus := cfg.StatusWriter != nil && isTerminal(cfg.StatusWriter)
 	var status *statusLine
@@ -214,6 +226,11 @@ func Capture(ctx context.Context, cfg Config) (*Result, error) {
 	}
 	for _, flow := range snapshot {
 		classification, kept := classifier.Classify(flow)
+		matches, scoped := detectDefenses(det, targetRD, flow, classification)
+		mergeDefenses(defenses, matches)
+		if scoped && isAntibot(classification) && len(matches) == 0 {
+			unattributedAntibot++
+		}
 		if classification.Action == "drop" {
 			dropKey := classification.Reason
 			if dropKey == "" {
@@ -236,12 +253,14 @@ func Capture(ctx context.Context, cfg Config) (*Result, error) {
 		return nil, err
 	}
 	stats := model.SessionStats{
-		Domain:          cfg.Domain,
-		StartedAt:       start.UTC().Format(time.RFC3339),
-		DurationSeconds: time.Since(start).Seconds(),
-		TotalFlows:      len(rec.order),
-		KeptFlows:       writer.Count(),
-		Dropped:         rec.dropped,
+		Domain:              cfg.Domain,
+		StartedAt:           start.UTC().Format(time.RFC3339),
+		DurationSeconds:     time.Since(start).Seconds(),
+		TotalFlows:          len(rec.order),
+		KeptFlows:           writer.Count(),
+		Dropped:             rec.dropped,
+		Defenses:            sortedDefenses(defenses),
+		UnattributedAntibot: unattributedAntibot,
 	}
 	if err := WriteSession(bundle, stats); err != nil {
 		return nil, err

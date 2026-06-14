@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"net/http"
 	"regexp"
+	"sort"
 	"strings"
 
 	"github.com/4LAU/apisniff/internal/model"
@@ -97,6 +98,33 @@ func (d *Detector) Match(headers map[string]string, body []byte, status int) []m
 		})
 	}
 	return matches
+}
+
+// Labels returns every signal label the detector can emit across all loaded
+// signatures, deduplicated and sorted. Used by callers that classify labels
+// (e.g. defense-vs-infra) to prove their classification is exhaustive.
+func (d *Detector) Labels() []string {
+	if d == nil {
+		return nil
+	}
+	set := map[string]struct{}{}
+	for _, sig := range d.signatures {
+		for confidence, group := range map[string][]Signal{
+			"high":   sig.High,
+			"medium": sig.Medium,
+			"low":    sig.Low,
+		} {
+			for _, signal := range group {
+				set[signal.label(confidence)] = struct{}{}
+			}
+		}
+	}
+	out := make([]string, 0, len(set))
+	for label := range set {
+		out = append(out, label)
+	}
+	sort.Strings(out)
+	return out
 }
 
 func (s Signal) matches(headers map[string]string, cookies map[string]struct{}, body string, status int) bool {
