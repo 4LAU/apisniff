@@ -67,18 +67,13 @@ func WriteRecon(cfg Config, result ReconResult) error {
 	if len(result.Defenses) > 0 || result.UnattributedAntibot > 0 {
 		lines = append(lines, "", s.panel("Defenses observed", defensePanelBody(result)))
 	}
-	lines = append(lines, graphQLReconLines(result)...)
-	return s.writeLines(lines...)
-}
-
-// graphQLReconLines renders the catalog summary, only when operations exist.
-func graphQLReconLines(result ReconResult) []string {
-	return graphQLSummaryLines(
+	lines = append(lines, graphQLSummaryLines(
 		result.GraphQLOperations,
 		result.GraphQLFlows,
 		result.GraphQLCapturedQuery,
 		result.GraphQLPersistedHash,
-	)
+	)...)
+	return s.writeLines(lines...)
 }
 
 // graphQLSummaryLines renders the two-line catalog block shared by the recon
