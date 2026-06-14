@@ -2,6 +2,8 @@
 
 ## [Unreleased]
 
+## [0.5.0] — 2026-06-13
+
 ### Added
 - `replay` command: replay captured API calls against live endpoints and detect drift (match/drift/auth_expired/blocked)
 - `analyze` command: offline import and analysis for HAR, Burp Suite XML, and JSONL captures
