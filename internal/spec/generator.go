@@ -13,6 +13,7 @@ import (
 	"strings"
 
 	"github.com/4LAU/apisniff/internal/auth"
+	"github.com/4LAU/apisniff/internal/jsonschema"
 	"github.com/4LAU/apisniff/internal/model"
 	"gopkg.in/yaml.v3"
 )
@@ -223,21 +224,21 @@ func recordRequestSchema(op *observedOperation, flow model.CapturedFlow, include
 	var schema map[string]any
 	switch ct {
 	case "application/json":
-		if parsed := ParseJSONBody(flow.RequestBody); parsed != nil {
-			schema = InferSchema(parsed, includeExamples, "")
+		if parsed := jsonschema.ParseJSONBody(flow.RequestBody); parsed != nil {
+			schema = jsonschema.InferSchema(parsed, includeExamples, "")
 		}
 	case "application/x-www-form-urlencoded":
 		if parsed := ParseFormURLEncoded(flow.RequestBody); parsed != nil {
-			schema = InferSchema(parsed, includeExamples, "")
+			schema = jsonschema.InferSchema(parsed, includeExamples, "")
 		}
 	case "multipart/form-data":
 		if parsed := ParseMultipart(flow.RequestBody, rawCT); parsed != nil {
 			props := map[string]any{}
 			for key, value := range parsed {
-				if value == fileSentinel {
+				if value == jsonschema.FileSentinel {
 					props[key] = map[string]any{"type": "string", "format": "binary"}
 				} else {
-					props[key] = InferSchema(value, includeExamples, key)
+					props[key] = jsonschema.InferSchema(value, includeExamples, key)
 				}
 			}
 			schema = map[string]any{"type": "object", "properties": props}
@@ -247,7 +248,7 @@ func recordRequestSchema(op *observedOperation, flow model.CapturedFlow, include
 		return
 	}
 	if existing, ok := op.requestSchemas[ct]; ok {
-		op.requestSchemas[ct] = MergeSchemas(existing, schema)
+		op.requestSchemas[ct] = jsonschema.MergeSchemas(existing, schema)
 	} else {
 		op.requestSchemas[ct] = schema
 	}
@@ -261,14 +262,14 @@ func recordResponseSchema(op *observedOperation, flow model.CapturedFlow, includ
 	if !isJSONishContentType(ct) {
 		return
 	}
-	parsed := ParseJSONBody(flow.ResponseBody)
+	parsed := jsonschema.ParseJSONBody(flow.ResponseBody)
 	if parsed == nil {
 		return
 	}
 	key := responseSchemaKey{status: intString(flow.ResponseStatus), contentType: ct}
-	schema := InferSchema(parsed, includeExamples, "")
+	schema := jsonschema.InferSchema(parsed, includeExamples, "")
 	if existing, ok := op.responseSchemas[key]; ok {
-		op.responseSchemas[key] = MergeSchemas(existing, schema)
+		op.responseSchemas[key] = jsonschema.MergeSchemas(existing, schema)
 	} else {
 		op.responseSchemas[key] = schema
 	}

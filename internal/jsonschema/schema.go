@@ -1,4 +1,4 @@
-package spec
+package jsonschema
 
 import (
 	"encoding/json"
@@ -7,7 +7,10 @@ import (
 )
 
 const maxExampleLen = 200
-const fileSentinel = "__file__"
+
+// FileSentinel marks a multipart form field whose value is an uploaded file
+// rather than an inferable JSON value.
+const FileSentinel = "__file__"
 const maxSchemaDepth = 20
 
 var secretRe = regexp.MustCompile(`(?i)(bearer |basic |eyj[A-Za-z0-9_-]{10,}|sk_|pk_|api_|ghp_|gho_|ghs_|glpat-|xox[bpsar]-|AKIA[0-9A-Z]{16}|wJalrX|-----BEGIN)`)
@@ -315,7 +318,6 @@ func exampleSortKey(value any) string {
 	}
 	return string(data)
 }
-
 
 func addExample(schema map[string]any, value any, include bool, sensitive bool) {
 	if !include {
