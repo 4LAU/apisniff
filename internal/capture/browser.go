@@ -7,6 +7,8 @@ import (
 	"os/exec"
 	"path/filepath"
 	"runtime"
+	"strconv"
+	"strings"
 	"time"
 
 	"github.com/chromedp/chromedp"
@@ -118,6 +120,59 @@ func cleanBrowserArgs(proxyAddr, spkiHash, profileDir, startURL string, headless
 		args = append(args, startURL)
 	}
 	return args
+}
+
+// watchAllPagesClosed signals when the launched Chrome has no open pages left —
+// i.e. the user closed the last window or tab (⌘W) without quitting the app,
+// which on macOS leaves the process running. It counts the browser's renderer
+// child processes, scoped to its PID so a user's other Chrome instances are
+// never considered. This is pure OS process inspection: no CDP, nothing visible
+// to the page, so it preserves the clean-launch stealth.
+//
+// The returned channel closes once no renderers have been seen for a short
+// debounce window — but only after at least one was seen, so it never fires
+// during startup before the first page loads, and the debounce avoids a
+// false end during the brief renderer swap of a cross-site navigation.
+func watchAllPagesClosed(ctx context.Context, pid int) <-chan struct{} {
+	done := make(chan struct{})
+	go func() {
+		defer close(done)
+		ticker := time.NewTicker(time.Second)
+		defer ticker.Stop()
+		sawPage := false
+		zeros := 0
+		for {
+			select {
+			case <-ctx.Done():
+				return
+			case <-ticker.C:
+				if rendererCount(pid) > 0 {
+					sawPage = true
+					zeros = 0
+					continue
+				}
+				if !sawPage {
+					continue
+				}
+				if zeros++; zeros >= 3 {
+					return
+				}
+			}
+		}
+	}()
+	return done
+}
+
+// rendererCount returns how many renderer child processes the browser at pid
+// has. pgrep exits non-zero when nothing matches, which is a legitimate zero.
+// Returns 0 on platforms without pgrep, so the caller simply relies on quit /
+// Ctrl+C there.
+func rendererCount(pid int) int {
+	out, err := exec.Command("pgrep", "-P", strconv.Itoa(pid), "-f", "type=renderer").Output()
+	if err != nil {
+		return 0
+	}
+	return len(strings.Fields(string(out)))
 }
 
 func FindChrome() string {

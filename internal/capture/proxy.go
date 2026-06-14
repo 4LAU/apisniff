@@ -239,7 +239,7 @@ func CaptureProxy(ctx context.Context, cfg Config) (*Result, error) {
 		if cfg.StatusWriter != nil {
 			fmt.Fprintf(cfg.StatusWriter, "MITM proxy listening on %s\n", server.Addr)
 			fmt.Fprintf(cfg.StatusWriter, "Launching Chrome (fresh profile, no automation flags) through proxy...\n")
-			fmt.Fprintf(cfg.StatusWriter, "Log in and use the site. When done: quit Chrome completely (⌘Q on macOS) or press Ctrl+C here.\n")
+			fmt.Fprintf(cfg.StatusWriter, "Log in and use the site. When done: close the browser window, or press Ctrl+C here.\n")
 		}
 		cmd, err := LaunchCleanBrowser(runCtx, fmt.Sprintf("127.0.0.1:%d", cfg.Port), spkiForFlag, profileDir, cfg.URL, cfg.Headless)
 		if err != nil {
@@ -259,16 +259,21 @@ func CaptureProxy(ctx context.Context, cfg Config) (*Result, error) {
 			status.start()
 		}
 
-		// End the session when the user closes Chrome (the process exits) or on
-		// timeout/signal — runCtx cancellation makes CommandContext kill Chrome,
-		// so cmd.Wait returns either way.
+		// End the session when the user closes the last Chrome window/tab (⌘W,
+		// detected via renderer processes), quits Chrome outright (the process
+		// exits), or on timeout/signal — runCtx cancellation makes CommandContext
+		// kill Chrome, so cmd.Wait returns either way.
 		browserDone := make(chan struct{})
 		go func() {
 			_ = cmd.Wait()
 			close(browserDone)
 		}()
+		pagesClosed := watchAllPagesClosed(runCtx, cmd.Process.Pid)
 		select {
 		case <-browserDone:
+		case <-pagesClosed:
+			_ = cmd.Process.Kill()
+			<-browserDone
 		case <-runCtx.Done():
 			<-browserDone
 		}

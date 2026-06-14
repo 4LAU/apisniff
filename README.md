@@ -36,7 +36,7 @@ apisniff probe example.com
 apisniff recon example.com
 
 # Proxy mode: opens a clean Chrome routed through a MITM proxy. Log in by
-# hand (no automation fingerprint), then quit Chrome (or Ctrl+C) to finish.
+# hand (no automation fingerprint), then close the window (or Ctrl+C) to finish.
 apisniff recon example.com --mode proxy
 
 # Proxy mode without launching a browser — point your own client at it
@@ -106,7 +106,7 @@ Use `apisniff share` to create a safe export with only derived artifacts.
 
 CDP capture records API responses, response body size metadata, and WebSocket handshake/frame summaries when Chrome exposes those events.
 
-`--mode proxy` starts a local HTTP/HTTPS MITM proxy with HTTP/2 support and, by default, launches a real Chrome routed through it. That Chrome carries **no automation fingerprint** — no `--enable-automation`, no DevTools/CDP attachment, so `navigator.webdriver` is false — which is what lets you log in past bot-detection vendors that block CDP-launched browsers. It uses a fresh, disposable profile (wiped on exit, separate from your everyday Chrome), so you log in by hand each session. Log in, exercise the parts of the app you want captured, then **quit Chrome (⌘Q on macOS) or press Ctrl+C** to finish.
+`--mode proxy` starts a local HTTP/HTTPS MITM proxy with HTTP/2 support and, by default, launches a real Chrome routed through it. That Chrome carries **no automation fingerprint** — no `--enable-automation`, no DevTools/CDP attachment, so `navigator.webdriver` is false — which is what lets you log in past bot-detection vendors that block CDP-launched browsers. It uses a fresh, disposable profile (wiped on exit, separate from your everyday Chrome), so you log in by hand each session. Log in, exercise the parts of the app you want captured, then **close the browser window** (or press Ctrl+C) to finish.
 
 For HTTPS capture the browser must trust the proxy's certificate authority (`~/.apisniff/ca-cert.pem`). On macOS, proxy mode trusts it automatically in your login keychain the first time (a one-time approval prompt, no admin) so there is no browser warning. Treat that CA as sensitive: a trusted CA can decrypt HTTPS traffic from clients that trust it. The private key is stored at `~/.apisniff/ca-key.pem` with owner-only permissions. Remove the trust anytime with `security delete-certificate -c "apisniff local MITM CA"`.
 
@@ -118,7 +118,7 @@ CDP modes only record traffic from the Chrome session apisniff launches or attac
 
 Other apps, other browser windows, background services, and normal device traffic are not routed through apisniff unless you configure them for the same capture mode. apisniff does not turn on device-wide network capture, install a VPN, or monitor traffic outside the chosen session.
 
-To end a proxy capture session, quit the launched Chrome (**⌘Q** on macOS — closing the window or a tab is not enough) or press **Ctrl+C** in the terminal. If you see a port-in-use error, another capture session is probably still running on that port.
+To end a proxy capture session, close the launched Chrome's last window/tab or press **Ctrl+C** in the terminal; either one saves the bundle. (apisniff notices the window closing by watching the launched browser's own processes — no automation hook on the page.) If you see a port-in-use error, another capture session is probably still running on that port.
 
 When passive recon finds capture bundles older than 30 days, apisniff warns so you can review and clean them deliberately.
 

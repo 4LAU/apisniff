@@ -51,6 +51,14 @@ func TestCleanBrowserArgsTrustedOmitsFlag(t *testing.T) {
 	}
 }
 
+func TestRendererCountNoProcess(t *testing.T) {
+	// PID 1 (launchd/init) has no Chrome renderer children, so the count must
+	// be zero — and the call must not error out on a pid it can't match.
+	if n := rendererCount(1); n != 0 {
+		t.Errorf("rendererCount(1) = %d, want 0", n)
+	}
+}
+
 func TestCleanBrowserArgsHeadless(t *testing.T) {
 	headful := strings.Join(cleanBrowserArgs("127.0.0.1:1", "h", "/p", "", false), " ")
 	if strings.Contains(headful, "headless") {

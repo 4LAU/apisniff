@@ -2,6 +2,11 @@
 
 ## [Unreleased]
 
+## [0.5.1] — 2026-06-13
+
+### Changed
+- Proxy mode now ends the capture session when you close the launched Chrome's last window/tab, not only on full quit (⌘Q) or Ctrl+C. Detection watches the launched browser's own renderer processes — scoped to its PID, so other Chrome instances are untouched — and uses no CDP or page-visible hook.
+
 ## [0.5.0] — 2026-06-13
 
 ### Added
