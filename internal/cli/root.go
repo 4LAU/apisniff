@@ -269,9 +269,14 @@ func newAnalyzeCommand() *cobra.Command {
 					KeptFlows:  len(flows),
 					Dropped:    map[string]int{},
 				}
-				if err := report.WriteBundle(outputDir, flows, session); err != nil {
+				summary, err := report.WriteBundle(outputDir, flows, session)
+				if err != nil {
 					return err
 				}
+				result.GraphQLOperations = summary.OperationCount
+				result.GraphQLFlows = summary.FlowCount
+				result.GraphQLCapturedQuery = summary.CapturedQueryCount
+				result.GraphQLPersistedHash = summary.PersistedHashCount
 				if fetchGraphQL {
 					graphQL, err := report.FetchGraphQLSchemas(cmd.Context(), flows)
 					if err != nil {

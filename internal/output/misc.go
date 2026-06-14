@@ -66,15 +66,26 @@ func WriteRecon(cfg Config, result ReconResult) error {
 
 // graphQLReconLines renders the catalog summary, only when operations exist.
 func graphQLReconLines(result ReconResult) []string {
-	if result.GraphQLOperations <= 0 {
+	return graphQLSummaryLines(
+		result.GraphQLOperations,
+		result.GraphQLFlows,
+		result.GraphQLCapturedQuery,
+		result.GraphQLPersistedHash,
+	)
+}
+
+// graphQLSummaryLines renders the two-line catalog block shared by the recon
+// and analyze paths, only when operations exist.
+func graphQLSummaryLines(operations, flows, capturedQuery, persistedHash int) []string {
+	if operations <= 0 {
 		return nil
 	}
 	return []string{
 		"",
 		fmt.Sprintf("GraphQL: %d operations cataloged from %d flows → graphql-operations.json",
-			result.GraphQLOperations, result.GraphQLFlows),
+			operations, flows),
 		fmt.Sprintf("         (%d with captured query text, %d persisted-hash only)",
-			result.GraphQLCapturedQuery, result.GraphQLPersistedHash),
+			capturedQuery, persistedHash),
 	}
 }
 

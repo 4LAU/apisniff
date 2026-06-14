@@ -17,6 +17,12 @@ type AnalyzeResult struct {
 	AuthPatterns  []auth.Pattern         `json:"auth_patterns,omitempty"`
 	Cookies       []auth.ExtractedCookie `json:"cookies,omitempty"`
 	Flows         []model.CapturedFlow   `json:"flows,omitempty"`
+
+	// GraphQL catalog counts, printed only when GraphQLOperations > 0.
+	GraphQLOperations    int `json:"graphql_operations,omitempty"`
+	GraphQLFlows         int `json:"graphql_flows,omitempty"`
+	GraphQLCapturedQuery int `json:"graphql_captured_query,omitempty"`
+	GraphQLPersistedHash int `json:"graphql_persisted_hash,omitempty"`
 }
 
 type EndpointSummary struct {
@@ -68,6 +74,12 @@ func WriteAnalyze(cfg Config, result AnalyzeResult) error {
 		}
 		lines = append(lines, "", s.header("Cookies"), s.simpleTable([]string{"Name", "Domain", "Source"}, rows))
 	}
+	lines = append(lines, graphQLSummaryLines(
+		result.GraphQLOperations,
+		result.GraphQLFlows,
+		result.GraphQLCapturedQuery,
+		result.GraphQLPersistedHash,
+	)...)
 	return s.writeLines(lines...)
 }
 

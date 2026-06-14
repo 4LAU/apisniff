@@ -113,32 +113,35 @@ type GraphQLFetchResult struct {
 }
 
 // WriteBundle writes the offline analyze bundle shape used by capture bundles.
-func WriteBundle(dir string, flows []model.CapturedFlow, session model.SessionStats) error {
+// It returns the GraphQL catalog summary so callers can surface it (counts are
+// all zero when no GraphQL operations were observed).
+func WriteBundle(dir string, flows []model.CapturedFlow, session model.SessionStats) (finalize.Summary, error) {
 	if dir == "" {
-		return fmt.Errorf("output dir is required")
+		return finalize.Summary{}, fmt.Errorf("output dir is required")
 	}
 	if err := ensurePrivateDir(dir); err != nil {
-		return err
+		return finalize.Summary{}, err
 	}
 	if err := writeJSONFile(filepath.Join(dir, "session.json"), session); err != nil {
-		return err
+		return finalize.Summary{}, err
 	}
 	if err := writeFlowsJSONL(filepath.Join(dir, "flows.jsonl"), flows); err != nil {
-		return err
+		return finalize.Summary{}, err
 	}
 	inventory := BuildInventory(flows, session.Domain)
 	// Imported flows carry no category tags; classify so the report shows
 	// real categories instead of "uncategorized".
 	inventory.Categories = spec.BuildSurfaceInventory(flows, session.Domain).Categories
 	if err := writePrivateFile(filepath.Join(dir, "report.md"), Markdown(inventory)); err != nil {
-		return err
+		return finalize.Summary{}, err
 	}
 	// Co-locate spec.yaml + the private GraphQL catalog (raw URLs/variables —
 	// never shareable). dir is already a 0o600 private bundle.
-	if _, err := finalize.FinalizeBundle(dir, flows, session.Domain); err != nil {
-		return err
+	summary, err := finalize.FinalizeBundle(dir, flows, session.Domain)
+	if err != nil {
+		return finalize.Summary{}, err
 	}
-	return nil
+	return summary, nil
 }
 
 func FetchGraphQLSchemas(ctx context.Context, flows []model.CapturedFlow) ([]GraphQLFetchResult, error) {

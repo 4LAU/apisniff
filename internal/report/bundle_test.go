@@ -34,7 +34,7 @@ func TestWriteBundleWritesSessionFlowsAndReport(t *testing.T) {
 		Dropped:    map[string]int{},
 	}
 
-	if err := WriteBundle(dir, flows, session); err != nil {
+	if _, err := WriteBundle(dir, flows, session); err != nil {
 		t.Fatal(err)
 	}
 	assertMode(t, dir, 0o700)
