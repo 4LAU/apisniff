@@ -1,11 +1,28 @@
 package graphql
 
 import (
+	"bytes"
+	"mime/multipart"
 	"net/url"
 	"testing"
 
 	"github.com/4LAU/apisniff/internal/model"
 )
+
+// buildMultipart returns a multipart/form-data body with an "operations" field
+// set to ops, plus the matching content-type header value.
+func buildMultipart(t *testing.T, ops string) (body []byte, contentType string) {
+	t.Helper()
+	var buf bytes.Buffer
+	w := multipart.NewWriter(&buf)
+	if err := w.WriteField("operations", ops); err != nil {
+		t.Fatalf("write field: %v", err)
+	}
+	if err := w.Close(); err != nil {
+		t.Fatalf("close writer: %v", err)
+	}
+	return buf.Bytes(), w.FormDataContentType()
+}
 
 func TestExtractJSONObjectQuery(t *testing.T) {
 	flow := model.CapturedFlow{
@@ -142,5 +159,101 @@ func TestExtractShorthandQuery(t *testing.T) {
 	ops := ExtractGraphQLOperations(flow)
 	if len(ops) != 1 || ops[0].OperationType != "query" || ops[0].OperationName != "" {
 		t.Fatalf("shorthand: %+v", ops)
+	}
+}
+
+func TestExtractMultipartSingle(t *testing.T) {
+	body, ct := buildMultipart(t, `{"operationName":"Up","query":"mutation Up{up}"}`)
+	flow := model.CapturedFlow{
+		Method: "POST", Host: "api.example.com", Path: "/graphql",
+		RequestHeaders: map[string]string{"content-type": ct},
+		RequestBody:    body,
+		ResponseStatus: 200, ResponseBody: []byte(`{"data":{}}`),
+	}
+	ops := ExtractGraphQLOperations(flow)
+	if len(ops) != 1 {
+		t.Fatalf("want 1, got %d", len(ops))
+	}
+	if ops[0].Transport != "multipart" {
+		t.Fatalf("transport %q", ops[0].Transport)
+	}
+	if ops[0].OperationName != "Up" || ops[0].OperationType != "mutation" {
+		t.Fatalf("name/type: %q/%q", ops[0].OperationName, ops[0].OperationType)
+	}
+}
+
+func TestExtractMultipartBatch(t *testing.T) {
+	body, ct := buildMultipart(t, `[{"operationName":"A","query":"mutation A{a}"},{"operationName":"B","query":"mutation B{b}"}]`)
+	flow := model.CapturedFlow{
+		Method: "POST", Host: "api.example.com", Path: "/graphql",
+		RequestHeaders: map[string]string{"content-type": ct},
+		RequestBody:    body,
+		ResponseStatus: 200, ResponseBody: []byte(`{"data":{}}`),
+	}
+	ops := ExtractGraphQLOperations(flow)
+	if len(ops) != 2 {
+		t.Fatalf("want 2, got %d", len(ops))
+	}
+	if ops[0].Transport != "multipart" || ops[1].Transport != "multipart" {
+		t.Fatalf("transport %q/%q", ops[0].Transport, ops[1].Transport)
+	}
+}
+
+func TestExtractSubscriptionType(t *testing.T) {
+	flow := model.CapturedFlow{
+		Method: "POST", Host: "api.example.com", Path: "/graphql",
+		RequestHeaders: map[string]string{"content-type": "application/json"},
+		RequestBody:    []byte(`{"query":"subscription OnPing{ping}"}`),
+		ResponseStatus: 200, ResponseBody: []byte(`{"data":{}}`),
+	}
+	ops := ExtractGraphQLOperations(flow)
+	if len(ops) != 1 || ops[0].OperationType != "subscription" {
+		t.Fatalf("subscription type: %+v", ops)
+	}
+}
+
+func TestExtractPersistedHashViaGet(t *testing.T) {
+	ext := url.QueryEscape(`{"persistedQuery":{"sha256Hash":"feedbeef"}}`)
+	flow := model.CapturedFlow{
+		Method: "GET", Host: "api.example.com",
+		Path:           "/graphql?operationName=GetThing&extensions=" + ext,
+		ResponseStatus: 200, ResponseBody: []byte(`{"data":{}}`),
+	}
+	ops := ExtractGraphQLOperations(flow)
+	if len(ops) != 1 {
+		t.Fatalf("want 1, got %d", len(ops))
+	}
+	if ops[0].Transport != "get" {
+		t.Fatalf("transport %q", ops[0].Transport)
+	}
+	if ops[0].PersistedHash != "feedbeef" {
+		t.Fatalf("hash %q", ops[0].PersistedHash)
+	}
+	if ops[0].OperationType != "unknown" {
+		t.Fatalf("type %q (must not fabricate)", ops[0].OperationType)
+	}
+}
+
+func TestExtractEmptyAndNonJSONReturnNil(t *testing.T) {
+	cases := []struct {
+		name string
+		body string
+	}{
+		{"empty", ""},
+		{"non-json", "not json"},
+		{"no-query-no-persisted", `{"foo":1}`},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			flow := model.CapturedFlow{
+				Method: "POST", Host: "api.example.com", Path: "/graphql",
+				RequestHeaders: map[string]string{"content-type": "application/json"},
+				RequestBody:    []byte(tc.body),
+				ResponseStatus: 200, ResponseBody: []byte(`{"data":{}}`),
+			}
+			if ops := ExtractGraphQLOperations(flow); ops != nil {
+				t.Fatalf("want nil, got %d ops", len(ops))
+			}
+		})
 	}
 }

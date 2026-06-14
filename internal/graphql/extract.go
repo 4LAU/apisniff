@@ -116,7 +116,7 @@ func extractJSONBody(flow model.CapturedFlow) []Operation {
 		return extractBatch(flow)
 	}
 	var e envelope
-	if json.Unmarshal(flow.RequestBody, &e) != nil {
+	if json.Unmarshal(flow.RequestBody, &e) != nil || !isGraphQLEnvelope(e) {
 		return nil
 	}
 	op := operationFromEnvelope(e, flow, "json")
@@ -251,6 +251,11 @@ func operationFromEnvelope(e envelope, flow model.CapturedFlow, transport string
 
 // resolveNameType resolves OperationName and OperationType from the query text
 // and the transport-provided executed name, per the IR-8 resolution order.
+//
+// Known limitation (by design): there is no GraphQL parser, so the regex match
+// is purely lexical. A "#"-commented decoy declaration (e.g. "# mutation Foo")
+// whose name matches the executed operationName can mis-resolve the type. This
+// is acceptable for real captured traffic, where such decoys do not occur.
 func resolveNameType(query, executedName string) (string, string) {
 	if query == "" {
 		return executedName, "unknown"
