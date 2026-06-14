@@ -80,6 +80,52 @@ func TestBuildCatalogAPQMismatchFlags(t *testing.T) {
 	}
 }
 
+func TestBuildCatalogInvalidResponseJSONIsPartial(t *testing.T) {
+	flow := model.CapturedFlow{Method: "POST", Host: "api.x.com", Path: "/graphql", URL: "https://api.x.com/graphql",
+		RequestHeaders: map[string]string{"content-type": "application/json"},
+		RequestBody:    []byte(`{"operationName":"Q","query":"query Q{q}"}`),
+		ResponseStatus: 200, ResponseBody: []byte(`{"data":{"q":`), // invalid JSON, NO truncation tag
+	}
+	cat := BuildCatalog([]model.CapturedFlow{flow})
+	if cat.OperationCount != 1 {
+		t.Fatalf("want 1")
+	}
+	op := cat.Operations[0]
+	if op.Quality != "partial" {
+		t.Fatalf("invalid-JSON response must be partial even without a tag, got %q", op.Quality)
+	}
+	if op.ResponseSchema != nil {
+		t.Fatalf("invalid-JSON response must not produce an authoritative schema")
+	}
+}
+
+// TestBuildCatalogTruncatedRequestQuerySkipped pins Gap 2: a non-authoritative
+// request body must not donate its query text to the canonical Query. The two
+// flows carry the SAME identity (endpoint, method, name, discriminator), so a
+// truncated longer-vs-clean-shorter pair is NOT expressible — different query
+// text yields a different discriminator hash and thus a different group. We
+// therefore pin the unit invariant directly: a captured-query group whose only
+// member has a truncated request must not surface that query.
+func TestBuildCatalogTruncatedRequestQuerySkipped(t *testing.T) {
+	flow := model.CapturedFlow{Method: "POST", Host: "api.x.com", Path: "/graphql", URL: "https://api.x.com/graphql",
+		RequestHeaders: map[string]string{"content-type": "application/json"},
+		RequestBody:    []byte(`{"operationName":"Big","query":"query Big{this_is_a_long_field}"}`),
+		ResponseStatus: 200, ResponseBody: []byte(`{"data":{}}`),
+		Tags: []string{"request_body_truncated"},
+	}
+	cat := BuildCatalog([]model.CapturedFlow{flow})
+	if cat.OperationCount != 1 {
+		t.Fatalf("want 1")
+	}
+	op := cat.Operations[0]
+	if op.Quality != "partial" {
+		t.Fatalf("truncated request must be partial, got %q", op.Quality)
+	}
+	if op.Query == nil || *op.Query != "" {
+		t.Fatalf("truncated request must not donate its query to canonical Query, got %v", op.Query)
+	}
+}
+
 func TestWriteCatalogStaleCleanup(t *testing.T) {
 	dir := t.TempDir()
 	must := func(n string) {
@@ -114,5 +160,32 @@ func TestWriteCatalogColludingNamesSuffixed(t *testing.T) {
 	data, _ := os.ReadFile(filepath.Join(dir, "operations.graphql"))
 	if !strings.Contains(string(data), "Dup_") {
 		t.Fatalf("colliding names must be suffixed in the .graphql file:\n%s", data)
+	}
+}
+
+func TestWriteCatalogOmitsEmptyQueryDoc(t *testing.T) {
+	dir := t.TempDir()
+	// Truncated request -> canonical Query becomes empty (IR-4). The op still
+	// exists in the JSON catalog, but the SDL must not carry an empty document.
+	flow := model.CapturedFlow{Method: "POST", Host: "api.x.com", Path: "/graphql", URL: "https://api.x.com/graphql",
+		RequestHeaders: map[string]string{"content-type": "application/json"},
+		RequestBody:    []byte(`{"operationName":"Ghost","query":"query Ghost{x}"}`),
+		ResponseStatus: 200, ResponseBody: []byte(`{"data":{}}`),
+		Tags: []string{"request_body_truncated"},
+	}
+	cat := BuildCatalog([]model.CapturedFlow{flow})
+	op := cat.Operations[0]
+	if op.Query == nil || *op.Query != "" {
+		t.Fatalf("precondition: truncated request must yield empty canonical Query, got %v", op.Query)
+	}
+	if err := WriteCatalog(dir, cat); err != nil {
+		t.Fatal(err)
+	}
+	data, err := os.ReadFile(filepath.Join(dir, "operations.graphql"))
+	if err != nil && !os.IsNotExist(err) {
+		t.Fatal(err)
+	}
+	if strings.Contains(string(data), "Ghost") {
+		t.Fatalf("op with empty query must be omitted from the SDL file, got:\n%q", data)
 	}
 }

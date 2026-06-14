@@ -186,10 +186,15 @@ func applyQueryAggregates(out *CatalogOp, g *group) {
 	out.VariablesExample = firstCompleteVariables(g)
 }
 
-// canonicalQuery returns the longest observed query text, lexical tie-break.
+// canonicalQuery returns the longest observed query text, lexical tie-break,
+// over authoritative request contributions only (IR-4): a non-authoritative
+// request body must not donate its possibly-incomplete query text.
 func canonicalQuery(g *group) string {
 	best := ""
 	for _, c := range g.members {
+		if !c.requestOK {
+			continue
+		}
 		q := c.op.Query
 		if q == "" {
 			continue
@@ -277,9 +282,21 @@ func collectStatuses(g *group) []int {
 }
 
 // flowBodyAuthoritative reports whether a flow's request and response bodies
-// are authoritative, considering its truncation tags.
+// are authoritative under IR-4. A body is non-authoritative when a truncation
+// tag marks it incomplete, OR — for the response, and likewise the request —
+// when the body is present but does not parse as valid complete JSON. The
+// JSON-validity clause flips Quality to partial even with no tag present.
 func flowBodyAuthoritative(flow model.CapturedFlow) (reqOK, respOK bool) {
-	return !hasAnyTag(flow.Tags, requestTruncationTags), !hasAnyTag(flow.Tags, responseTruncationTags)
+	reqOK = !hasAnyTag(flow.Tags, requestTruncationTags) && bodyJSONComplete(flow.RequestBody)
+	respOK = !hasAnyTag(flow.Tags, responseTruncationTags) && bodyJSONComplete(flow.ResponseBody)
+	return reqOK, respOK
+}
+
+// bodyJSONComplete reports whether a body is authoritative on JSON grounds: an
+// absent (empty) body is vacuously authoritative; a present body must be valid
+// complete JSON. A present-but-invalid body (e.g. `{"data":{"x":`) is not.
+func bodyJSONComplete(body []byte) bool {
+	return len(body) == 0 || json.Valid(body)
 }
 
 // hasAnyTag reports whether tags contains any of the given markers.
@@ -389,11 +406,15 @@ func buildSDL(cat Catalog) string {
 }
 
 // sdlOps returns the catalog ops eligible for the SDL document: captured-query
-// with a non-empty operation name and query text.
+// with a non-empty operation name and actual (non-blank) query text. An op whose
+// canonical query is empty (every contribution had a non-authoritative request,
+// IR-4) is omitted so the SDL file never carries an empty/dangling document; its
+// identity still lives in the JSON catalog.
 func sdlOps(cat Catalog) []CatalogOp {
 	out := []CatalogOp{}
 	for _, op := range cat.Operations {
-		if op.Source == "captured-query" && op.OperationName != "" && op.Query != nil {
+		if op.Source == "captured-query" && op.OperationName != "" &&
+			op.Query != nil && strings.TrimSpace(*op.Query) != "" {
 			out = append(out, op)
 		}
 	}
