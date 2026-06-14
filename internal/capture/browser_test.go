@@ -38,16 +38,16 @@ func TestCleanBrowserArgsNoAutomationSignals(t *testing.T) {
 	}
 }
 
-// When the CA is trusted at the OS level the caller passes spkiHash="", and the
-// launch must omit the flag entirely — that is what removes Chrome's warning bar.
-func TestCleanBrowserArgsTrustedOmitsFlag(t *testing.T) {
+// The helper's flag contract: a non-empty spkiHash adds
+// --ignore-certificate-errors-spki-list; an empty hash omits it entirely.
+func TestCleanBrowserArgsEmptySPKIOmitsFlag(t *testing.T) {
 	withFlag := strings.Join(cleanBrowserArgs("127.0.0.1:8080", "HASH==", "/p", "https://x", false), " ")
 	if !strings.Contains(withFlag, "--ignore-certificate-errors-spki-list=HASH==") {
 		t.Errorf("non-empty spkiHash must add the flag; got: %s", withFlag)
 	}
 	noFlag := strings.Join(cleanBrowserArgs("127.0.0.1:8080", "", "/p", "https://x", false), " ")
 	if strings.Contains(noFlag, "ignore-certificate-errors") {
-		t.Errorf("empty spkiHash (CA trusted) must omit the flag; got: %s", noFlag)
+		t.Errorf("empty spkiHash must omit the flag; got: %s", noFlag)
 	}
 }
 

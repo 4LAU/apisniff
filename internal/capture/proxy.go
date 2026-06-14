@@ -256,13 +256,12 @@ func CaptureProxy(ctx context.Context, cfg Config) (*Result, error) {
 			return nil, err
 		}
 		defer os.RemoveAll(profileDir)
-		// Trust the CA at the OS level so Chrome accepts the proxy certs without
-		// the spki flag (and its warning bar). Falls back to the flag if trust
-		// can't be established, so capture never breaks.
+		// Chrome accepts the proxy's MITM leaf certs via the SPKI-list flag
+		// (computed from the CA in hand each run). This needs no OS trust store
+		// change — no permanently trusted root, no keychain prompt, no platform
+		// subprocess. Chrome shows a cosmetic "unsupported flag" infobar (browser
+		// UI only, invisible to pages, so the no-fingerprint property holds).
 		spkiForFlag := spkiHash
-		if EnsureCATrusted(caPath, cfg.StatusWriter) {
-			spkiForFlag = ""
-		}
 		if cfg.StatusWriter != nil {
 			fmt.Fprintf(cfg.StatusWriter, "MITM proxy listening on %s\n", server.Addr)
 			fmt.Fprintf(cfg.StatusWriter, "Launching Chrome (fresh profile, no automation flags) through proxy...\n")
