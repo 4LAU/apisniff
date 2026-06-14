@@ -648,3 +648,50 @@ func resolveSchema(doc map[string]any, schema map[string]any) map[string]any {
 	}
 	return asMap(asMap(asMap(doc["components"])["schemas"])[strings.TrimPrefix(ref, prefix)])
 }
+
+func TestGenerateOpaqueIDsCollapse(t *testing.T) {
+	doc := mustGenerate(t, []model.CapturedFlow{
+		// prefixed ids: two prefixes plus a one-char prefix and a nested id
+		specFlow("GET", "/creditcards/cc_9BMqukMwYVs6SY1psJlh0f", 200, []byte(`{"id":"cc_9BMqukMwYVs6SY1psJlh0f"}`)),
+		specFlow("GET", "/creditcards/cc_7w7CLKmd9I77HX2fjHfGPB", 200, []byte(`{"id":"cc_7w7CLKmd9I77HX2fjHfGPB"}`)),
+		specFlow("GET", "/creditcards/cc_5KnE6YhtaoBAKMydT1kPir", 200, []byte(`{"id":"cc_5KnE6YhtaoBAKMydT1kPir"}`)),
+		specFlow("GET", "/users/u_3fsKhZHvqRFAo7XXNOz4Lv", 200, []byte(`{"id":"u_3fsKhZHvqRFAo7XXNOz4Lv"}`)),
+		specFlow("GET", "/users/u_8KpQ2mNvBcXr5TdWfHj1Ay", 200, []byte(`{"id":"u_8KpQ2mNvBcXr5TdWfHj1Ay"}`)),
+		// nested prefixed id followed by a static sub-route
+		specFlow("GET", "/organizations/org_AYPx4TzpatN9Bm3xW9VQUf/departments", 200, []byte(`[]`)),
+		specFlow("GET", "/organizations/org_BBz9KmLpQrSt7uVwXy2Zab/departments", 200, []byte(`[]`)),
+		// bare ULIDs (no prefix)
+		specFlow("GET", "/events/01ARZ3NDEKTSV4RRFFQ69G5FAV", 200, []byte(`{"id":"01ARZ3NDEKTSV4RRFFQ69G5FAV"}`)),
+		specFlow("GET", "/events/01BX5ZZKBKACTAV9WEVGEMMVRZ", 200, []byte(`{"id":"01BX5ZZKBKACTAV9WEVGEMMVRZ"}`)),
+		// static route family under the same parent must NOT collapse
+		specFlow("GET", "/users/search", 200, []byte(`[]`)),
+		specFlow("GET", "/users/notifications", 200, []byte(`[]`)),
+	}, "example.com", nil, Options{})
+
+	paths := asMap(doc["paths"])
+	want := []string{
+		"/creditcards/{creditcardId}",
+		"/users/{userId}",
+		"/organizations/{organizationId}/departments",
+		"/events/{eventId}",
+		"/users/search",
+		"/users/notifications",
+	}
+	for _, p := range want {
+		if paths[p] == nil {
+			t.Errorf("expected path %q in spec, missing", p)
+		}
+	}
+	// Leak guard runs before the count assertion so it stays load-bearing: a raw
+	// id surviving would also change the count, and a fatal count check here would
+	// shadow this loop. Templated param names are camelCase (creditcardId, userId),
+	// so any "_" in a path means a raw prefixed id (cc_/u_/org_) leaked through.
+	for p := range paths {
+		if strings.ContainsAny(p, "_") || strings.Contains(p, "01ARZ3") || strings.Contains(p, "01BX5Z") {
+			t.Errorf("raw id leaked into path %q", p)
+		}
+	}
+	if len(paths) != len(want) {
+		t.Fatalf("path count = %d, want %d: %#v", len(paths), len(want), paths)
+	}
+}

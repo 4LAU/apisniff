@@ -459,3 +459,43 @@ func writeFlows(t *testing.T, path string, flows []model.CapturedFlow) {
 		t.Fatal(err)
 	}
 }
+
+func TestDeduplicateReportsMerges(t *testing.T) {
+	flows := []model.CapturedFlow{
+		{Method: "GET", Path: "/creditcards/cc_9BMqukMwYVs6SY1psJlh0f", Timestamp: 1},
+		{Method: "GET", Path: "/creditcards/cc_7w7CLKmd9I77HX2fjHfGPB", Timestamp: 2},
+		{Method: "GET", Path: "/users/search", Timestamp: 3},
+		{Method: "GET", Path: "/users/notifications", Timestamp: 4},
+	}
+	deduped, merges := deduplicate(flows)
+	if len(deduped) != 3 {
+		t.Fatalf("deduped = %d, want 3", len(deduped))
+	}
+	if len(merges) != 1 {
+		t.Fatalf("merges = %#v, want exactly one (the two credit-card ids)", merges)
+	}
+	m := merges[0]
+	wantPaths := []string{
+		"/creditcards/cc_7w7CLKmd9I77HX2fjHfGPB",
+		"/creditcards/cc_9BMqukMwYVs6SY1psJlh0f",
+	}
+	if m.Method != "GET" || !reflect.DeepEqual(m.Paths, wantPaths) {
+		t.Fatalf("merge = %#v, want GET with the two collapsed cc_ paths %#v", m, wantPaths)
+	}
+}
+
+// A single route captured multiple times must NOT register as a merge: the
+// merge log exists to surface distinct paths collapsing, not repeat captures.
+func TestDeduplicateSamePathNotMerged(t *testing.T) {
+	flows := []model.CapturedFlow{
+		{Method: "GET", Path: "/users/search", Timestamp: 1},
+		{Method: "GET", Path: "/users/search", Timestamp: 2},
+	}
+	deduped, merges := deduplicate(flows)
+	if len(deduped) != 1 {
+		t.Fatalf("deduped = %d, want 1", len(deduped))
+	}
+	if len(merges) != 0 {
+		t.Fatalf("merges = %#v, want none (same path captured twice is not a merge)", merges)
+	}
+}

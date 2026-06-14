@@ -11,9 +11,11 @@ import (
 )
 
 var (
-	uuidRe    = regexp.MustCompile(`(?i)^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$`)
-	numericRe = regexp.MustCompile(`^\d+$`)
-	hexRe     = regexp.MustCompile(`(?i)^[0-9a-f]{16,}$`)
+	uuidRe       = regexp.MustCompile(`(?i)^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$`)
+	numericRe    = regexp.MustCompile(`^\d+$`)
+	hexRe        = regexp.MustCompile(`(?i)^[0-9a-f]{16,}$`)
+	prefixedIDRe = regexp.MustCompile(`^[a-z]{1,8}_[A-Za-z0-9]{12,}$`)
+	opaqueTokRe  = regexp.MustCompile(`^[A-Za-z0-9]{20,}$`)
 )
 
 type CapturedFlow struct {
@@ -204,7 +206,52 @@ func normalizePathSegments(path string, templates bool) (string, []PathParam, bo
 }
 
 func IsDynamicSegment(part string) bool {
-	return uuidRe.MatchString(part) || numericRe.MatchString(part) || hexRe.MatchString(part)
+	return uuidRe.MatchString(part) || numericRe.MatchString(part) || hexRe.MatchString(part) ||
+		isPrefixedOpaqueID(part) || isHighEntropyToken(part)
+}
+
+func charClasses(s string) (hasDigit, hasUpper, hasLower bool) {
+	for _, r := range s {
+		switch {
+		case r >= '0' && r <= '9':
+			hasDigit = true
+		case r >= 'A' && r <= 'Z':
+			hasUpper = true
+		case r >= 'a' && r <= 'z':
+			hasLower = true
+		}
+	}
+	return
+}
+
+// isPrefixedOpaqueID matches Stripe-style resource IDs: a short lowercase
+// prefix, an underscore, then a long base62 tail (cc_9BMquk…, cus_Nv8d…).
+// The entropy gate (tail has a digit, or mixes upper- and lower-case) rejects
+// the common readable snake_case segments like payment_processors or
+// event_acknowledgements while accepting any vendor's random-tailed IDs — no
+// vendor prefix is hardcoded. It is not perfectly precise: a readable tail that
+// happens to carry a digit or mix case can still pass (see "Known precision
+// limit" in the plan); the replay merge log is the backstop for that rare case.
+func isPrefixedOpaqueID(part string) bool {
+	if !prefixedIDRe.MatchString(part) {
+		return false
+	}
+	tail := part[strings.IndexByte(part, '_')+1:]
+	hasDigit, hasUpper, hasLower := charClasses(tail)
+	return hasDigit || (hasUpper && hasLower)
+}
+
+// isHighEntropyToken matches a bare opaque identifier with no prefix to anchor
+// on (ULID, nanoid, base62 key — length >= 20, pure base62, no separators).
+// It demands a digit AND at least one letter: a digit excludes long lowercase
+// route words like "receiptmanagementenabled", and requiring a letter excludes
+// pure numerics (already handled by numericRe).
+func isHighEntropyToken(part string) bool {
+	if !opaqueTokRe.MatchString(part) {
+		return false
+	}
+	hasDigit, hasUpper, hasLower := charClasses(part)
+	return hasDigit && (hasUpper || hasLower)
 }
 
 func canonicalParamName(previousStatic string, counts map[string]int) string {

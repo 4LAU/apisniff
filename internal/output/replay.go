@@ -40,6 +40,8 @@ func WriteReplay(cfg Config, summary replay.Summary) error {
 		lines = append(lines, "", s.simpleTable([]string{"Method", "Path", "Status", "Result"}, rows))
 	}
 
+	lines = append(lines, replayMergeSection(s, summary.Merges)...)
+
 	lines = append(lines, "", s.header("Summary"))
 	for _, line := range replaySummaryLines(s, summary, []string{"match", "drift", "auth_expired", "blocked", "error"}) {
 		lines = append(lines, line)
@@ -63,7 +65,24 @@ func writeReplayDryRun(s styles, summary replay.Summary) error {
 			lines = append(lines, "  "+endpoint)
 		}
 	}
+	lines = append(lines, replayMergeSection(s, summary.Merges)...)
 	return s.writeLines(lines...)
+}
+
+// replayMergeSection renders the routes that opaque-ID templating collapsed into
+// a single replay key. It is the user-facing half of the "never silent" backstop:
+// if a shape rule over-collapses a real route, the operator sees the merge here
+// instead of the route vanishing from the run.
+func replayMergeSection(s styles, merges []replay.DedupMerge) []string {
+	if len(merges) == 0 {
+		return nil
+	}
+	lines := []string{"", s.header("Merged routes")}
+	for _, m := range merges {
+		count := s.faint(fmt.Sprintf("(%d paths merged)", len(m.Paths)))
+		lines = append(lines, fmt.Sprintf("  %s %s  %s", m.Method, m.Key, count))
+	}
+	return lines
 }
 
 func replayTotal(summary replay.Summary) int {

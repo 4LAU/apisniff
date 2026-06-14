@@ -137,6 +137,14 @@ func TestNormalizePathCases(t *testing.T) {
 		{"/api/users/42?foo=bar", "/api/users/{userId}"},
 		{"/orgs/99/repos/abc-def-ghi", "/orgs/{orgId}/repos/abc-def-ghi"},
 		{"/v1/users/123/orders/550e8400-e29b-41d4-a716-446655440000", "/v1/users/{userId}/orders/{orderId}"},
+		{"/creditcards/cc_9BMqukMwYVs6SY1psJlh0f", "/creditcards/{creditcardId}"},
+		{"/virtualcards/vc_8fDYMNuzL6H7qNKajeMCCc", "/virtualcards/{virtualcardId}"},
+		{"/organizations/org_AYPx4TzpatN9Bm3xW9VQUf/departments", "/organizations/{organizationId}/departments"},
+		{"/users/u_3fsKhZHvqRFAo7XXNOz4Lv", "/users/{userId}"},
+		{"/customers/cus_Nv8dManqwatb3rUp9Xy2", "/customers/{customerId}"},
+		{"/events/01ARZ3NDEKTSV4RRFFQ69G5FAV", "/events/{eventId}"},
+		{"/config/payment_processors", "/config/payment_processors"},
+		{"/organizations/org_AYPx4TzpatN9Bm3xW9VQUf/receiptmanagementenabled", "/organizations/{organizationId}/receiptmanagementenabled"},
 	}
 	for _, tt := range tests {
 		t.Run(tt.path, func(t *testing.T) {
@@ -162,5 +170,56 @@ func TestReplayDedupKeyCases(t *testing.T) {
 
 	if got := ReplayDedupKey("/v1/users/123?b=2&a=1&a=3"); got != "/v1/users/{userId}?a={v}&b={v}" {
 		t.Fatalf("ReplayDedupKey = %q", got)
+	}
+
+	// Opaque IDs collapse to one replay key regardless of the concrete id.
+	if a, b := ReplayDedupKey("/creditcards/cc_9BMqukMwYVs6SY1psJlh0f"),
+		ReplayDedupKey("/creditcards/cc_7w7CLKmd9I77HX2fjHfGPB"); a != b {
+		t.Fatalf("distinct cc_ ids produced different keys: %q != %q", a, b)
+	}
+	if a, b := ReplayDedupKey("/events/01ARZ3NDEKTSV4RRFFQ69G5FAV"),
+		ReplayDedupKey("/events/01BX5ZZKBKACTAV9WEVGEMMVRZ"); a != b {
+		t.Fatalf("distinct ULIDs produced different keys: %q != %q", a, b)
+	}
+	// Distinct static sibling routes must NOT share a key.
+	if a, b := ReplayDedupKey("/users/search"),
+		ReplayDedupKey("/users/notifications"); a == b {
+		t.Fatalf("distinct static routes collapsed to same key: %q", a)
+	}
+}
+
+func TestIsDynamicSegmentOpaqueIDs(t *testing.T) {
+	dynamic := []string{
+		"cc_9BMqukMwYVs6SY1psJlh0f",  // Extend credit card id (prefixed, mixed+digit)
+		"vc_8fDYMNuzL6H7qNKajeMCCc",  // Extend virtual card id
+		"org_AYPx4TzpatN9Bm3xW9VQUf", // Extend organization id
+		"u_3fsKhZHvqRFAo7XXNOz4Lv",   // Extend user id (1-char prefix)
+		"ii_7kubwtySFr65WYBNmu75BO",  // Extend issuer id
+		"cus_Nv8dManqDmAa9XyZ12bC",   // Stripe-style prefix (vendor-neutral)
+		"01ARZ3NDEKTSV4RRFFQ69G5FAV", // bare ULID (uppercase+digit, no prefix)
+		"V1StGXR8Z5jdHi6Bxxxxxx9",    // bare nanoid-style token (mixed+digit)
+	}
+	for _, part := range dynamic {
+		if !IsDynamicSegment(part) {
+			t.Errorf("IsDynamicSegment(%q) = false, want true", part)
+		}
+	}
+
+	static := []string{
+		"payment_processors",       // prefix ok, tail <12 chars
+		"event_acknowledgements",   // prefix ok, tail >=12 but all-lowercase, no digit -> readable
+		"internal_configuration",   // prefix ok, readable lowercase tail
+		"org_MemberRoles",          // valid prefix shape, CamelCase but tail <12 -> readable
+		"receiptmanagementenabled", // 24 chars, no digit -> long route word, not a token
+		"sixmonthspendbycurrency",  // 23 chars, no digit -> long route word
+		"outofpocketexpenses",      // 19 chars, no digit
+		"creditcardsv2",            // no underscore, <20, has digit but short
+		"Sign_Up",                  // uppercase prefix fails the lowercase-prefix shape gate
+		"tok_visa",                 // tail too short
+	}
+	for _, part := range static {
+		if IsDynamicSegment(part) {
+			t.Errorf("IsDynamicSegment(%q) = true, want false", part)
+		}
 	}
 }

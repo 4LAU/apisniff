@@ -60,6 +60,7 @@ type Summary struct {
 	Summary       map[string]int `json:"summary"`
 	Results       []Result       `json:"results,omitempty"`
 	Endpoints     []string       `json:"endpoints,omitempty"`
+	Merges        []DedupMerge   `json:"merges,omitempty"`
 }
 
 func Run(ctx context.Context, opts Options) (Summary, error) {
@@ -74,7 +75,8 @@ func Run(ctx context.Context, opts Options) (Summary, error) {
 	if err != nil {
 		return Summary{}, err
 	}
-	filtered, err := filterByPattern(deduplicate(flows), opts.Filter)
+	deduped, merges := deduplicate(flows)
+	filtered, err := filterByPattern(deduped, opts.Filter)
 	if err != nil {
 		return Summary{}, err
 	}
@@ -91,6 +93,7 @@ func Run(ctx context.Context, opts Options) (Summary, error) {
 			Domain:        domain,
 			Summary:       map[string]int{"safe": len(safe), "unsafe": len(unsafe), "total": len(filtered)},
 			Endpoints:     endpoints,
+			Merges:        merges,
 		}, nil
 	}
 
@@ -115,7 +118,7 @@ func Run(ctx context.Context, opts Options) (Summary, error) {
 		results = append(results, result)
 		summary[result.Category]++
 	}
-	return Summary{SchemaVersion: 1, Domain: domain, Summary: summary, Results: results}, nil
+	return Summary{SchemaVersion: 1, Domain: domain, Summary: summary, Results: results, Merges: merges}, nil
 }
 
 func newHTTPClient(opts Options) (*surf.Client, error) {
@@ -296,13 +299,27 @@ func filterByPattern(flows []model.CapturedFlow, pattern string) ([]model.Captur
 	return out, nil
 }
 
-func deduplicate(flows []model.CapturedFlow) []model.CapturedFlow {
+// DedupMerge records that two or more captured raw paths collapsed into one
+// replay key. Surfaced in Summary so a collapse — and any false-positive route
+// drop it might cause — is never silent.
+type DedupMerge struct {
+	Method string   `json:"method"`
+	Key    string   `json:"key"`
+	Paths  []string `json:"paths"`
+}
+
+func deduplicate(flows []model.CapturedFlow) ([]model.CapturedFlow, []DedupMerge) {
 	seen := map[[2]string]model.CapturedFlow{}
+	rawPaths := map[[2]string]map[string]struct{}{}
 	for _, flow := range flows {
 		key := [2]string{strings.ToUpper(flow.Method), model.ReplayDedupKey(flow.Path)}
 		if existing, ok := seen[key]; !ok || flow.Timestamp > existing.Timestamp {
 			seen[key] = flow
 		}
+		if rawPaths[key] == nil {
+			rawPaths[key] = map[string]struct{}{}
+		}
+		rawPaths[key][flow.Path] = struct{}{}
 	}
 	out := make([]model.CapturedFlow, 0, len(seen))
 	for _, flow := range seen {
@@ -314,7 +331,26 @@ func deduplicate(flows []model.CapturedFlow) []model.CapturedFlow {
 		}
 		return out[i].Path < out[j].Path
 	})
-	return out
+
+	var merges []DedupMerge
+	for key, paths := range rawPaths {
+		if len(paths) < 2 {
+			continue
+		}
+		ps := make([]string, 0, len(paths))
+		for p := range paths {
+			ps = append(ps, p)
+		}
+		sort.Strings(ps)
+		merges = append(merges, DedupMerge{Method: key[0], Key: key[1], Paths: ps})
+	}
+	sort.Slice(merges, func(i, j int) bool {
+		if merges[i].Method == merges[j].Method {
+			return merges[i].Key < merges[j].Key
+		}
+		return merges[i].Method < merges[j].Method
+	})
+	return out, merges
 }
 
 func requestHost(flow model.CapturedFlow) (string, error) {
