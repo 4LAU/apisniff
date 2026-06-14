@@ -12,21 +12,3 @@ func asMap(value any) map[string]any {
 	}
 	return map[string]any{}
 }
-
-// toAnySlice normalizes value to []any, returning nil for unsupported types. A
-// private copy lives here (mirroring jsonschema.toAnySlice) so the spec package
-// does not depend on jsonschema for this trivial helper.
-func toAnySlice(value any) []any {
-	switch typed := value.(type) {
-	case []any:
-		return typed
-	case []string:
-		out := make([]any, 0, len(typed))
-		for _, value := range typed {
-			out = append(out, value)
-		}
-		return out
-	default:
-		return nil
-	}
-}
