@@ -1,6 +1,6 @@
 # Changelog
 
-## [Unreleased]
+## [0.8.0] — 2026-06-14
 
 ### Changed
 - `recon` now defaults to `--mode proxy` (clean Chrome through a local MITM proxy) instead of `--mode cdp-launch`. Proxy mode reads the real on-the-wire request/response headers, so authenticated captures now record the actual `Cookie` / `Set-Cookie` on XHR/fetch API calls and are replayable by default. The CDP modes (`cdp-launch`, `cdp-attach`) remain available for WebSocket-frame capture and attaching to an existing browser, but do not capture cookies on XHR/fetch; selecting one now prints a note to that effect.
