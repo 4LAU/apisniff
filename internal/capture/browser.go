@@ -184,13 +184,6 @@ func FindChrome() string {
 		)
 	case "linux":
 		candidates = append(candidates, "google-chrome", "chromium", "chromium-browser")
-	case "windows":
-		if local := os.Getenv("LOCALAPPDATA"); local != "" {
-			candidates = append(candidates, filepath.Join(local, "Google", "Chrome", "Application", "chrome.exe"))
-		}
-		if programFiles := os.Getenv("PROGRAMFILES"); programFiles != "" {
-			candidates = append(candidates, filepath.Join(programFiles, "Google", "Chrome", "Application", "chrome.exe"))
-		}
 	}
 	for _, candidate := range candidates {
 		if filepath.IsAbs(candidate) {

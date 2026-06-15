@@ -26,6 +26,8 @@ The Go build is a single binary with no Python runtime dependency. From source:
 go build -ldflags="-s -w" -o apisniff ./cmd/apisniff
 ```
 
+apisniff ships prebuilt binaries for macOS and Linux (Intel and Apple/ARM). On Windows, run it under [WSL2](https://learn.microsoft.com/windows/wsl/install) and use the Linux build.
+
 ## Quick Start
 
 ```bash
