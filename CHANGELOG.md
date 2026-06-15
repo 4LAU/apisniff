@@ -1,5 +1,10 @@
 # Changelog
 
+## [0.9.0] — 2026-06-14
+
+### Removed
+- Windows binaries are no longer published. apisniff drives Chrome and does OS-level network and certificate-trust work that was never verified on Windows, so it shipped there second-class. Windows users should run apisniff under [WSL2](https://learn.microsoft.com/windows/wsl/install) with the Linux build. macOS and Linux (Intel and Apple/ARM) are unchanged.
+
 ## [0.8.0] — 2026-06-14
 
 ### Changed
