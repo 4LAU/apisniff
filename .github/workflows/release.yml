@@ -31,13 +31,32 @@ jobs:
       - uses: actions/setup-go@v6
         with:
           go-version: '1.26'
+          # Disable setup-go's built-in cache: it keys on go.sum and would be
+          # populated first by the host-only `test` job, so the release job would
+          # restore a cache lacking the cross-compiled darwin/linux objects. The
+          # explicit cache below keys on the cross-build contents instead.
+          cache: false
+      # Persist the Go build + module cache so the cdproto-heavy cross-compile is
+      # not redone from scratch every release. The sha-suffixed key always saves
+      # a fresh entry at job end; restore-keys roll the most recent prior cache
+      # (same go.sum) forward. The key prefix is shared with ci.yml's
+      # release-check so a main-branch snapshot build warms this release.
+      - uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cache/go-build
+            ~/go/pkg/mod
+          key: go-xbuild-linux-${{ hashFiles('go.sum') }}-${{ github.sha }}
+          restore-keys: |
+            go-xbuild-linux-${{ hashFiles('go.sum') }}-
+            go-xbuild-linux-
       - uses: goreleaser/goreleaser-action@v7
         with:
           version: '~> v2'
-          # --parallelism 1 serializes the cross-compile. Five concurrent
-          # builds each compiling the large chromedp/cdproto tree oversubscribe
-          # the runner's memory and thrash until GitHub kills it ("lost
-          # communication"). Building one target at a time keeps peak memory low.
+          # --parallelism 1 serializes the cross-compile so concurrent
+          # cdproto-heavy builds don't oversubscribe the runner's memory and
+          # thrash. With the build cache above warm, the serialized build is
+          # fast; the parallelism cap is purely a peak-memory guard.
           args: release --clean --parallelism 1
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
