@@ -395,18 +395,26 @@ func newSpecCommand() *cobra.Command {
 		includeExamples   bool
 	)
 	cmd := &cobra.Command{
-		Use:   "spec DOMAIN",
+		Use:   "spec BUNDLE|DOMAIN",
 		Short: "Generate OpenAPI from captured traffic",
 		Args:  cobra.ExactArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
-			domain := args[0]
+			ref := args[0]
+			domain := ""
 			path := inputFile
 			if path == "" {
-				latest, err := bundle.Resolve(domain)
+				resolved, err := bundle.Resolve(ref)
 				if err != nil {
 					return err
 				}
-				path = filepath.Join(latest.Path, "flows.jsonl")
+				path = filepath.Join(resolved.Path, "flows.jsonl")
+				domain = resolved.Domain
+				if domain == "" {
+					domain = domainFromBundleSession(resolved.Path)
+				}
+			}
+			if domain == "" {
+				domain = ref
 			}
 			flows, inputFormat, err := adapter.LoadFlows(path)
 			if err != nil {
@@ -716,4 +724,16 @@ func countOpenAPIOperations(doc map[string]any) specCounts {
 		}
 	}
 	return c
+}
+
+func domainFromBundleSession(bundleDir string) string {
+	data, err := os.ReadFile(filepath.Join(bundleDir, "session.json"))
+	if err != nil {
+		return ""
+	}
+	var session model.SessionStats
+	if err := json.Unmarshal(data, &session); err != nil {
+		return ""
+	}
+	return session.Domain
 }

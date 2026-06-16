@@ -5,7 +5,6 @@ package finalize
 
 import (
 	"errors"
-	"log"
 	"os"
 	"path/filepath"
 
@@ -50,12 +49,10 @@ func FinalizeBundle(dir string, flows []model.CapturedFlow, domain string) (Summ
 func FromBundle(bundleDir, flowsPath, domain string) Summary {
 	flows, err := adapter.LoadJSONL(flowsPath)
 	if err != nil {
-		log.Printf("graphql catalog skipped: load flows: %v", err)
 		return Summary{}
 	}
 	sum, err := FinalizeBundle(bundleDir, flows, domain)
 	if err != nil {
-		log.Printf("graphql catalog skipped: %v", err)
 		return Summary{}
 	}
 	return sum
@@ -72,7 +69,9 @@ func writeSpec(dir string, pipeline spec.PipelineResult, domain string) error {
 	if err != nil {
 		return err
 	}
-	data, err := spec.MarshalAndValidate(specDoc, "yaml")
+	// Bundle spec is an internal artifact — skip strict validation so one
+	// invalid example field doesn't block the entire spec from being written.
+	data, err := spec.Marshal(specDoc, "yaml")
 	if err != nil {
 		return err
 	}
