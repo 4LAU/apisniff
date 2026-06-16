@@ -267,6 +267,7 @@ func CaptureProxy(ctx context.Context, cfg Config) (*Result, error) {
 		if cfg.StatusWriter != nil {
 			fmt.Fprintf(cfg.StatusWriter, "MITM proxy listening on %s\n", server.Addr)
 			fmt.Fprintf(cfg.StatusWriter, "Launching Chrome (fresh profile, no automation flags) through proxy...\n")
+			fmt.Fprintf(cfg.StatusWriter, "Chrome will show a yellow \"unsupported flag\" warning bar at the top — that's expected and safe to ignore.\n")
 			fmt.Fprintf(cfg.StatusWriter, "Log in and use the site. When done: close the browser window, or press Ctrl+C here.\n")
 		}
 		cmd, err := LaunchCleanBrowser(runCtx, fmt.Sprintf("127.0.0.1:%d", cfg.Port), spkiHash, profileDir, cfg.URL, cfg.Headless)
