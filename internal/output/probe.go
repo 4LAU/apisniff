@@ -62,19 +62,19 @@ func graphqlSummary(result *model.GraphQLResult) string {
 }
 
 func rateLimitSummary(result *model.RateLimitResult) string {
-	parts := []string{fmt.Sprintf("requests=%d", result.RequestsSent)}
+	var parts []string
 	if result.FirstBlockAt > 0 {
-		parts = append(parts, fmt.Sprintf("first_block_at=%d", result.FirstBlockAt))
-	}
-	if result.BlockStatus > 0 {
-		parts = append(parts, fmt.Sprintf("block_status=%d", result.BlockStatus))
+		parts = append(parts, fmt.Sprintf("blocked after %d of %d requests (%d)",
+			result.FirstBlockAt, result.RequestsSent, result.BlockStatus))
+	} else {
+		parts = append(parts, fmt.Sprintf("%d requests, no block", result.RequestsSent))
 	}
 	if result.RetryAfter != "" {
-		parts = append(parts, "retry_after="+result.RetryAfter)
+		parts = append(parts, "retry-after "+result.RetryAfter+"s")
 	}
-	parts = append(parts, fmt.Sprintf("median=%.1fms", result.MedianMS))
+	parts = append(parts, fmt.Sprintf("median %.1fms", result.MedianMS))
 	if result.SilentThrottle {
-		parts = append(parts, "silent_throttle=true")
+		parts = append(parts, "silent throttle detected")
 	}
 	return strings.Join(parts, ", ")
 }

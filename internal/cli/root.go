@@ -206,6 +206,7 @@ func newReconCommand() *cobra.Command {
 				FilteredPath:         result.FilteredPath,
 				Defenses:             result.Stats.Defenses,
 				UnattributedAntibot:  result.Stats.UnattributedAntibot,
+				DurationSeconds:     result.Stats.DurationSeconds,
 				GraphQLOperations:    result.GraphQL.OperationCount,
 				GraphQLFlows:         result.GraphQL.FlowCount,
 				GraphQLCapturedQuery: result.GraphQL.CapturedQueryCount,
@@ -452,14 +453,17 @@ func newSpecCommand() *cobra.Command {
 			} else if _, err := cmd.OutOrStdout().Write(append(data, '\n')); err != nil {
 				return err
 			}
-			paths, operations := countOpenAPIOperations(doc)
+			counts := countOpenAPIOperations(doc)
 			return output.WriteSpecStatus(humanOutputConfig(cmd), output.SpecStatusResult{
 				Domain:            domain,
 				Format:            format,
 				OutputPath:        outputFile,
 				SurfaceOutputPath: surfaceOutput,
-				Paths:             paths,
-				Operations:        operations,
+				Paths:             counts.paths,
+				Operations:        counts.operations,
+				MethodCounts:      counts.methods,
+				GraphQLOperations: counts.graphqlOps,
+				GraphQLFlows:      counts.graphqlPaths,
 			})
 		},
 	}
@@ -672,23 +676,44 @@ func isPrefilteredBundleInput(path string) bool {
 	return false
 }
 
-func countOpenAPIOperations(doc map[string]any) (int, int) {
+type specCounts struct {
+	paths      int
+	operations int
+	methods    map[string]int
+	graphqlOps int
+	graphqlPaths int
+}
+
+func countOpenAPIOperations(doc map[string]any) specCounts {
 	pathsMap, ok := doc["paths"].(map[string]any)
 	if !ok {
-		return 0, 0
+		return specCounts{}
 	}
-	operations := 0
+	c := specCounts{paths: len(pathsMap), methods: make(map[string]int)}
 	for _, rawPathItem := range pathsMap {
 		pathItem, ok := rawPathItem.(map[string]any)
 		if !ok {
 			continue
 		}
-		for method := range pathItem {
+		hasGraphQL := false
+		for method, rawOp := range pathItem {
 			switch strings.ToLower(method) {
 			case "get", "put", "post", "delete", "options", "head", "patch", "trace":
-				operations++
+				c.operations++
+				c.methods[strings.ToUpper(method)]++
+				if op, ok := rawOp.(map[string]any); ok {
+					if gql, ok := op["x-apisniff-graphql"].(map[string]any); ok {
+						if ops, ok := gql["operations"].([]any); ok {
+							c.graphqlOps += len(ops)
+							hasGraphQL = true
+						}
+					}
+				}
 			}
 		}
+		if hasGraphQL {
+			c.graphqlPaths++
+		}
 	}
-	return len(pathsMap), operations
+	return c
 }

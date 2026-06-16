@@ -5,6 +5,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/4LAU/apisniff/internal/model"
 	"github.com/4LAU/apisniff/internal/replay"
 )
 
@@ -82,5 +83,33 @@ func TestWriteReplayNoMergeSectionWhenEmpty(t *testing.T) {
 	}
 	if strings.Contains(buf.String(), "Merged routes") {
 		t.Fatalf("unexpected Merged routes section with no merges:\n%s", buf.String())
+	}
+}
+
+func TestWriteProbeRateLimitHumanized(t *testing.T) {
+	var buf bytes.Buffer
+	assessment := &model.ProbeAssessment{
+		URL:     "https://example.com/api",
+		Verdict: model.NoProtection,
+		RateLimit: &model.RateLimitResult{
+			RequestsSent: 50,
+			FirstBlockAt: 23,
+			BlockStatus:  429,
+			RetryAfter:   "30",
+			MedianMS:     45.2,
+		},
+	}
+	if err := WriteProbe(testConfig(t, &buf), assessment); err != nil {
+		t.Fatalf("WriteProbe: %v", err)
+	}
+	out := buf.String()
+	if !strings.Contains(out, "blocked after 23 of 50 requests (429)") {
+		t.Fatalf("rate limit not humanized:\n%s", out)
+	}
+	if !strings.Contains(out, "median 45.2ms") {
+		t.Fatalf("rate limit missing median:\n%s", out)
+	}
+	if strings.Contains(out, "requests=") {
+		t.Fatalf("rate limit still uses key=value format:\n%s", out)
 	}
 }

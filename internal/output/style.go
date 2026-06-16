@@ -151,6 +151,20 @@ func (s styles) methodBadge(method string) string {
 	return "[" + method + "]"
 }
 
+func (s styles) methodBreakdown(counts map[string]int) string {
+	order := []string{"GET", "POST", "PUT", "PATCH", "DELETE", "HEAD", "OPTIONS"}
+	var parts []string
+	for _, method := range order {
+		if n, ok := counts[method]; ok && n > 0 {
+			parts = append(parts, fmt.Sprintf("%s %d", s.methodBadge(method), n))
+		}
+	}
+	if len(parts) == 0 {
+		return ""
+	}
+	return "  " + strings.Join(parts, "  ")
+}
+
 func (s styles) statusText(status string) string {
 	status = strings.TrimSpace(status)
 	if status == "" {

@@ -18,6 +18,8 @@ type ReconResult struct {
 	Defenses            []model.VendorMatch
 	UnattributedAntibot int
 
+	DurationSeconds float64
+
 	// GraphQL catalog counts, printed only when GraphQLOperations > 0.
 	GraphQLOperations    int
 	GraphQLFlows         int
@@ -32,6 +34,10 @@ type SpecStatusResult struct {
 	SurfaceOutputPath string
 	Paths             int
 	Operations        int
+	MethodCounts      map[string]int
+
+	GraphQLOperations int
+	GraphQLFlows      int
 }
 
 type ShareResult struct {
@@ -42,6 +48,9 @@ type ShareResult struct {
 func WriteRecon(cfg Config, result ReconResult) error {
 	s := newStyles(cfg)
 	completion := fmt.Sprintf("%s captured %d flows", s.successIcon(), result.KeptFlows)
+	if result.DurationSeconds > 0 {
+		completion += s.faint(fmt.Sprintf(" in %.1fs", result.DurationSeconds))
+	}
 	var details []string
 	if result.TotalFlows > 0 && result.TotalFlows != result.KeptFlows {
 		details = append(details, fmt.Sprintf("%d observed", result.TotalFlows))
@@ -58,11 +67,11 @@ func WriteRecon(cfg Config, result ReconResult) error {
 		completion,
 		"",
 		s.header("Bundle"),
-		s.kv("directory", result.BundleDir),
-		s.kv("flows", result.FlowsPath),
+		s.kv("directory", s.faint(result.BundleDir)),
+		s.kv("flows", s.faint(result.FlowsPath)),
 	}
 	if result.FilteredPath != "" {
-		lines = append(lines, s.kv("filtered", result.FilteredPath))
+		lines = append(lines, s.kv("filtered", s.faint(result.FilteredPath)))
 	}
 	if len(result.Defenses) > 0 || result.UnattributedAntibot > 0 {
 		lines = append(lines, "", s.panel("Defenses observed", defensePanelBody(result)))
@@ -97,21 +106,31 @@ func WriteSpecStatus(cfg Config, result SpecStatusResult) error {
 		s.headerBox("apisniff spec", result.Domain),
 	}
 	if result.OutputPath != "" {
-		lines = append(lines, fmt.Sprintf("%s wrote %s", s.successIcon(), result.OutputPath))
+		lines = append(lines, fmt.Sprintf("%s wrote %s", s.successIcon(), s.faint(result.OutputPath)))
 	} else {
 		lines = append(lines, fmt.Sprintf("%s generated spec", s.successIcon()))
 	}
+	if result.Paths > 0 || result.Operations > 0 {
+		summary := fmt.Sprintf("  %d paths", result.Paths)
+		sep := " · "
+		if !s.cfg.Unicode {
+			sep = ", "
+		}
+		summary += fmt.Sprintf("%s%d operations", sep, result.Operations)
+		lines = append(lines, "", summary)
+	}
+	if badges := s.methodBreakdown(result.MethodCounts); badges != "" {
+		lines = append(lines, badges)
+	}
+	if result.GraphQLOperations > 0 {
+		lines = append(lines, fmt.Sprintf("  GraphQL: %d operations from %d flows",
+			result.GraphQLOperations, result.GraphQLFlows))
+	}
 	if result.Format != "" {
-		lines = append(lines, s.kv("format", result.Format))
+		lines = append(lines, "", s.kv("format", s.faint(result.Format)))
 	}
 	if result.SurfaceOutputPath != "" {
-		lines = append(lines, s.kv("surface", result.SurfaceOutputPath))
-	}
-	if result.Paths > 0 {
-		lines = append(lines, s.kv("paths", fmt.Sprintf("%d", result.Paths)))
-	}
-	if result.Operations > 0 {
-		lines = append(lines, s.kv("operations", fmt.Sprintf("%d", result.Operations)))
+		lines = append(lines, s.kv("surface", s.faint(result.SurfaceOutputPath)))
 	}
 	return s.writeLines(lines...)
 }

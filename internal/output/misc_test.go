@@ -161,3 +161,92 @@ func TestWriteReconDefensesPanel(t *testing.T) {
 		}
 	})
 }
+
+func TestWriteReconShowsDuration(t *testing.T) {
+	var buf bytes.Buffer
+	result := ReconResult{
+		Domain:          "example.com",
+		BundleDir:       "/tmp/bundle",
+		FlowsPath:       "/tmp/bundle/flows.jsonl",
+		KeptFlows:       42,
+		DurationSeconds: 8.3,
+	}
+	if err := WriteRecon(testConfig(t, &buf), result); err != nil {
+		t.Fatalf("WriteRecon: %v", err)
+	}
+	out := buf.String()
+	if !strings.Contains(out, "42 flows") {
+		t.Fatalf("output missing flow count:\n%s", out)
+	}
+	if !strings.Contains(out, "in 8.3s") {
+		t.Fatalf("output missing duration:\n%s", out)
+	}
+}
+
+func TestWriteReconNoDurationWhenZero(t *testing.T) {
+	var buf bytes.Buffer
+	result := ReconResult{
+		Domain:    "example.com",
+		BundleDir: "/tmp/bundle",
+		FlowsPath: "/tmp/bundle/flows.jsonl",
+		KeptFlows: 10,
+	}
+	if err := WriteRecon(testConfig(t, &buf), result); err != nil {
+		t.Fatalf("WriteRecon: %v", err)
+	}
+	if strings.Contains(buf.String(), "in 0") {
+		t.Fatalf("output shows duration when zero:\n%s", buf.String())
+	}
+}
+
+func TestWriteSpecStatusMethodBreakdown(t *testing.T) {
+	var buf bytes.Buffer
+	result := SpecStatusResult{
+		Domain:     "example.com",
+		Format:     "yaml",
+		OutputPath: "/tmp/spec.yaml",
+		Paths:      14,
+		Operations: 23,
+		MethodCounts: map[string]int{
+			"GET": 12, "POST": 6, "PUT": 3, "DELETE": 2,
+		},
+	}
+	if err := WriteSpecStatus(testConfig(t, &buf), result); err != nil {
+		t.Fatalf("WriteSpecStatus: %v", err)
+	}
+	out := buf.String()
+	if !strings.Contains(out, "14 paths") {
+		t.Fatalf("output missing paths count:\n%s", out)
+	}
+	if !strings.Contains(out, "23 operations") {
+		t.Fatalf("output missing operations count:\n%s", out)
+	}
+	for _, method := range []string{"GET", "POST", "PUT", "DELETE"} {
+		if !strings.Contains(out, "["+method+"]") {
+			t.Fatalf("output missing method badge for %s:\n%s", method, out)
+		}
+	}
+}
+
+func TestWriteSpecStatusGraphQL(t *testing.T) {
+	var buf bytes.Buffer
+	result := SpecStatusResult{
+		Domain:            "example.com",
+		Format:            "yaml",
+		OutputPath:        "/tmp/spec.yaml",
+		Paths:             3,
+		Operations:        5,
+		GraphQLOperations: 8,
+		GraphQLFlows:      2,
+	}
+	if err := WriteSpecStatus(testConfig(t, &buf), result); err != nil {
+		t.Fatalf("WriteSpecStatus: %v", err)
+	}
+	out := buf.String()
+	if !strings.Contains(out, "GraphQL") {
+		t.Fatalf("output missing GraphQL section:\n%s", out)
+	}
+	if !strings.Contains(out, "8 operations") {
+		t.Fatalf("output missing GraphQL operation count:\n%s", out)
+	}
+}
