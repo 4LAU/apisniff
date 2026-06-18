@@ -1,5 +1,5 @@
-# Build
-apisniff
+# Build (root binary only — not the demo replay shim at docs/demos/demo-bin/apisniff)
+/apisniff
 dist/
 
 # IDE

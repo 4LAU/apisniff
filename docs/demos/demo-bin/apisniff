@@ -1,0 +1,15 @@
+#!/usr/bin/env bash
+# Demo shim — replays pre-captured `apisniff probe` output (docs/demos/captures/)
+# so the demo GIF is deterministic: identical pacing every render and the live
+# sites are never re-hit. Put this dir first on PATH only while recording:
+#   PATH="$PWD/docs/demos/demo-bin:$PATH" vhs docs/demos/probe.tape
+# Regenerate the captures with docs/demos/capture.py. Not a real binary.
+here="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+capture="$here/../captures/$2.ansi"
+if [ "$1" = "probe" ] && [ -f "$capture" ]; then
+  cat "$capture"
+  echo
+else
+  echo "demo shim: no capture for '$*' (see docs/demos/capture.py)" >&2
+  exit 1
+fi

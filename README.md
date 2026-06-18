@@ -106,6 +106,8 @@ apisniff share example.com
 3. **spec** — captured traffic becomes an OpenAPI document with inferred schemas, examples, and a GraphQL catalog.
 4. **replay** — captured calls are re-fired at the live API to surface drift (`match` / `drift` / `auth_expired` / `blocked`).
 
+> **`probe` checks the exact URL you give it, not the whole site.** Defenses vary by path: a homepage can read "no protection" while the login, search, or checkout API behind it sits under a tougher vendor. Probe the specific endpoints you care about, and treat the verdict as a signal for that URL.
+
 ## Commands
 
 | Command | Purpose | Docs |
