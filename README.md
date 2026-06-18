@@ -9,8 +9,10 @@
 [![Release](https://img.shields.io/github/v/release/4LAU/apisniff?color=blue)](https://github.com/4LAU/apisniff/releases)
 [![Platforms](https://img.shields.io/badge/platforms-macOS%20%7C%20Linux-lightgrey.svg)](#install)
 
-<!-- DEMO:hero — replace this comment with the recon demo once recorded:
-<img src="docs/demos/recon.gif" alt="apisniff recon capturing live API traffic" width="800">
+<img src="docs/demos/probe.gif" alt="apisniff probe reading the defenses on costco.com, target.com, and walmart.com" width="820">
+
+<!-- DEMO:hero — swap in the recon walkthrough here once recorded:
+<img src="docs/demos/recon.gif" alt="apisniff recon capturing live API traffic" width="820">
 -->
 
 </div>
