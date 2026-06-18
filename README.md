@@ -123,6 +123,12 @@ apisniff share example.com
 
 Every command supports `--help`. See the [CLI spec](docs/spec.md) for output-format contracts.
 
+## From capture to spec
+
+A finished capture becomes an OpenAPI spec, then a safe export, in two commands:
+
+<img src="docs/demos/spec.gif" alt="apisniff spec generating an OpenAPI document from a PokeAPI capture, then share exporting safe artifacts" width="720">
+
 ## What to do with the spec
 
 ```bash
