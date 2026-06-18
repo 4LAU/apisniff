@@ -10,10 +10,16 @@ import (
 )
 
 func TestDetectRateLimitDetectsSilentThrottle(t *testing.T) {
+	// First half of requests respond fast, second half slow — the detector
+	// compares the median of the first third of latencies against the last
+	// third. Send 12 (not the minimum 6) so the baseline window is 4 samples:
+	// its median rejects the one-off TCP connection-setup latency on request #1,
+	// which on a loaded CI runner can otherwise inflate a 2-sample baseline and
+	// break the 3x ratio.
 	var count atomic.Int32
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		if count.Add(1) > 4 {
-			time.Sleep(60 * time.Millisecond)
+		if count.Add(1) > 6 {
+			time.Sleep(80 * time.Millisecond)
 		} else {
 			time.Sleep(5 * time.Millisecond)
 		}
@@ -25,7 +31,7 @@ func TestDetectRateLimitDetectsSilentThrottle(t *testing.T) {
 		context.Background(),
 		server.URL,
 		Options{Timeout: time.Second},
-		RateOptions{Requests: 6, Concurrency: 1},
+		RateOptions{Requests: 12, Concurrency: 1},
 	)
 
 	if !rateLimit.SilentThrottle {
