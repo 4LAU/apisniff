@@ -1,5 +1,15 @@
 # Changelog
 
+## [0.10.0] — 2026-06-17
+
+### Added
+- Terminal output polish: method badges on `spec` output (e.g. `[GET] 12  [POST] 6`), capture duration on `recon` summary, humanized rate-limit details on `probe`.
+- `spec` command now accepts a bundle directory path (`spec BUNDLE`) in addition to a domain name — no more juggling `-i` and `-o` flags for the common case.
+
+### Fixed
+- `recon` finalization no longer silently skips writing `spec.yaml` when a single endpoint has an invalid example value (switched from strict validation to lenient marshal for this internal artifact).
+- Suppressed noisy GraphQL catalog log lines that printed validation errors to stderr during `recon` output.
+
 ## [0.9.0] — 2026-06-14
 
 ### Removed
