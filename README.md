@@ -1,18 +1,39 @@
+<div align="center">
+
 # apisniff
 
-One tool for API recon: preflight defenses, capture real traffic, extract a usable spec.
+**One tool for API recon: preflight defenses, capture real traffic, extract a usable spec.**
 
 [![CI](https://github.com/4LAU/apisniff/actions/workflows/ci.yml/badge.svg)](https://github.com/4LAU/apisniff/actions)
 [![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
+[![Release](https://img.shields.io/github/v/release/4LAU/apisniff?color=blue)](https://github.com/4LAU/apisniff/releases)
+[![Platforms](https://img.shields.io/badge/platforms-macOS%20%7C%20Linux-lightgrey.svg)](#install)
 
-## What you get
+<!-- DEMO:hero — replace this comment with the recon demo once recorded:
+<img src="docs/demos/recon.gif" alt="apisniff recon capturing live API traffic" width="800">
+-->
 
-- Probe a URL in 10 seconds, classify 25+ vendor products (Cloudflare, Akamai, DataDome, PerimeterX, Imperva, Kasada, and more)
-- Capture by default through a clean Chrome (no automation fingerprint) routed through a local MITM proxy — log in past bot detection (DataDome, PerimeterX, and similar) and record real on-the-wire cookies that make captures replayable; opt into CDP modes (`--mode cdp-launch` / `cdp-attach`) for WebSocket-frame capture or attaching to an existing browser
-- Import HAR files or Burp Suite exports for offline analysis
-- Generate an OpenAPI spec from captured traffic with schema inference and example values
-- Replay captured calls against the live API and see what changed
-- Export safely: derived artifacts only, no raw traffic, no credentials
+</div>
+
+---
+
+`probe` a target, `recon` real traffic through a clean browser, then turn the capture into an **OpenAPI spec** you can hand to a code generator, Postman, or an LLM. No automation fingerprint, real cookies, replayable captures.
+
+```bash
+apisniff probe example.com     # what defends it?
+apisniff recon example.com     # log in, capture real traffic
+apisniff spec example.com      # → OpenAPI spec
+```
+
+## Why apisniff
+
+- **Reads defenses in ~10 seconds** — classifies 25+ vendor products (Cloudflare, Akamai, DataDome, PerimeterX, Imperva, Kasada, and more).
+- **Captures past bot detection** — a clean Chrome with no automation fingerprint, routed through a local MITM proxy, so you log in by hand past defenses that block headless tools.
+- **Captures replayable cookies** — reads the real on-the-wire `Cookie`/`Set-Cookie` headers on XHR/fetch, so authenticated captures actually replay.
+- **Extracts a real spec** — OpenAPI 3.x with schema inference, example values, and a GraphQL operation catalog.
+- **Replays for drift** — fires captured calls at the live API and tells you what changed.
+- **Exports safely** — derived artifacts only, no raw traffic, no credentials.
+- **One static binary** — Go, no Python runtime, macOS and Linux (Intel + ARM).
 
 ## Install
 
@@ -20,37 +41,43 @@ One tool for API recon: preflight defenses, capture real traffic, extract a usab
 brew tap 4LAU/tap && brew install apisniff
 ```
 
-The Go build is a single binary with no Python runtime dependency. From source:
+<details>
+<summary>From source, or on Windows</summary>
 
 ```bash
 go build -ldflags="-s -w" -o apisniff ./cmd/apisniff
 ```
 
-apisniff ships prebuilt binaries for macOS and Linux (Intel and Apple/ARM). On Windows, run it under [WSL2](https://learn.microsoft.com/windows/wsl/install) and use the Linux build.
+apisniff ships prebuilt binaries for macOS and Linux (Intel and Apple/ARM). On Windows, run it under [WSL2](https://learn.microsoft.com/windows/wsl/install) with the Linux build.
+</details>
 
-## Quick Start
+## Quick start
 
 ```bash
-# Check what defenses a site has
+# 1. Check what defenses a site has
 apisniff probe example.com
 
-# Capture real traffic: opens a clean Chrome (no automation fingerprint) routed
-# through a local MITM proxy. Log in by hand, then close the window (or Ctrl+C)
-# to finish. Records real on-the-wire cookies on XHR/fetch, so captures replay.
+# 2. Capture real traffic — opens a clean Chrome routed through a local proxy.
+#    Log in by hand, exercise the app, then close the window (or Ctrl+C).
 apisniff recon example.com
 
+# 3. Turn the capture into an OpenAPI spec
+apisniff spec example.com -o spec.yaml
+
+# 4. Replay captured calls to detect drift
+apisniff replay example.com
+```
+
+<details>
+<summary>More commands — bundles, cleanup, sharing, CDP modes</summary>
+
+```bash
 # CDP mode: capture WebSocket frames or attach to an existing browser.
-# Does not capture Cookie/Set-Cookie on XHR/fetch.
+# (Does not capture Cookie/Set-Cookie on XHR/fetch.)
 apisniff recon example.com --mode cdp-launch
 
 # Run only the proxy (no browser) — point your own client at 127.0.0.1:8080
 apisniff recon example.com --no-browser --port 8080
-
-# Generate an API spec from the capture
-apisniff spec example.com -o spec.yaml
-
-# Replay captured calls to detect drift
-apisniff replay example.com
 
 # List local capture bundles
 apisniff bundles
@@ -59,70 +86,38 @@ apisniff bundles
 apisniff clean --older-than 30d --dry-run
 apisniff clean --older-than 30d --yes
 
-# Export a safe, shareable summary
+# Export a safe, shareable summary (no raw traffic, no credentials)
 apisniff share example.com
 ```
+</details>
+
+## How it works
+
+```
+   probe ───────▶ recon ───────▶ spec ───────▶ replay
+  defenses     real traffic    OpenAPI       drift check
+  (10 sec)    (clean Chrome)   (inferred)     (live API)
+```
+
+1. **probe** — passive + differential checks name the WAF / anti-bot vendors before you touch the app.
+2. **recon** — a fingerprint-free Chrome routed through a local MITM proxy captures the real wire, including auth cookies.
+3. **spec** — captured traffic becomes an OpenAPI document with inferred schemas, examples, and a GraphQL catalog.
+4. **replay** — captured calls are re-fired at the live API to surface drift (`match` / `drift` / `auth_expired` / `blocked`).
 
 ## Commands
 
 | Command | Purpose | Docs |
 |---------|---------|------|
-| [`probe`](docs/commands/probe.md) | Defense preflight: assess defenses, detect vendors, check rate limits | [Reference →](docs/commands/probe.md) |
-| [`recon`](docs/commands/recon.md) | Capture + classify: clean-Chrome proxy by default (real cookies), CDP modes for WebSocket frames, filter noise | [Reference →](docs/commands/recon.md) |
-| [`analyze`](docs/commands/analyze.md) | Offline analysis: import HAR, Burp XML, or JSONL captures | [Reference →](docs/commands/analyze.md) |
-| [`replay`](docs/commands/replay.md) | Replay captured calls and detect API drift | [Reference →](docs/commands/replay.md) |
-| [`spec`](docs/commands/spec.md) | Generate OpenAPI 3.0.3 from captured traffic | [Reference →](docs/commands/spec.md) |
-| [`share`](docs/commands/share.md) | Export shareable summary (no raw traffic, no credentials) | [Reference →](docs/commands/share.md) |
-| `bundles` | List local capture bundles; add `--credentials` to opt into credential detection and `--json` for machine output | `apisniff bundles --help` |
-| `clean` | Explicitly delete local capture bundles with `--older-than`, `--domain`, `--all`, `--yes`, `--dry-run`, and `--json` | `apisniff clean --help` |
+| `probe` | Defense preflight: assess defenses, detect vendors, check rate limits | [Reference →](docs/commands/probe.md) |
+| `recon` | Capture + classify: clean-Chrome proxy by default (real cookies), CDP modes for WebSocket frames | [Reference →](docs/commands/recon.md) |
+| `analyze` | Offline analysis: import HAR, Burp XML, or JSONL captures | [Reference →](docs/commands/analyze.md) |
+| `replay` | Replay captured calls and detect API drift | [Reference →](docs/commands/replay.md) |
+| `spec` | Generate OpenAPI 3.0.3 from captured traffic | [Reference →](docs/commands/spec.md) |
+| `share` | Export shareable summary (no raw traffic, no credentials) | [Reference →](docs/commands/share.md) |
+| `bundles` | List local capture bundles (`--credentials`, `--json`) | `apisniff bundles --help` |
+| `clean` | Delete local capture bundles (`--older-than`, `--domain`, `--all`, `--dry-run`) | `apisniff clean --help` |
 
-Every command supports `--help` for full flag documentation. See the [CLI spec](docs/spec.md) for output format contracts and conventions.
-
-## Guides
-
-- [Getting started](docs/guides/getting-started.md): install to API map in 5 minutes
-- [Workflow recipes](docs/guides/workflows.md): map an API, check for drift, compare defenses
-- [Capture formats](docs/guides/capture-formats.md): HAR, Burp XML, JSONL explained
-
-## Important Warnings
-
-Only run apisniff against systems you own, administer, or have explicit permission to test. The tool is built for API discovery and debugging, but it sends real requests and can capture sensitive session data.
-
-### Your IP address is exposed
-
-**This tool sends real HTTP requests from your IP.** Aggressive or repeated probing can get you rate-limited or blocked. `apisniff probe rate` fires rapid requests, so use it deliberately.
-
-Results reflect your IP's reputation. Residential IPs see fewer challenges than datacenter/cloud IPs. Use `--proxy` to compare results from different vantage points.
-
-### Capture files contain sensitive data
-
-`recon` and `analyze` capture **full HTTP traffic** including cookies, auth tokens, API keys, and form submissions. Raw bundles are stored locally with owner-only permissions and are **never safe to share, commit, or upload**.
-
-Raw capture bundles persist until you explicitly remove them. Use `apisniff bundles` for a metadata-only inventory, `apisniff bundles --credentials` when you intentionally want local credential detection, and `apisniff clean --dry-run` before deleting bundles with `apisniff clean --yes`. `clean` is explicit and does not auto-delete captures.
-
-Use `apisniff share` to create a safe export with only derived artifacts.
-
-### Recon capture modes
-
-`apisniff recon` defaults to proxy mode. It starts a local HTTP/HTTPS MITM proxy with HTTP/2 support and launches a real Chrome routed through it. That Chrome carries **no automation fingerprint** — no `--enable-automation`, no DevTools/CDP attachment, so `navigator.webdriver` is false — which is what lets you log in past bot-detection vendors (DataDome, PerimeterX, and similar) that block CDP-launched browsers. Because the proxy sees the wire, it captures the **real Cookie/Set-Cookie headers on XHR/fetch**, so authenticated captures are replayable. Chrome runs a fresh, disposable profile (wiped on exit, separate from your everyday Chrome), so you log in by hand each session. Log in, exercise the parts of the app you want captured, then **close the browser window** (or press Ctrl+C) to finish.
-
-For HTTPS, the launched Chrome accepts the proxy's certificates via `--ignore-certificate-errors-spki-list`, which tells that one disposable Chrome to trust **only apisniff's CA, matched by its public-key hash**. Every other certificate is still validated normally; this is the narrow, scoped flag, not the blunt `--ignore-certificate-errors` that switches off all certificate checks. So when Chrome warns that "security will suffer," the relaxation is one cert wide and confined to the throwaway profile; your everyday Chrome is untouched. The hash is passed on the command line, so **nothing is installed in any OS trust store and there is no keychain prompt**. Chrome shows a cosmetic "unsupported command-line flag" warning bar; that is browser UI only and is invisible to pages. The CA private key at `~/.apisniff/ca-key.pem` is sensitive (anything holding it can forge HTTPS certs for clients that trust the CA); it is stored with owner-only permissions.
-
-Pass `--no-browser` to start only the proxy and route your own client through `127.0.0.1:<port>` instead; in that case trust `~/.apisniff/ca-cert.pem` in that client yourself.
-
-`--mode cdp-launch` is the only mode that captures WebSocket frames, plus `resource_type` and cache/service-worker/body-size metadata, from Chrome's Network domain. It launches Chrome with a dedicated user data directory and a DevTools port. It does **not** capture Cookie/Set-Cookie on XHR/fetch (those are not exposed over CDP), so authenticated captures from CDP modes are not replayable the same way proxy captures are.
-
-`--mode cdp-attach` connects to an existing Chrome DevTools endpoint with `--remote-url` or `--port` and has the same capture capabilities — and the same cookie limitation — as `cdp-launch`.
-
-### What recon can see
-
-CDP modes only record traffic from the Chrome session apisniff launches or attaches to. Proxy mode only records traffic from clients explicitly configured to use the local proxy.
-
-Other apps, other browser windows, background services, and normal device traffic are not routed through apisniff unless you configure them for the same capture mode. apisniff does not turn on device-wide network capture, install a VPN, or monitor traffic outside the chosen session.
-
-To end a proxy capture session, close the launched Chrome's last window/tab or press **Ctrl+C** in the terminal; either one saves the bundle. (apisniff notices the window closing by watching the launched browser's own processes — no automation hook on the page.) If you see a port-in-use error, another capture session is probably still running on that port.
-
-When passive recon finds capture bundles older than 30 days, apisniff warns so you can review and clean them deliberately.
+Every command supports `--help`. See the [CLI spec](docs/spec.md) for output-format contracts.
 
 ## What to do with the spec
 
@@ -136,6 +131,46 @@ openapi-generator generate -i spec.yaml -g python -o client/
 cat spec.yaml | llm "write a Python client for this API"
 ```
 
+## Documentation
+
+- [Getting started](docs/guides/getting-started.md) — install to API map in 5 minutes
+- [Workflow recipes](docs/guides/workflows.md) — map an API, check for drift, compare defenses
+- [Capture formats](docs/guides/capture-formats.md) — HAR, Burp XML, JSONL explained
+
+## Safety
+
+> **Only run apisniff against systems you own, administer, or have explicit permission to test.** It sends real requests from your IP and can capture sensitive session data.
+
+- **Your IP is exposed.** apisniff sends real HTTP requests from your IP; aggressive probing can get you rate-limited or blocked. Results reflect your IP's reputation — use `--proxy` to compare vantage points.
+- **Capture files contain secrets.** `recon` and `analyze` capture full HTTP traffic, including cookies, tokens, and API keys. Raw bundles are stored locally with owner-only permissions and are **never safe to share, commit, or upload** — use `apisniff share` for a safe export.
+- **Captures don't auto-delete.** Bundles persist until you remove them with `apisniff clean`. apisniff warns about bundles older than 30 days.
+
+<details>
+<summary><b>How recon mode works</b> — fingerprint, certificates, and the cert warning bar</summary>
+
+<br>
+
+`apisniff recon` defaults to proxy mode. It starts a local HTTP/HTTPS MITM proxy (with HTTP/2) and launches a real Chrome routed through it. That Chrome carries **no automation fingerprint** — no `--enable-automation`, no DevTools/CDP attachment, so `navigator.webdriver` is false — which lets you log in past bot-detection vendors (DataDome, PerimeterX, and similar) that block CDP-launched browsers. Because the proxy sees the wire, it captures the **real Cookie/Set-Cookie headers on XHR/fetch**, so authenticated captures are replayable. Chrome runs a fresh, disposable profile (wiped on exit, separate from your everyday Chrome). Log in, exercise the app, then **close the browser window** (or press Ctrl+C) to finish.
+
+**Certificates.** For HTTPS, the launched Chrome accepts the proxy's certificates via `--ignore-certificate-errors-spki-list`, which trusts **only apisniff's CA, matched by its public-key hash**. Every other certificate is still validated normally — this is the narrow, scoped flag, not the blunt `--ignore-certificate-errors`. So when Chrome warns that "security will suffer," the relaxation is one cert wide and confined to the throwaway profile; your everyday Chrome is untouched. The hash is passed on the command line, so **nothing is installed in any OS trust store and there is no keychain prompt**. Chrome shows a cosmetic "unsupported command-line flag" warning bar — browser UI only, invisible to pages. The CA private key at `~/.apisniff/ca-key.pem` is sensitive (anything holding it can forge HTTPS certs for clients that trust the CA) and is stored with owner-only permissions.
+
+**Your own client.** Pass `--no-browser` to start only the proxy and route your own client through `127.0.0.1:<port>`; in that case trust `~/.apisniff/ca-cert.pem` in that client yourself.
+
+**CDP modes.** `--mode cdp-launch` is the only mode that captures WebSocket frames, plus `resource_type` and cache/service-worker/body-size metadata, from Chrome's Network domain. It does **not** capture Cookie/Set-Cookie on XHR/fetch (those aren't exposed over CDP), so CDP captures aren't replayable the way proxy captures are. `--mode cdp-attach` connects to an existing Chrome DevTools endpoint (`--remote-url` or `--port`) with the same capabilities and the same cookie limitation.
+</details>
+
+<details>
+<summary><b>What recon can and cannot see</b></summary>
+
+<br>
+
+CDP modes only record traffic from the Chrome session apisniff launches or attaches to. Proxy mode only records traffic from clients explicitly configured to use the local proxy.
+
+Other apps, browser windows, background services, and normal device traffic are **not** routed through apisniff unless you configure them for the same capture mode. apisniff does not turn on device-wide network capture, install a VPN, or monitor traffic outside the chosen session.
+
+To end a proxy capture, close the launched Chrome's last window/tab or press **Ctrl+C** in the terminal — either one saves the bundle. (apisniff notices the window closing by watching the launched browser's own processes, with no automation hook on the page.) A port-in-use error usually means another capture session is still running on that port.
+</details>
+
 ## Development
 
 ```bash
@@ -145,9 +180,7 @@ go test ./...
 go build -o apisniff ./cmd/apisniff
 ```
 
-See [CONTRIBUTING.md](CONTRIBUTING.md) for the local development workflow and [SECURITY.md](SECURITY.md) for vulnerability reporting.
-
-Build release binaries with `-ldflags="-s -w"` to keep binary size under the distribution target.
+See [CONTRIBUTING.md](CONTRIBUTING.md) for the development workflow and [SECURITY.md](SECURITY.md) for vulnerability reporting. Build release binaries with `-ldflags="-s -w"` to keep binary size under the distribution target.
 
 ## License
 
