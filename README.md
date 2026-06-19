@@ -158,7 +158,7 @@ cat spec.yaml | llm "write a Python client for this API"
 
 **Certificates.** For HTTPS, the launched Chrome accepts the proxy's certificates via `--ignore-certificate-errors-spki-list`, which trusts **only apisniff's CA, matched by its public-key hash**. Every other certificate is still validated normally — this is the narrow, scoped flag, not the blunt `--ignore-certificate-errors`. So when Chrome warns that "security will suffer," the relaxation is one cert wide and confined to the throwaway profile; your everyday Chrome is untouched. The hash is passed on the command line, so **nothing is installed in any OS trust store and there is no keychain prompt**. Chrome shows a cosmetic "unsupported command-line flag" warning bar — browser UI only, invisible to pages. The CA private key at `~/.apisniff/ca-key.pem` is sensitive (anything holding it can forge HTTPS certs for clients that trust the CA) and is stored with owner-only permissions.
 
-**Your own client.** Pass `--no-browser` to start only the proxy and route your own client through `127.0.0.1:<port>`; in that case trust `~/.apisniff/ca-cert.pem` in that client yourself.
+**Your own client.** Pass `--no-browser` to start only the proxy and route your own client through `127.0.0.1:<port>`; in that case trust `~/.apisniff/ca-cert.pem` in that client yourself. To capture from a phone or other device on the same LAN, add `--bind 0.0.0.0` (or a LAN IP), point the device's Wi-Fi proxy at the printed `<LAN-IP>:<port>`, and trust the CA on the device — this exposes the proxy to your network, so apisniff warns unless you restrict it with `--allow-client <ip>` (repeatable). IPv6 bind addresses aren't supported.
 
 **CDP modes.** `--mode cdp-launch` is the only mode that captures WebSocket frames, plus `resource_type` and cache/service-worker/body-size metadata, from Chrome's Network domain. It does **not** capture Cookie/Set-Cookie on XHR/fetch (those aren't exposed over CDP), so CDP captures aren't replayable the way proxy captures are. `--mode cdp-attach` connects to an existing Chrome DevTools endpoint (`--remote-url` or `--port`) with the same capabilities and the same cookie limitation.
 </details>
@@ -170,7 +170,7 @@ cat spec.yaml | llm "write a Python client for this API"
 
 CDP modes only record traffic from the Chrome session apisniff launches or attaches to. Proxy mode only records traffic from clients explicitly configured to use the local proxy.
 
-Other apps, browser windows, background services, and normal device traffic are **not** routed through apisniff unless you configure them for the same capture mode. apisniff does not turn on device-wide network capture, install a VPN, or monitor traffic outside the chosen session.
+Other apps, browser windows, background services, and normal device traffic are **not** routed through apisniff unless you configure them for the same capture mode. apisniff does not turn on device-wide network capture, install a VPN, or monitor traffic outside the chosen session. LAN capture is the same: the device must be explicitly pointed at the proxy — apisniff never passively sniffs the network.
 
 To end a proxy capture, close the launched Chrome's last window/tab or press **Ctrl+C** in the terminal — either one saves the bundle. (apisniff notices the window closing by watching the launched browser's own processes, with no automation hook on the page.) A port-in-use error usually means another capture session is still running on that port.
 </details>
