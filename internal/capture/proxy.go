@@ -67,7 +67,7 @@ func CaptureProxy(ctx context.Context, cfg Config) (*Result, error) {
 	// it (done before Serve starts, so no concurrent map access). Computed here
 	// rather than at launch so the same value feeds LaunchCleanBrowser below.
 	chromeTargetHost := chromeProxyTarget(bindHost)
-	allowed = allowlistForListener(allowed, bindHost, chromeTargetHost, cfg.LaunchBrowser)
+	allowed = allowlistForListener(allowed, bindHost, cfg.LaunchBrowser)
 	// No-browser callers (CLI --no-browser AND direct library callers) need a
 	// stable, knowable endpoint to point their own client at; default to 8080.
 	// A launched browser is pointed at whatever port we bind, so it can be
@@ -466,14 +466,23 @@ func normalizeBind(cfg Config) (bindHost string, isLoopback bool, allowed map[st
 	return bindHost, isLoopback, allowed, nil
 }
 
-// chromeProxyTarget picks the host a launched Chrome (on this same machine)
-// dials to reach the proxy: 127.0.0.1 for a loopback or unspecified (0.0.0.0)
-// bind — both reachable via loopback — or the specific bind host itself when it
-// is a concrete LAN IP (reachable from the same host). Pure so the selection is
-// unit-testable without launching Chrome.
-func chromeProxyTarget(bindHost string) string {
+// isSpecificBindIP reports whether bindHost is a concrete LAN IP — one that
+// parses and is neither loopback nor the unspecified 0.0.0.0. Loopback and
+// unspecified binds are reachable on this host via 127.0.0.1; a specific IP is
+// not, which is what the Chrome-target, allowlist, and device-target logic key
+// on. Centralizing the predicate keeps those three in lockstep.
+func isSpecificBindIP(bindHost string) bool {
 	addr, err := netip.ParseAddr(bindHost)
-	if err == nil && !addr.IsLoopback() && !addr.IsUnspecified() {
+	return err == nil && !addr.IsLoopback() && !addr.IsUnspecified()
+}
+
+// chromeProxyTarget picks the host a launched Chrome (on this same machine)
+// dials to reach the proxy: the specific bind host when it is a concrete LAN IP
+// (reachable from the same host), otherwise 127.0.0.1 (a loopback or 0.0.0.0
+// bind both answer on loopback). Pure so the selection is unit-testable without
+// launching Chrome.
+func chromeProxyTarget(bindHost string) string {
+	if isSpecificBindIP(bindHost) {
 		return bindHost
 	}
 	return "127.0.0.1"
@@ -486,8 +495,8 @@ func chromeProxyTarget(bindHost string) string {
 // and unspecified binds keep Chrome on 127.0.0.1 (always allowed), and the no-
 // allowlist / no-browser cases are returned unchanged. It never mutates its input
 // so it is unit-testable as a pure function.
-func allowlistForListener(allowed map[string]bool, bindHost, chromeTargetHost string, launchBrowser bool) map[string]bool {
-	if !launchBrowser || len(allowed) == 0 || chromeTargetHost != bindHost {
+func allowlistForListener(allowed map[string]bool, bindHost string, launchBrowser bool) map[string]bool {
+	if !launchBrowser || len(allowed) == 0 || !isSpecificBindIP(bindHost) {
 		return allowed
 	}
 	out := make(map[string]bool, len(allowed)+1)
@@ -575,24 +584,15 @@ func usableLANv4() []string {
 	return filterLANv4(ifaces)
 }
 
-// addrToIPv4 extracts the IPv4 form of a net.Addr (a *net.IPNet on real
-// interfaces), tolerating bare-IP strings via the net.Addr.String() fallback.
+// addrToIPv4 extracts the IPv4 form of an interface address. net.Interface.Addrs
+// returns *net.IPNet values whose String() is CIDR form, so ParseCIDR is the only
+// path that matters; a non-CIDR address yields nil.
 func addrToIPv4(addr net.Addr) net.IP {
 	ip, _, err := net.ParseCIDR(addr.String())
 	if err != nil {
-		return net.ParseIP(addr.String()).To4()
+		return nil
 	}
 	return ip.To4()
-}
-
-// joinAllowed renders the allowlist as a deterministic, comma-joined string.
-func joinAllowed(allowed map[string]bool) string {
-	ips := make([]string, 0, len(allowed))
-	for ip := range allowed {
-		ips = append(ips, ip)
-	}
-	sort.Strings(ips)
-	return strings.Join(ips, ", ")
 }
 
 // writeNonLoopbackSetup prints the security warning and device-proxy setup for a
@@ -609,7 +609,12 @@ func writeNonLoopbackSetup(w io.Writer, bindHost string, port int, allowed map[s
 		fmt.Fprintf(w, "Set your device's Wi-Fi proxy to %s:%d\n", ip, port)
 	}
 	if len(allowed) > 0 {
-		fmt.Fprintf(w, "Allowed clients: %s\n", joinAllowed(allowed))
+		ips := make([]string, 0, len(allowed))
+		for ip := range allowed {
+			ips = append(ips, ip)
+		}
+		sort.Strings(ips)
+		fmt.Fprintf(w, "Allowed clients: %s\n", strings.Join(ips, ", "))
 	}
 }
 
@@ -619,8 +624,7 @@ func writeNonLoopbackSetup(w io.Writer, bindHost string, port int, allowed map[s
 // bound to the unspecified 0.0.0.0. lanIPs is passed in so the selection stays a
 // pure, unit-testable function.
 func deviceProxyTargets(bindHost string, lanIPs []string) []string {
-	addr, err := netip.ParseAddr(bindHost)
-	if err == nil && !addr.IsUnspecified() {
+	if isSpecificBindIP(bindHost) {
 		return []string{bindHost}
 	}
 	out := append([]string(nil), lanIPs...)

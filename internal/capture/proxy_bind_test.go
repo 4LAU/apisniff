@@ -194,7 +194,7 @@ func TestAllowlistForListenerIncludesBindHost(t *testing.T) {
 	// self-connection (arriving from the bind IP) is permitted, and the
 	// user-allowed client is preserved.
 	input := map[string]bool{"10.0.0.5": true}
-	got := allowlistForListener(input, "192.168.1.10", "192.168.1.10", true)
+	got := allowlistForListener(input, "192.168.1.10", true)
 	if !got["10.0.0.5"] {
 		t.Error("user-allowed client 10.0.0.5 was dropped")
 	}
@@ -209,16 +209,16 @@ func TestAllowlistForListenerIncludesBindHost(t *testing.T) {
 
 func TestAllowlistForListenerNoOpCases(t *testing.T) {
 	base := map[string]bool{"10.0.0.5": true}
-	// Chrome target is loopback (unspecified bind), not the bind host → no add.
-	if got := allowlistForListener(base, "0.0.0.0", "127.0.0.1", true); got["0.0.0.0"] {
+	// Unspecified bind is not a specific IP (Chrome stays on loopback) → no add.
+	if got := allowlistForListener(base, "0.0.0.0", true); got["0.0.0.0"] {
 		t.Error("unspecified bind should not be added to the allowlist")
 	}
 	// No browser launched → no add.
-	if got := allowlistForListener(base, "192.168.1.10", "192.168.1.10", false); got["192.168.1.10"] {
+	if got := allowlistForListener(base, "192.168.1.10", false); got["192.168.1.10"] {
 		t.Error("bind host should not be added when no browser is launched")
 	}
 	// Empty allowlist → returned unchanged (and still empty).
-	if got := allowlistForListener(map[string]bool{}, "192.168.1.10", "192.168.1.10", true); len(got) != 0 {
+	if got := allowlistForListener(map[string]bool{}, "192.168.1.10", true); len(got) != 0 {
 		t.Errorf("empty allowlist should stay empty, got %v", got)
 	}
 }
@@ -242,19 +242,6 @@ func TestDeviceProxyTargets(t *testing.T) {
 	// The caller's slice is not mutated by the internal sort.
 	if lan[0] != "192.168.1.5" || lan[1] != "10.0.0.2" {
 		t.Fatalf("deviceProxyTargets mutated its input slice: %v", lan)
-	}
-}
-
-func TestFilterLANv4BareIPFallback(t *testing.T) {
-	// A bare IP (no CIDR) exercises addrToIPv4's net.ParseIP fallback branch,
-	// which net.ParseCIDR can't parse.
-	ifaces := []ifaceAddrs{
-		{Flags: net.FlagUp, Addrs: []net.Addr{stringAddr("192.168.1.5")}},
-	}
-	got := filterLANv4(ifaces)
-	want := []string{"192.168.1.5"}
-	if len(got) != 1 || got[0] != want[0] {
-		t.Fatalf("filterLANv4(bare IP) = %v, want %v", got, want)
 	}
 }
 
