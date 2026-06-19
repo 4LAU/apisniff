@@ -140,13 +140,15 @@ func newProbeCommand() *cobra.Command {
 
 func newReconCommand() *cobra.Command {
 	var (
-		jsonOutput bool
-		proxyURL   string
-		port       int
-		mode       string
-		attachURL  string
-		headless   bool
-		noBrowser  bool
+		jsonOutput   bool
+		proxyURL     string
+		port         int
+		mode         string
+		attachURL    string
+		headless     bool
+		noBrowser    bool
+		bindHost     string
+		allowClients []string
 	)
 	cmd := &cobra.Command{
 		Use:   "recon DOMAIN",
@@ -155,6 +157,9 @@ func newReconCommand() *cobra.Command {
 		RunE: func(cmd *cobra.Command, args []string) error {
 			if proxyURL != "" {
 				return errors.New("--proxy as an upstream proxy is not implemented; use --mode proxy to run the apisniff MITM proxy")
+			}
+			if (mode == "cdp-launch" || mode == "cdp-attach") && (cmd.Flags().Changed("bind") || cmd.Flags().Changed("allow-client")) {
+				return errors.New("--bind and --allow-client apply to proxy mode only")
 			}
 			domain, launchURL := normalizeTarget(args[0])
 			if !jsonOutput {
@@ -181,14 +186,16 @@ func newReconCommand() *cobra.Command {
 				statusWriter = nil
 			}
 			result, err := captureRun(cmd.Context(), capture.Config{
-				Domain:        domain,
-				URL:           launchURL,
-				Mode:          mode,
-				Port:          port,
-				AttachURL:     attachURL,
-				Headless:      headless,
-				LaunchBrowser: mode == "proxy" && !noBrowser,
-				StatusWriter:  statusWriter,
+				Domain:         domain,
+				URL:            launchURL,
+				Mode:           mode,
+				Port:           port,
+				BindHost:       bindHost,
+				AllowedClients: allowClients,
+				AttachURL:      attachURL,
+				Headless:       headless,
+				LaunchBrowser:  mode == "proxy" && !noBrowser,
+				StatusWriter:   statusWriter,
 			})
 			if err != nil {
 				return err
@@ -206,7 +213,7 @@ func newReconCommand() *cobra.Command {
 				FilteredPath:         result.FilteredPath,
 				Defenses:             result.Stats.Defenses,
 				UnattributedAntibot:  result.Stats.UnattributedAntibot,
-				DurationSeconds:     result.Stats.DurationSeconds,
+				DurationSeconds:      result.Stats.DurationSeconds,
 				GraphQLOperations:    result.GraphQL.OperationCount,
 				GraphQLFlows:         result.GraphQL.FlowCount,
 				GraphQLCapturedQuery: result.GraphQL.CapturedQueryCount,
@@ -221,6 +228,8 @@ func newReconCommand() *cobra.Command {
 	cmd.Flags().StringVar(&attachURL, "remote-url", "", "CDP URL for cdp-attach")
 	cmd.Flags().BoolVar(&headless, "headless", false, "launch Chrome headless")
 	cmd.Flags().BoolVar(&noBrowser, "no-browser", false, "skip Chrome launch in proxy mode")
+	cmd.Flags().StringVar(&bindHost, "bind", "127.0.0.1", "address the proxy listens on (use 0.0.0.0 or a LAN IP to capture from other devices)")
+	cmd.Flags().StringSliceVar(&allowClients, "allow-client", nil, "restrict which source IPs may connect when --bind is non-loopback (repeatable)")
 	return cmd
 }
 
@@ -685,10 +694,10 @@ func isPrefilteredBundleInput(path string) bool {
 }
 
 type specCounts struct {
-	paths      int
-	operations int
-	methods    map[string]int
-	graphqlOps int
+	paths        int
+	operations   int
+	methods      map[string]int
+	graphqlOps   int
 	graphqlPaths int
 }
 
