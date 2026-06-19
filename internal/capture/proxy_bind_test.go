@@ -141,6 +141,37 @@ func TestAllowlistListenerAcceptsLoopbackAndRejectsOthers(t *testing.T) {
 	}
 }
 
+// TestAllowlistMatchesIPv4MappedRemote guards the v4-in-v6 normalization on both
+// sides: normalizeBind must store an IPv4-mapped --allow-client entry in
+// dotted-quad form, and Accept must unmap an IPv4-mapped remote before lookup, so
+// a dual-stack kernel delivering ::ffff:a.b.c.d does not silently reject a
+// legitimately allowlisted device.
+func TestAllowlistMatchesIPv4MappedRemote(t *testing.T) {
+	// Store side: a mapped --allow-client entry folds to dotted-quad.
+	_, _, allowed, err := normalizeBind(Config{BindHost: "0.0.0.0", AllowedClients: []string{"::ffff:192.168.1.50"}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !allowed["192.168.1.50"] || len(allowed) != 1 {
+		t.Fatalf("allowed = %v, want {192.168.1.50}", allowed)
+	}
+
+	// Compare side: a mapped remote against a dotted-quad allowlist key is admitted.
+	mappedRemote := &scriptConn{remote: "[::ffff:192.168.1.50]:5"}
+	base := &scriptListener{conns: []net.Conn{mappedRemote}}
+	all := &allowlistListener{Listener: base, allowed: map[string]bool{"192.168.1.50": true}}
+	got, err := all.Accept()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got != mappedRemote {
+		t.Fatalf("Accept returned %v, want mapped remote conn", got)
+	}
+	if mappedRemote.closed {
+		t.Error("allowlisted v4-mapped remote was incorrectly closed")
+	}
+}
+
 func TestCaptureProxyRejectsIPv6Bind(t *testing.T) {
 	setTestHome(t, t.TempDir())
 	ctx, cancel := context.WithCancel(context.Background())

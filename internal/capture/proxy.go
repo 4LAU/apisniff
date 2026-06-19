@@ -458,7 +458,10 @@ func normalizeBind(cfg Config) (bindHost string, isLoopback bool, allowed map[st
 		if parseErr != nil {
 			return "", false, nil, fmt.Errorf("invalid --allow-client address %q: %w", raw, parseErr)
 		}
-		allowed[client.String()] = true
+		// Fold IPv4-mapped IPv6 (::ffff:a.b.c.d) to its dotted-quad form so the
+		// key matches the unmapped form compared in Accept; otherwise a mapped
+		// --allow-client entry would never match a plain-IPv4 remote.
+		allowed[client.Unmap().String()] = true
 	}
 	if len(allowed) > 0 && isLoopback {
 		return "", false, nil, errors.New("--allow-client only applies when --bind is a non-loopback address")
@@ -532,6 +535,10 @@ func (l *allowlistListener) Accept() (net.Conn, error) {
 			_ = conn.Close()
 			continue
 		}
+		// Unmap IPv4-in-IPv6 remotes (a dual-stack kernel may deliver an IPv4
+		// peer as ::ffff:a.b.c.d) so the lookup matches the dotted-quad keys
+		// stored by normalizeBind.
+		ip = ip.Unmap()
 		if ip.IsLoopback() || l.allowed[ip.String()] {
 			return conn, nil
 		}
