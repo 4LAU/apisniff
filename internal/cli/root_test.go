@@ -649,6 +649,74 @@ func TestReconJSONSuppressesAdvisoryNotes(t *testing.T) {
 	}
 }
 
+func TestReconBindGuardRejectsCDPModes(t *testing.T) {
+	previous := captureRun
+	previousCount := bundleCountOlderThan
+	t.Cleanup(func() {
+		captureRun = previous
+		bundleCountOlderThan = previousCount
+	})
+	bundleCountOlderThan = func(time.Duration) (int, error) { return 0, nil }
+	var ran bool
+	captureRun = func(_ context.Context, _ capture.Config) (*capture.Result, error) {
+		ran = true
+		return &capture.Result{Stats: model.SessionStats{Domain: "example.com", Dropped: map[string]int{}}}, nil
+	}
+	for _, tc := range []struct {
+		name string
+		mode string
+		args []string
+	}{
+		{"bind", "cdp-launch", []string{"example.com", "--mode", "cdp-launch", "--bind", "0.0.0.0"}},
+		{"allow-client", "cdp-attach", []string{"example.com", "--mode", "cdp-attach", "--allow-client", "1.2.3.4"}},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			ran = false
+			_, _, err := executeForTest(newReconCommand(), tc.args...)
+			if err == nil {
+				t.Fatal("expected --bind/--allow-client in cdp mode to be rejected, got nil")
+			}
+			if !strings.Contains(err.Error(), "proxy mode only") {
+				t.Fatalf("error %q does not explain the guard", err)
+			}
+			if ran {
+				t.Fatal("capture ran despite the guard rejecting the flags")
+			}
+		})
+	}
+}
+
+func TestReconPassesBindAndAllowClient(t *testing.T) {
+	previous := captureRun
+	previousCount := bundleCountOlderThan
+	t.Cleanup(func() {
+		captureRun = previous
+		bundleCountOlderThan = previousCount
+	})
+	bundleCountOlderThan = func(time.Duration) (int, error) { return 0, nil }
+	var got capture.Config
+	captureRun = func(_ context.Context, cfg capture.Config) (*capture.Result, error) {
+		got = cfg
+		return &capture.Result{
+			BundleDir: "/tmp/apisniff/example",
+			FlowsPath: "/tmp/apisniff/example/flows.jsonl",
+			Stats:     model.SessionStats{Domain: "example.com", Dropped: map[string]int{}},
+		}, nil
+	}
+	if _, _, err := executeForTest(newReconCommand(), "example.com", "--no-browser",
+		"--bind", "192.168.1.10",
+		"--allow-client", "192.168.1.50",
+		"--allow-client", "10.0.0.1"); err != nil {
+		t.Fatalf("recon returned error: %v", err)
+	}
+	if got.BindHost != "192.168.1.10" {
+		t.Fatalf("BindHost = %q, want 192.168.1.10", got.BindHost)
+	}
+	if len(got.AllowedClients) != 2 || got.AllowedClients[0] != "192.168.1.50" || got.AllowedClients[1] != "10.0.0.1" {
+		t.Fatalf("AllowedClients = %v, want [192.168.1.50 10.0.0.1]", got.AllowedClients)
+	}
+}
+
 func executeForTest(cmd *cobra.Command, args ...string) (string, string, error) {
 	var stdout bytes.Buffer
 	var stderr bytes.Buffer

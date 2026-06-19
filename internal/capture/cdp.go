@@ -30,16 +30,24 @@ import (
 // contract. An explicit Mode:"proxy" with LaunchBrowser:false launches nothing and
 // blocks until timeout unless an external client drives traffic through the proxy.
 type Config struct {
-	Domain        string
-	URL           string
-	Mode          string
-	Port          int
-	UserDataDir   string
-	AttachURL     string
-	Headless      bool
-	LaunchBrowser bool
-	Timeout       time.Duration
-	StatusWriter  io.Writer
+	Domain string
+	URL    string
+	Mode   string
+	Port   int
+	// BindHost is the address the proxy listens on. Empty ("") is treated as
+	// 127.0.0.1. Use "0.0.0.0" or a specific LAN IP to capture from other
+	// devices (e.g. a phone on the same network). IPv6 is rejected.
+	BindHost string
+	// AllowedClients restricts which source IPs may connect when BindHost is a
+	// non-loopback address. Loopback is always allowed (the launched Chrome is
+	// never denied). Empty means no restriction.
+	AllowedClients []string
+	UserDataDir    string
+	AttachURL      string
+	Headless       bool
+	LaunchBrowser  bool
+	Timeout        time.Duration
+	StatusWriter   io.Writer
 }
 
 type Result struct {

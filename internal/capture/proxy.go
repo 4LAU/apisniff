@@ -14,16 +14,20 @@ import (
 	"crypto/x509/pkix"
 	"encoding/base64"
 	"encoding/pem"
+	"errors"
 	"fmt"
 	"io"
 	"log"
 	"math/big"
 	"net"
 	"net/http"
+	"net/netip"
 	"net/url"
 	"os"
 	"os/signal"
 	"path/filepath"
+	"sort"
+	"strconv"
 	"strings"
 	"sync"
 	"sync/atomic"
@@ -49,6 +53,21 @@ func CaptureProxy(ctx context.Context, cfg Config) (*Result, error) {
 			return nil, fmt.Errorf("Chrome not found; install Chrome or Chromium, or rerun with --no-browser")
 		}
 	}
+	// Bind/allowlist validation is authoritative here (the CLI can be bypassed):
+	// reject IPv6 binds and an allowlist paired with a loopback bind before any
+	// port is opened.
+	bindHost, isLoopback, allowed, err := normalizeBind(cfg)
+	if err != nil {
+		return nil, err
+	}
+	// A launched Chrome dials the proxy from this same host. When the bind is a
+	// specific LAN IP, Chrome must dial that IP and its self-connection arrives
+	// from the bind IP — neither loopback nor (necessarily) in the allowlist — so
+	// include the bind host among the allowed sources before the listener wraps
+	// it (done before Serve starts, so no concurrent map access). Computed here
+	// rather than at launch so the same value feeds LaunchCleanBrowser below.
+	chromeTargetHost := chromeProxyTarget(bindHost)
+	allowed = allowlistForListener(allowed, bindHost, cfg.LaunchBrowser)
 	// No-browser callers (CLI --no-browser AND direct library callers) need a
 	// stable, knowable endpoint to point their own client at; default to 8080.
 	// A launched browser is pointed at whatever port we bind, so it can be
@@ -229,12 +248,18 @@ func CaptureProxy(ctx context.Context, cfg Config) (*Result, error) {
 	})
 
 	server := &http.Server{Handler: proxy}
-	listener, err := net.Listen("tcp", fmt.Sprintf("127.0.0.1:%d", cfg.Port))
+	listener, err := net.Listen("tcp", net.JoinHostPort(bindHost, strconv.Itoa(cfg.Port)))
 	if err != nil {
 		return nil, err
 	}
 	cfg.Port = listener.Addr().(*net.TCPAddr).Port // resolve ephemeral → actual
 	server.Addr = listener.Addr().String()
+	// Off-loopback binds may carry a source-IP allowlist. A rejected connection
+	// is closed and the loop keeps serving, so a stranger never takes the proxy
+	// down. Loopback is always allowed so the launched Chrome is never denied.
+	if len(allowed) > 0 {
+		listener = &allowlistListener{Listener: listener, allowed: allowed}
+	}
 	runCtx, stopSignals := signal.NotifyContext(ctx, gracefulSignals...)
 	defer stopSignals()
 	runCtx, cancelTimeout := context.WithTimeout(runCtx, cfg.Timeout)
@@ -269,8 +294,11 @@ func CaptureProxy(ctx context.Context, cfg Config) (*Result, error) {
 			fmt.Fprintf(cfg.StatusWriter, "Launching Chrome (fresh profile, no automation flags) through proxy...\n")
 			fmt.Fprintf(cfg.StatusWriter, "Chrome will show a yellow \"unsupported flag\" warning bar at the top — that's expected and safe to ignore.\n")
 			fmt.Fprintf(cfg.StatusWriter, "Log in and use the site. When done: close the browser window, or press Ctrl+C here.\n")
+			if !isLoopback {
+				writeNonLoopbackSetup(cfg.StatusWriter, bindHost, cfg.Port, allowed)
+			}
 		}
-		cmd, err := LaunchCleanBrowser(runCtx, fmt.Sprintf("127.0.0.1:%d", cfg.Port), spkiHash, profileDir, cfg.URL, cfg.Headless)
+		cmd, err := LaunchCleanBrowser(runCtx, net.JoinHostPort(chromeTargetHost, strconv.Itoa(cfg.Port)), spkiHash, profileDir, cfg.URL, cfg.Headless)
 		if err != nil {
 			shutdownCtx, cancelShutdown := context.WithTimeout(context.Background(), 5*time.Second)
 			defer cancelShutdown()
@@ -326,7 +354,14 @@ func CaptureProxy(ctx context.Context, cfg Config) (*Result, error) {
 			fmt.Fprintf(cfg.StatusWriter, "MITM proxy listening on %s\n", server.Addr)
 			fmt.Fprintf(cfg.StatusWriter, "CA certificate: %s\n", caPath)
 			fmt.Fprintf(cfg.StatusWriter, "SPKI hash: %s\n", spkiHash)
-			fmt.Fprintf(cfg.StatusWriter, "Configure your client to proxy through %s and trust the CA above.\n", server.Addr)
+			if isLoopback {
+				// server.Addr is a real, dialable loopback endpoint here.
+				fmt.Fprintf(cfg.StatusWriter, "Configure your client to proxy through %s and trust the CA above.\n", server.Addr)
+			} else {
+				// Off-loopback, server.Addr prints 0.0.0.0:<port> (or a LAN IP),
+				// which is not a usable device proxy target — print real targets.
+				writeNonLoopbackSetup(cfg.StatusWriter, bindHost, cfg.Port, allowed)
+			}
 		}
 		showStatus := cfg.StatusWriter != nil && isTerminal(cfg.StatusWriter)
 		if showStatus {
@@ -387,6 +422,214 @@ func CaptureProxy(ctx context.Context, cfg Config) (*Result, error) {
 	// Non-fatal: capture already succeeded. Co-locate spec + private catalog.
 	gqlSummary := finalize.FromBundle(bundle, flowsPath, statsCopy.Domain)
 	return &Result{BundleDir: bundle, FlowsPath: flowsPath, FilteredPath: resultFilteredPath, CAPath: caPath, SPKIHash: spkiHash, Stats: statsCopy, GraphQL: gqlSummary}, nil
+}
+
+// normalizeBind resolves cfg.BindHost (empty/"localhost" → 127.0.0.1), rejects
+// IPv6, folds an IPv4-mapped IPv6 address (::ffff:a.b.c.d) to its dotted-quad
+// form, validates each cfg.AllowedClients entry parses as an IP, and rejects an
+// allowlist paired with a loopback bind. It returns the resolved bind host,
+// whether it is loopback, and the allowlist keyed by normalized IP string (so
+// "192.168.0.5" matches regardless of formatting). Extracted from CaptureProxy
+// so the validation is unit-testable without launching Chrome.
+func normalizeBind(cfg Config) (bindHost string, isLoopback bool, allowed map[string]bool, err error) {
+	bindHost = cfg.BindHost
+	if bindHost == "" || bindHost == "localhost" {
+		bindHost = "127.0.0.1"
+	}
+	addr, err := netip.ParseAddr(bindHost)
+	if err != nil {
+		return "", false, nil, fmt.Errorf("invalid --bind address %q: %w", bindHost, err)
+	}
+	if addr.Is6() && !addr.Is4In6() {
+		return "", false, nil, errors.New("IPv6 bind addresses are not supported")
+	}
+	// An IPv4-mapped IPv6 address (::ffff:a.b.c.d) slips past the IPv6 gate
+	// above; fold it to its clean dotted-quad form so every downstream use
+	// (listener bind, warning output, device targets) sees a plain IPv4 instead
+	// of a bracketed literal. Compute isLoopback from the unmapped addr too.
+	if addr.Is4In6() {
+		addr = addr.Unmap()
+		bindHost = addr.String()
+	}
+	isLoopback = addr.IsLoopback()
+	allowed = make(map[string]bool)
+	for _, raw := range cfg.AllowedClients {
+		client, parseErr := netip.ParseAddr(raw)
+		if parseErr != nil {
+			return "", false, nil, fmt.Errorf("invalid --allow-client address %q: %w", raw, parseErr)
+		}
+		allowed[client.String()] = true
+	}
+	if len(allowed) > 0 && isLoopback {
+		return "", false, nil, errors.New("--allow-client only applies when --bind is a non-loopback address")
+	}
+	return bindHost, isLoopback, allowed, nil
+}
+
+// isSpecificBindIP reports whether bindHost is a concrete LAN IP — one that
+// parses and is neither loopback nor the unspecified 0.0.0.0. Loopback and
+// unspecified binds are reachable on this host via 127.0.0.1; a specific IP is
+// not, which is what the Chrome-target, allowlist, and device-target logic key
+// on. Centralizing the predicate keeps those three in lockstep.
+func isSpecificBindIP(bindHost string) bool {
+	addr, err := netip.ParseAddr(bindHost)
+	return err == nil && !addr.IsLoopback() && !addr.IsUnspecified()
+}
+
+// chromeProxyTarget picks the host a launched Chrome (on this same machine)
+// dials to reach the proxy: the specific bind host when it is a concrete LAN IP
+// (reachable from the same host), otherwise 127.0.0.1 (a loopback or 0.0.0.0
+// bind both answer on loopback). Pure so the selection is unit-testable without
+// launching Chrome.
+func chromeProxyTarget(bindHost string) string {
+	if isSpecificBindIP(bindHost) {
+		return bindHost
+	}
+	return "127.0.0.1"
+}
+
+// allowlistForListener returns the allowlist the allowlistListener should enforce.
+// When a browser is launched against a specific-IP bind, Chrome's self-connection
+// arrives from the bind IP — neither loopback nor in the user's allowlist — so
+// the bind host is added to keep that connection from being rejected. Loopback
+// and unspecified binds keep Chrome on 127.0.0.1 (always allowed), and the no-
+// allowlist / no-browser cases are returned unchanged. It never mutates its input
+// so it is unit-testable as a pure function.
+func allowlistForListener(allowed map[string]bool, bindHost string, launchBrowser bool) map[string]bool {
+	if !launchBrowser || len(allowed) == 0 || !isSpecificBindIP(bindHost) {
+		return allowed
+	}
+	out := make(map[string]bool, len(allowed)+1)
+	for ip := range allowed {
+		out[ip] = true
+	}
+	out[bindHost] = true
+	return out
+}
+
+// allowlistListener wraps a net.Listener and silently drops connections whose
+// source IP is neither loopback nor in the allowlist. Accept loops until a
+// permitted connection arrives (or the underlying listener errors), so a
+// rejected connection never surfaces as a Serve error.
+type allowlistListener struct {
+	net.Listener
+	allowed map[string]bool
+}
+
+func (l *allowlistListener) Accept() (net.Conn, error) {
+	for {
+		conn, err := l.Listener.Accept()
+		if err != nil {
+			return nil, err
+		}
+		host, _, err := net.SplitHostPort(conn.RemoteAddr().String())
+		if err != nil {
+			_ = conn.Close()
+			continue
+		}
+		ip, err := netip.ParseAddr(host)
+		if err != nil {
+			_ = conn.Close()
+			continue
+		}
+		if ip.IsLoopback() || l.allowed[ip.String()] {
+			return conn, nil
+		}
+		_ = conn.Close()
+	}
+}
+
+// ifaceAddrs pairs an interface's flags with its addresses so filterLANv4 can
+// be unit-tested with synthetic data instead of real network interfaces.
+type ifaceAddrs struct {
+	Flags net.Flags
+	Addrs []net.Addr
+}
+
+// filterLANv4 returns the IPv4 address strings that are usable as a device proxy
+// target: on interfaces that are up, non-loopback, and non-point-to-point, it
+// keeps non-loopback, non-link-local IPv4 addresses.
+func filterLANv4(ifaces []ifaceAddrs) []string {
+	var out []string
+	for _, iface := range ifaces {
+		if iface.Flags&net.FlagUp == 0 || iface.Flags&net.FlagLoopback != 0 || iface.Flags&net.FlagPointToPoint != 0 {
+			continue
+		}
+		for _, addr := range iface.Addrs {
+			ip := addrToIPv4(addr)
+			if ip == nil || ip.IsLoopback() || ip.IsLinkLocalUnicast() {
+				continue
+			}
+			out = append(out, ip.String())
+		}
+	}
+	return out
+}
+
+// usableLANv4 enumerates the host's real LAN-facing IPv4 addresses by delegating
+// to the pure filterLANv4 over net.Interfaces().
+func usableLANv4() []string {
+	realIfaces, err := net.Interfaces()
+	if err != nil {
+		return nil
+	}
+	ifaces := make([]ifaceAddrs, 0, len(realIfaces))
+	for _, ri := range realIfaces {
+		addrs, err := ri.Addrs()
+		if err != nil {
+			continue
+		}
+		ifaces = append(ifaces, ifaceAddrs{Flags: ri.Flags, Addrs: addrs})
+	}
+	return filterLANv4(ifaces)
+}
+
+// addrToIPv4 extracts the IPv4 form of an interface address. net.Interface.Addrs
+// returns *net.IPNet values whose String() is CIDR form, so ParseCIDR is the only
+// path that matters; a non-CIDR address yields nil.
+func addrToIPv4(addr net.Addr) net.IP {
+	ip, _, err := net.ParseCIDR(addr.String())
+	if err != nil {
+		return nil
+	}
+	return ip.To4()
+}
+
+// writeNonLoopbackSetup prints the security warning and device-proxy setup for a
+// non-loopback bind: a prominent exposure warning, the concrete Wi-Fi proxy
+// target(s) to enter on the device, and the allowlist (if any).
+func writeNonLoopbackSetup(w io.Writer, bindHost string, port int, allowed map[string]bool) {
+	warning := fmt.Sprintf("WARNING: proxy is exposed on the network (%s:%d). ", bindHost, port)
+	if len(allowed) == 0 {
+		warning += "Anyone on this network can route traffic through it; "
+	}
+	warning += "press Ctrl+C when done."
+	fmt.Fprintln(w, warning)
+	for _, ip := range deviceProxyTargets(bindHost, usableLANv4()) {
+		fmt.Fprintf(w, "Set your device's Wi-Fi proxy to %s:%d\n", ip, port)
+	}
+	if len(allowed) > 0 {
+		ips := make([]string, 0, len(allowed))
+		for ip := range allowed {
+			ips = append(ips, ip)
+		}
+		sort.Strings(ips)
+		fmt.Fprintf(w, "Allowed clients: %s\n", strings.Join(ips, ", "))
+	}
+}
+
+// deviceProxyTargets returns the concrete IP(s) a remote device should enter as
+// its Wi-Fi proxy: the bind host itself when it is a specific IP, or every
+// usable LAN IPv4 in lanIPs (enumerated by the caller via usableLANv4) when
+// bound to the unspecified 0.0.0.0. lanIPs is passed in so the selection stays a
+// pure, unit-testable function.
+func deviceProxyTargets(bindHost string, lanIPs []string) []string {
+	if isSpecificBindIP(bindHost) {
+		return []string{bindHost}
+	}
+	out := append([]string(nil), lanIPs...)
+	sort.Strings(out)
+	return out
 }
 
 func EnsureProxyCA(status io.Writer) (string, string, error) {

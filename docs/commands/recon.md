@@ -18,6 +18,8 @@ apisniff recon DOMAIN [flags]
 | `--remote-url` | | Chrome DevTools URL for `cdp-attach` |
 | `--headless` | `false` | Launch Chrome headless (`cdp-launch` and `proxy`) |
 | `--no-browser` | `false` | In `proxy` mode, start only the proxy and skip launching Chrome |
+| `--bind` | `127.0.0.1` | Address the `proxy` listens on. Use `0.0.0.0` (all interfaces) or a LAN IP to let other devices connect. Proxy mode only; IPv6 bind addresses are not supported. |
+| `--allow-client` | | Source-IP allowlist, repeatable. Only meaningful with a non-loopback `--bind`: when set, only the listed IPs (plus the local machine) may connect, and the locally launched Chrome is never blocked. Omit it and the proxy is open to anyone on the network (apisniff prints a prominent warning). |
 | `--proxy` | | Reserved for future upstream proxy chaining |
 
 ## Examples
@@ -34,6 +36,11 @@ apisniff recon example.com --headless
 # Run only the proxy — point your own client at 127.0.0.1:8080
 apisniff recon example.com --no-browser --port 8080
 
+# Capture from a phone on the same LAN: bind all interfaces, then set the
+# device's Wi-Fi proxy to the printed <LAN-IP>:<port> and trust
+# ~/.apisniff/ca-cert.pem on the device. --allow-client restricts who can connect.
+apisniff recon example.com --no-browser --bind 0.0.0.0 --allow-client 192.168.1.42
+
 # CDP mode: capture WebSocket frames / resource_type (no XHR/fetch cookies)
 apisniff recon example.com --mode cdp-launch
 
@@ -48,6 +55,8 @@ apisniff recon example.com --mode cdp-attach --remote-url http://127.0.0.1:9222
 For HTTPS, the launched Chrome accepts the proxy's certificates via `--ignore-certificate-errors-spki-list`, which tells that one disposable Chrome to trust **only apisniff's CA, matched by its public-key hash**. Every other certificate is still validated normally; this is the narrow, scoped flag, not the blunt `--ignore-certificate-errors` that switches off all certificate checks. So when Chrome warns that "security will suffer," the relaxation is one cert wide and confined to the throwaway profile; your everyday Chrome is untouched. The hash is passed on the command line, so **nothing is installed in any OS trust store and there is no keychain prompt**. Chrome shows a cosmetic "unsupported command-line flag" warning bar (browser UI only, invisible to pages). The CA private key at `~/.apisniff/ca-key.pem` is sensitive (anything holding it can forge HTTPS certs for clients that trust the CA) and is stored with owner-only permissions.
 
 Pass `--no-browser` to start only the proxy and route your own client through `127.0.0.1:<port>`, trusting `~/.apisniff/ca-cert.pem` in that client yourself.
+
+To capture from another device on the same network (e.g. an iPhone), pass `--bind 0.0.0.0` (or a specific LAN IP) so the proxy accepts non-local connections (IPv6 not supported). apisniff prints the exact `Set your device's Wi-Fi proxy to <LAN-IP>:<port>` line to enter on the device, and you must install and trust `~/.apisniff/ca-cert.pem` on the device yourself. A non-loopback bind opens the proxy to your network: by default apisniff only warns, so restrict it with `--allow-client <ip>` (repeatable) to admit only the listed device IPs. The local machine is always allowed, and the locally launched Chrome connects via loopback and is never blocked.
 
 `cdp-launch` uses Chrome DevTools Protocol and is the only mode that captures WebSocket frames, plus `resource_type` and cache/service-worker/body-size metadata, from Chrome's Network domain. The target sees Chrome's real TLS/HTTP behavior, but JavaScript automation signals may still be present. CDP modes do **not** capture Cookie/Set-Cookie on XHR/fetch (those are not exposed over CDP).
 
