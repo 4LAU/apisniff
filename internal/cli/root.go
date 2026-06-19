@@ -196,6 +196,9 @@ func newReconCommand() *cobra.Command {
 				Headless:       headless,
 				LaunchBrowser:  mode == "proxy" && !noBrowser,
 				StatusWriter:   statusWriter,
+				// Kept live even with --json so an off-loopback open-proxy bind
+				// always warns (stderr; JSON output goes to stdout).
+				WarningWriter: cmd.ErrOrStderr(),
 			})
 			if err != nil {
 				return err

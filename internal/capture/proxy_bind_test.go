@@ -1,6 +1,7 @@
 package capture
 
 import (
+	"bytes"
 	"context"
 	"errors"
 	"io"
@@ -169,6 +170,38 @@ func TestAllowlistMatchesIPv4MappedRemote(t *testing.T) {
 	}
 	if mappedRemote.closed {
 		t.Error("allowlisted v4-mapped remote was incorrectly closed")
+	}
+}
+
+// TestWriteNonLoopbackSetupWarnsWhenStatusSuppressed guards the --json path:
+// the exposure warning must reach warnW even when statusW is nil, while the
+// device-setup lines (which would pollute machine output) are suppressed.
+func TestWriteNonLoopbackSetupWarnsWhenStatusSuppressed(t *testing.T) {
+	var warn bytes.Buffer
+	writeNonLoopbackSetup(&warn, nil, "0.0.0.0", 8080, nil)
+	got := warn.String()
+	if !strings.Contains(got, "WARNING: proxy is exposed on the network (0.0.0.0:8080)") {
+		t.Fatalf("warning writer missing exposure notice, got %q", got)
+	}
+	if !strings.Contains(got, "Anyone on this network can route traffic through it") {
+		t.Fatalf("open-proxy warning missing for empty allowlist, got %q", got)
+	}
+	if strings.Contains(got, "Set your device's Wi-Fi proxy") {
+		t.Errorf("device-setup line leaked to warning writer: %q", got)
+	}
+
+	// Both writers live: warning to warnW, setup to statusW, no cross-contamination.
+	warn.Reset()
+	var status bytes.Buffer
+	writeNonLoopbackSetup(&warn, &status, "192.168.1.10", 8080, map[string]bool{"192.168.1.50": true})
+	if !strings.Contains(warn.String(), "WARNING: proxy is exposed") {
+		t.Errorf("warnW missing warning, got %q", warn.String())
+	}
+	if strings.Contains(warn.String(), "Anyone on this network") {
+		t.Errorf("allowlisted bind should not say 'anyone', got %q", warn.String())
+	}
+	if !strings.Contains(status.String(), "Allowed clients: 192.168.1.50") {
+		t.Errorf("statusW missing allowed clients, got %q", status.String())
 	}
 }
 

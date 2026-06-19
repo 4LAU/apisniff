@@ -294,9 +294,12 @@ func CaptureProxy(ctx context.Context, cfg Config) (*Result, error) {
 			fmt.Fprintf(cfg.StatusWriter, "Launching Chrome (fresh profile, no automation flags) through proxy...\n")
 			fmt.Fprintf(cfg.StatusWriter, "Chrome will show a yellow \"unsupported flag\" warning bar at the top — that's expected and safe to ignore.\n")
 			fmt.Fprintf(cfg.StatusWriter, "Log in and use the site. When done: close the browser window, or press Ctrl+C here.\n")
-			if !isLoopback {
-				writeNonLoopbackSetup(cfg.StatusWriter, bindHost, cfg.Port, allowed)
-			}
+		}
+		// Emitted outside the StatusWriter guard so the exposure warning still
+		// reaches WarningWriter (kept live in --json mode); setup lines go to the
+		// suppressible StatusWriter.
+		if !isLoopback {
+			writeNonLoopbackSetup(cfg.WarningWriter, cfg.StatusWriter, bindHost, cfg.Port, allowed)
 		}
 		cmd, err := LaunchCleanBrowser(runCtx, net.JoinHostPort(chromeTargetHost, strconv.Itoa(cfg.Port)), spkiHash, profileDir, cfg.URL, cfg.Headless)
 		if err != nil {
@@ -357,11 +360,14 @@ func CaptureProxy(ctx context.Context, cfg Config) (*Result, error) {
 			if isLoopback {
 				// server.Addr is a real, dialable loopback endpoint here.
 				fmt.Fprintf(cfg.StatusWriter, "Configure your client to proxy through %s and trust the CA above.\n", server.Addr)
-			} else {
-				// Off-loopback, server.Addr prints 0.0.0.0:<port> (or a LAN IP),
-				// which is not a usable device proxy target — print real targets.
-				writeNonLoopbackSetup(cfg.StatusWriter, bindHost, cfg.Port, allowed)
 			}
+		}
+		// Off-loopback, server.Addr prints 0.0.0.0:<port> (or a LAN IP), which is
+		// not a usable device proxy target — print real targets. Emitted outside
+		// the StatusWriter guard so the exposure warning still reaches
+		// WarningWriter even in --json mode.
+		if !isLoopback {
+			writeNonLoopbackSetup(cfg.WarningWriter, cfg.StatusWriter, bindHost, cfg.Port, allowed)
 		}
 		showStatus := cfg.StatusWriter != nil && isTerminal(cfg.StatusWriter)
 		if showStatus {
@@ -602,18 +608,25 @@ func addrToIPv4(addr net.Addr) net.IP {
 	return ip.To4()
 }
 
-// writeNonLoopbackSetup prints the security warning and device-proxy setup for a
-// non-loopback bind: a prominent exposure warning, the concrete Wi-Fi proxy
-// target(s) to enter on the device, and the allowlist (if any).
-func writeNonLoopbackSetup(w io.Writer, bindHost string, port int, allowed map[string]bool) {
-	warning := fmt.Sprintf("WARNING: proxy is exposed on the network (%s:%d). ", bindHost, port)
-	if len(allowed) == 0 {
-		warning += "Anyone on this network can route traffic through it; "
+// writeNonLoopbackSetup reports a non-loopback bind. The exposure warning goes to
+// warnW, which the CLI keeps live even in --json mode so the highest-risk
+// open-proxy config is never silent; the device-proxy setup (concrete Wi-Fi
+// target(s) and the allowlist, if any) goes to statusW, which --json suppresses.
+// Either writer may be nil.
+func writeNonLoopbackSetup(warnW, statusW io.Writer, bindHost string, port int, allowed map[string]bool) {
+	if warnW != nil {
+		warning := fmt.Sprintf("WARNING: proxy is exposed on the network (%s:%d). ", bindHost, port)
+		if len(allowed) == 0 {
+			warning += "Anyone on this network can route traffic through it; "
+		}
+		warning += "press Ctrl+C when done."
+		fmt.Fprintln(warnW, warning)
 	}
-	warning += "press Ctrl+C when done."
-	fmt.Fprintln(w, warning)
+	if statusW == nil {
+		return
+	}
 	for _, ip := range deviceProxyTargets(bindHost, usableLANv4()) {
-		fmt.Fprintf(w, "Set your device's Wi-Fi proxy to %s:%d\n", ip, port)
+		fmt.Fprintf(statusW, "Set your device's Wi-Fi proxy to %s:%d\n", ip, port)
 	}
 	if len(allowed) > 0 {
 		ips := make([]string, 0, len(allowed))
@@ -621,7 +634,7 @@ func writeNonLoopbackSetup(w io.Writer, bindHost string, port int, allowed map[s
 			ips = append(ips, ip)
 		}
 		sort.Strings(ips)
-		fmt.Fprintf(w, "Allowed clients: %s\n", strings.Join(ips, ", "))
+		fmt.Fprintf(statusW, "Allowed clients: %s\n", strings.Join(ips, ", "))
 	}
 }
 
