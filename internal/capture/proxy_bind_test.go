@@ -154,6 +154,110 @@ func TestCaptureProxyRejectsIPv6Bind(t *testing.T) {
 	}
 }
 
+func TestNormalizeBindIPv4InIPv6(t *testing.T) {
+	// ::ffff:a.b.c.d passes the IPv6 gate (it is 4-in-6) but must fold to its
+	// dotted-quad form so the listener bind and JoinHostPort never see a bracketed
+	// literal.
+	bindHost, isLoopback, _, err := normalizeBind(Config{BindHost: "::ffff:192.168.1.10"})
+	if err != nil {
+		t.Fatalf("unexpected error for IPv4-mapped IPv6: %v", err)
+	}
+	if bindHost != "192.168.1.10" {
+		t.Fatalf("bindHost = %q, want dotted-quad 192.168.1.10", bindHost)
+	}
+	if joined := net.JoinHostPort(bindHost, "8080"); joined != "192.168.1.10:8080" {
+		t.Errorf("JoinHostPort(bindHost, port) = %q, want 192.168.1.10:8080 (no brackets)", joined)
+	}
+	if isLoopback {
+		t.Error("isLoopback = true, want false for 192.168.1.10")
+	}
+}
+
+func TestChromeProxyTarget(t *testing.T) {
+	cases := []struct {
+		bind string
+		want string
+	}{
+		{"127.0.0.1", "127.0.0.1"},       // loopback: Chrome dials loopback
+		{"0.0.0.0", "127.0.0.1"},         // unspecified: reachable via loopback
+		{"192.168.1.10", "192.168.1.10"}, // specific LAN IP: Chrome dials the bind IP
+	}
+	for _, c := range cases {
+		if got := chromeProxyTarget(c.bind); got != c.want {
+			t.Errorf("chromeProxyTarget(%q) = %q, want %q", c.bind, got, c.want)
+		}
+	}
+}
+
+func TestAllowlistForListenerIncludesBindHost(t *testing.T) {
+	// Specific-IP bind + launched Chrome: the bind host is added so Chrome's
+	// self-connection (arriving from the bind IP) is permitted, and the
+	// user-allowed client is preserved.
+	input := map[string]bool{"10.0.0.5": true}
+	got := allowlistForListener(input, "192.168.1.10", "192.168.1.10", true)
+	if !got["10.0.0.5"] {
+		t.Error("user-allowed client 10.0.0.5 was dropped")
+	}
+	if !got["192.168.1.10"] {
+		t.Error("bind host 192.168.1.10 was not added to the allowlist")
+	}
+	// Input map is left untouched (the helper must not mutate its caller's map).
+	if input["192.168.1.10"] {
+		t.Error("allowlistForListener mutated its input map")
+	}
+}
+
+func TestAllowlistForListenerNoOpCases(t *testing.T) {
+	base := map[string]bool{"10.0.0.5": true}
+	// Chrome target is loopback (unspecified bind), not the bind host → no add.
+	if got := allowlistForListener(base, "0.0.0.0", "127.0.0.1", true); got["0.0.0.0"] {
+		t.Error("unspecified bind should not be added to the allowlist")
+	}
+	// No browser launched → no add.
+	if got := allowlistForListener(base, "192.168.1.10", "192.168.1.10", false); got["192.168.1.10"] {
+		t.Error("bind host should not be added when no browser is launched")
+	}
+	// Empty allowlist → returned unchanged (and still empty).
+	if got := allowlistForListener(map[string]bool{}, "192.168.1.10", "192.168.1.10", true); len(got) != 0 {
+		t.Errorf("empty allowlist should stay empty, got %v", got)
+	}
+}
+
+func TestDeviceProxyTargets(t *testing.T) {
+	lan := []string{"192.168.1.5", "10.0.0.2"}
+
+	// A specific bind host yields just that host, ignoring enumerated LAN IPs.
+	got := deviceProxyTargets("192.168.1.10", lan)
+	if len(got) != 1 || got[0] != "192.168.1.10" {
+		t.Fatalf("specific-IP deviceProxyTargets = %v, want [192.168.1.10]", got)
+	}
+
+	// The unspecified (0.0.0.0) bind enumerates and sorts the LAN IPs.
+	got = deviceProxyTargets("0.0.0.0", lan)
+	want := []string{"10.0.0.2", "192.168.1.5"}
+	if len(got) != 2 || got[0] != want[0] || got[1] != want[1] {
+		t.Fatalf("unspecified deviceProxyTargets = %v, want %v", got, want)
+	}
+
+	// The caller's slice is not mutated by the internal sort.
+	if lan[0] != "192.168.1.5" || lan[1] != "10.0.0.2" {
+		t.Fatalf("deviceProxyTargets mutated its input slice: %v", lan)
+	}
+}
+
+func TestFilterLANv4BareIPFallback(t *testing.T) {
+	// A bare IP (no CIDR) exercises addrToIPv4's net.ParseIP fallback branch,
+	// which net.ParseCIDR can't parse.
+	ifaces := []ifaceAddrs{
+		{Flags: net.FlagUp, Addrs: []net.Addr{stringAddr("192.168.1.5")}},
+	}
+	got := filterLANv4(ifaces)
+	want := []string{"192.168.1.5"}
+	if len(got) != 1 || got[0] != want[0] {
+		t.Fatalf("filterLANv4(bare IP) = %v, want %v", got, want)
+	}
+}
+
 // stringAddr is a minimal net.Addr carrying an opaque string (CIDR or host:port
 // form), used to feed synthetic addresses into the pure filters and scripted
 // connections without real network interfaces.
