@@ -265,6 +265,47 @@ func TestSpecIncludeHostIncludesDroppedFlows(t *testing.T) {
 	}
 }
 
+func TestSpecCommandIncludesHTMLFetchEndpoint(t *testing.T) {
+	// A GET that returns HTML but was issued by fetch() (sec-fetch-dest: empty).
+	// Such a request is API surface regardless of content-type: it must land in
+	// the spec, and the coverage report must not flag it as excluded. Guards
+	// against any regression that silently drops data-fetched HTML endpoints.
+	flow := model.CapturedFlow{
+		Method:          "GET",
+		Host:            "www.example.com",
+		Path:            "/bin/rewards-catalog/list",
+		URL:             "https://www.example.com/bin/rewards-catalog/list",
+		RequestHeaders:  map[string]string{"sec-fetch-dest": "empty", "sec-fetch-mode": "cors"},
+		ResponseStatus:  200,
+		ResponseHeaders: map[string]string{"content-type": "text/html"},
+		ResponseBody:    []byte("<li class=tile data-brand=Acme></li>"),
+	}
+	line, err := flow.ToJSONL()
+	if err != nil {
+		t.Fatalf("marshal flow: %v", err)
+	}
+	input := writeFlows(t, t.TempDir(), line)
+
+	// Spec body goes to stdout; the human status (including any "not in spec"
+	// warning from WriteSpecStatus) goes to stderr via humanOutputConfig.
+	specYAML, statusOutput, err := executeForTest(newSpecCommand(), "example.com", "--input", input, "--format", "yaml")
+	if err != nil {
+		t.Fatalf("spec returned error: %v", err)
+	}
+
+	// The spec must document the HTML endpoint as an operation.
+	if !strings.Contains(specYAML, "/bin/rewards-catalog/list") {
+		t.Fatalf("HTML endpoint missing from spec:\n%s", specYAML)
+	}
+	if !strings.Contains(specYAML, "text/html") {
+		t.Fatalf("text/html response not documented in spec:\n%s", specYAML)
+	}
+	// And it must be represented, not flagged as excluded, in the status output.
+	if strings.Contains(statusOutput, "not in spec") {
+		t.Fatalf("HTML endpoint wrongly reported as excluded:\n%s", statusOutput)
+	}
+}
+
 func TestShareJSONStdoutIsPure(t *testing.T) {
 	bundle := t.TempDir()
 	input := writeTestFlows(t, t.TempDir())

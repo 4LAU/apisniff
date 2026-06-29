@@ -197,6 +197,13 @@ func (s styles) successIcon() string {
 	return "[OK]"
 }
 
+func (s styles) warnIcon() string {
+	if s.cfg.Unicode {
+		return "⚠"
+	}
+	return "[!]"
+}
+
 func (s styles) resultIcon(blocked, challenge bool) string {
 	switch {
 	case challenge:

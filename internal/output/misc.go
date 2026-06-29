@@ -2,6 +2,7 @@ package output
 
 import (
 	"fmt"
+	"sort"
 	"strings"
 
 	"github.com/4LAU/apisniff/internal/model"
@@ -35,6 +36,9 @@ type SpecStatusResult struct {
 	Paths             int
 	Operations        int
 	MethodCounts      map[string]int
+
+	ExcludedCount        int
+	ExcludedContentTypes map[string]int
 
 	GraphQLOperations int
 	GraphQLFlows      int
@@ -126,6 +130,16 @@ func WriteSpecStatus(cfg Config, result SpecStatusResult) error {
 		lines = append(lines, fmt.Sprintf("  GraphQL: %d operations from %d flows",
 			result.GraphQLOperations, result.GraphQLFlows))
 	}
+	if result.ExcludedCount > 0 {
+		line := fmt.Sprintf("%s %d captured endpoint(s) not in spec", s.warnIcon(), result.ExcludedCount)
+		if breakdown := contentTypeBreakdown(result.ExcludedContentTypes); breakdown != "" {
+			line += fmt.Sprintf(" (%s)", breakdown)
+		}
+		if result.SurfaceOutputPath == "" {
+			line += " — run with --surface-output to list them"
+		}
+		lines = append(lines, "", line)
+	}
 	if result.Format != "" {
 		lines = append(lines, "", s.kv("format", s.faint(result.Format)))
 	}
@@ -173,4 +187,18 @@ func defensePanelBody(result ReconResult) string {
 		lines = append(lines, fmt.Sprintf("unattributed antibot (%d flows)", result.UnattributedAntibot))
 	}
 	return strings.Join(lines, "\n")
+}
+
+// contentTypeBreakdown renders a stable "2 text/html, 1 text/csv" summary.
+func contentTypeBreakdown(counts map[string]int) string {
+	types := make([]string, 0, len(counts))
+	for ct := range counts {
+		types = append(types, ct)
+	}
+	sort.Strings(types)
+	parts := make([]string, 0, len(types))
+	for _, ct := range types {
+		parts = append(parts, fmt.Sprintf("%d %s", counts[ct], ct))
+	}
+	return strings.Join(parts, ", ")
 }

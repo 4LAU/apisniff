@@ -696,3 +696,23 @@ func TestGenerateOpaqueIDsCollapse(t *testing.T) {
 		t.Fatalf("path count = %d, want %d: %#v", len(paths), len(want), paths)
 	}
 }
+
+func TestNonJSONResponseDocumentedAsSchemalessMediaType(t *testing.T) {
+	flow := specFlow("GET", "/bin/rewards-catalog/list", 200, []byte("<li class=tile></li>"))
+	flow.ResponseHeaders = map[string]string{"content-type": "text/html; charset=utf-8"}
+	doc := mustGenerate(t, []model.CapturedFlow{flow}, "example.com", nil, Options{})
+
+	paths := asMap(doc["paths"])
+	op := asMap(asMap(paths["/bin/rewards-catalog/list"])["get"])
+	responses := asMap(op["responses"])
+	resp200 := asMap(responses["200"])
+	content := asMap(resp200["content"])
+	media, ok := content["text/html"]
+	if !ok {
+		t.Fatalf("text/html media type missing; content = %#v", content)
+	}
+	mediaMap := asMap(media)
+	if _, hasSchema := mediaMap["schema"]; hasSchema {
+		t.Fatalf("text/html media type must have no schema, got %#v", mediaMap)
+	}
+}

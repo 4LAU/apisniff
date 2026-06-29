@@ -31,6 +31,7 @@ type SurfaceInventory struct {
 	Actions       map[string]int         `json:"actions"`
 	Hosts         map[string]int         `json:"hosts"`
 	Flows         []SurfaceInventoryFlow `json:"flows"`
+	Coverage      *CoverageReport        `json:"coverage,omitempty"`
 }
 
 type SurfaceInventoryFlow struct {
@@ -39,6 +40,7 @@ type SurfaceInventoryFlow struct {
 	Host           string                `json:"host,omitempty"`
 	Path           string                `json:"path,omitempty"`
 	ResponseStatus int                   `json:"response_status,omitempty"`
+	ContentType    string                `json:"content_type,omitempty"`
 	Action         string                `json:"action"`
 	Category       model.SurfaceCategory `json:"category"`
 	Reason         string                `json:"reason,omitempty"`
@@ -125,6 +127,7 @@ func buildSurfaceInventory(classified []classifiedFlow, domain string) SurfaceIn
 			Host:           item.flow.Host,
 			Path:           item.flow.Path,
 			ResponseStatus: item.flow.ResponseStatus,
+			ContentType:    item.flow.ContentType(),
 			Action:         result.Action,
 			Category:       result.Category,
 			Reason:         result.Reason,

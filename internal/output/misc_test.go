@@ -228,6 +228,24 @@ func TestWriteSpecStatusMethodBreakdown(t *testing.T) {
 	}
 }
 
+func TestWriteSpecStatusPrintsExcludedCoverage(t *testing.T) {
+	var buf bytes.Buffer
+	result := SpecStatusResult{
+		Domain:               "example.com",
+		Paths:                2,
+		Operations:           3,
+		ExcludedCount:        2,
+		ExcludedContentTypes: map[string]int{"text/html": 2},
+	}
+	if err := WriteSpecStatus(testConfig(t, &buf), result); err != nil {
+		t.Fatal(err)
+	}
+	out := buf.String()
+	if !strings.Contains(out, "2 captured endpoint") || !strings.Contains(out, "text/html") {
+		t.Fatalf("coverage warning missing from output:\n%s", out)
+	}
+}
+
 func TestWriteSpecStatusGraphQL(t *testing.T) {
 	var buf bytes.Buffer
 	result := SpecStatusResult{

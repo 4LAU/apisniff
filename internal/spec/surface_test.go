@@ -135,6 +135,26 @@ func TestApplyInclusionFiltersIncludesHostsCaseInsensitiveAndPortTolerant(t *tes
 	}
 }
 
+func TestSurfaceInventoryRecordsContentType(t *testing.T) {
+	flow := model.CapturedFlow{
+		Method:          "GET",
+		Host:            "example.com",
+		Path:            "/bin/list",
+		URL:             "https://example.com/bin/list",
+		RequestHeaders:  map[string]string{},
+		ResponseStatus:  200,
+		ResponseHeaders: map[string]string{"content-type": "text/html; charset=utf-8"},
+		ResponseBody:    []byte("<html></html>"),
+	}
+	inv := BuildSurfaceInventory([]model.CapturedFlow{flow}, "example.com")
+	if len(inv.Flows) != 1 {
+		t.Fatalf("flows = %d, want 1", len(inv.Flows))
+	}
+	if inv.Flows[0].ContentType != "text/html" {
+		t.Fatalf("ContentType = %q, want %q", inv.Flows[0].ContentType, "text/html")
+	}
+}
+
 func hasSpecTag(tags []string, want string) bool {
 	for _, tag := range tags {
 		if tag == want {

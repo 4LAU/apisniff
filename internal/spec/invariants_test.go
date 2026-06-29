@@ -117,8 +117,15 @@ func TestSpecEdgeCaseFixturePassesGenerationInvariants(t *testing.T) {
 		t.Fatalf("mixed JSON content types missing: %#v", mixedContent)
 	}
 	textResponse := asMap(asMap(operation(doc, "/api/text-jsonlike", "get")["responses"])["200"])
-	if asMap(textResponse["content"])["text/plain"] != nil {
-		t.Fatalf("non-JSON response body was treated as JSON content: %#v", textResponse)
+	textContent := asMap(textResponse["content"])
+	media, ok := textContent["text/plain"]
+	if !ok || media == nil {
+		t.Fatalf("text/plain media type missing for /api/text-jsonlike: %#v", textResponse)
+	}
+	// The body is JSON-like, but the content type is text/plain — it must be
+	// documented as a schema-less media type, never schematized from the body.
+	if _, hasSchema := asMap(media)["schema"]; hasSchema {
+		t.Fatalf("non-JSON (text/plain) response was schematized: %#v", asMap(media))
 	}
 }
 
