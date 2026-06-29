@@ -123,6 +123,10 @@ func exclusionReason(f model.CapturedFlow) string {
 	if _, _, ok := model.NormalizeSpecPath(f.Path); !ok {
 		return "path could not be normalized to an OpenAPI template"
 	}
+	// Currently unreachable: a flow passing all three predicates above is always
+	// emitted as an operation by Generate (schema-less media type for non-JSON),
+	// so it is counted Represented and never reaches here. Retained as defense in
+	// case Generate ever stops emitting an operation for some content-type.
 	ct := f.ContentType()
 	if ct == "" {
 		ct = "no content-type"

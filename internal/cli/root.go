@@ -451,13 +451,10 @@ func newSpecCommand() *cobra.Command {
 				InferSchemes:    inferSchemes,
 				IncludeExamples: includeExamples,
 			})
-			// On ErrNoValidAPIFlows, doc is nil; reconcile against an empty spec
-			// so every candidate flow still appears in the coverage report.
-			coverageDoc := doc
-			if coverageDoc == nil {
-				coverageDoc = map[string]any{"paths": map[string]any{}}
-			}
-			coverage := spec.BuildCoverage(pipeline.APIFlows, coverageDoc)
+			// On ErrNoValidAPIFlows, doc is nil; BuildCoverage treats a nil doc
+			// as zero emitted operations, so every candidate still appears in
+			// the coverage report.
+			coverage := spec.BuildCoverage(pipeline.APIFlows, doc)
 			pipeline.Surface.Coverage = &coverage
 			if surfaceOutput != "" {
 				if err := writeJSONFile(surfaceOutput, pipeline.Surface); err != nil {

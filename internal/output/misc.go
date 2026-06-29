@@ -191,9 +191,6 @@ func defensePanelBody(result ReconResult) string {
 
 // contentTypeBreakdown renders a stable "2 text/html, 1 text/csv" summary.
 func contentTypeBreakdown(counts map[string]int) string {
-	if len(counts) == 0 {
-		return ""
-	}
 	types := make([]string, 0, len(counts))
 	for ct := range counts {
 		types = append(types, ct)
