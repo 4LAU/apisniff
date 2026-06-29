@@ -313,16 +313,24 @@ func recordResponseSchema(op *observedOperation, flow model.CapturedFlow, includ
 	if ct == "" {
 		ct = "application/json"
 	}
+	key := responseSchemaKey{status: intString(flow.ResponseStatus), contentType: ct}
 	if !isJSONishContentType(ct) {
+		// Non-JSON payloads (HTML, XML, CSV, plain text, …) can't be
+		// schematized, but the endpoint is real. Record the media type with a
+		// nil schema so the spec documents that it exists and what it returns,
+		// without inventing structure. A nil entry never overwrites a real
+		// schema recorded for the same status+content-type.
+		if _, ok := op.responseSchemas[key]; !ok {
+			op.responseSchemas[key] = nil
+		}
 		return
 	}
 	parsed := jsonschema.ParseJSONBody(flow.ResponseBody)
 	if parsed == nil {
 		return
 	}
-	key := responseSchemaKey{status: intString(flow.ResponseStatus), contentType: ct}
 	schema := jsonschema.InferSchema(parsed, includeExamples, "")
-	if existing, ok := op.responseSchemas[key]; ok {
+	if existing, ok := op.responseSchemas[key]; ok && existing != nil {
 		op.responseSchemas[key] = jsonschema.MergeSchemas(existing, schema)
 	} else {
 		op.responseSchemas[key] = schema
@@ -433,7 +441,11 @@ func buildResponses(op *observedOperation) map[string]any {
 			response = map[string]any{"description": statusDescription(key.status)}
 		}
 		content := asMap(response["content"])
-		content[key.contentType] = map[string]any{"schema": op.responseSchemas[key]}
+		media := map[string]any{}
+		if schema := op.responseSchemas[key]; schema != nil {
+			media["schema"] = schema
+		}
+		content[key.contentType] = media
 		response["content"] = content
 		responses[key.status] = response
 	}

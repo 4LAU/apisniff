@@ -214,6 +214,9 @@
         "operationId": "getStyleCss",
         "responses": {
           "200": {
+            "content": {
+              "text/css": {}
+            },
             "description": "OK"
           }
         },
