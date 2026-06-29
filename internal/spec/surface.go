@@ -31,6 +31,7 @@ type SurfaceInventory struct {
 	Actions       map[string]int         `json:"actions"`
 	Hosts         map[string]int         `json:"hosts"`
 	Flows         []SurfaceInventoryFlow `json:"flows"`
+	Coverage      *CoverageReport        `json:"coverage,omitempty"`
 }
 
 type SurfaceInventoryFlow struct {

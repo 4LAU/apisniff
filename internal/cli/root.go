@@ -447,20 +447,31 @@ func newSpecCommand() *cobra.Command {
 			if err != nil {
 				return err
 			}
+			doc, genErr := spec.Generate(pipeline.APIFlows, domain, pipeline.Auth, spec.Options{
+				InferSchemes:    inferSchemes,
+				IncludeExamples: includeExamples,
+			})
+			// On ErrNoValidAPIFlows, doc is nil; reconcile against an empty spec
+			// so every candidate flow still appears in the coverage report.
+			coverageDoc := doc
+			if coverageDoc == nil {
+				coverageDoc = map[string]any{"paths": map[string]any{}}
+			}
+			coverage := spec.BuildCoverage(pipeline.APIFlows, coverageDoc)
+			pipeline.Surface.Coverage = &coverage
 			if surfaceOutput != "" {
 				if err := writeJSONFile(surfaceOutput, pipeline.Surface); err != nil {
 					return err
 				}
 			}
-			doc, err := spec.Generate(pipeline.APIFlows, domain, pipeline.Auth, spec.Options{
-				InferSchemes:    inferSchemes,
-				IncludeExamples: includeExamples,
-			})
-			if err != nil {
-				if errors.Is(err, spec.ErrNoValidAPIFlows) {
-					return fmt.Errorf("no valid API flows after filtering; adjust inclusion filters or capture API traffic: %w", err)
+			if genErr != nil {
+				if errors.Is(genErr, spec.ErrNoValidAPIFlows) {
+					if coverage.ExcludedCount() > 0 {
+						fmt.Fprintf(cmd.ErrOrStderr(), "%d captured endpoint(s) were excluded; none could be documented as operations\n", coverage.ExcludedCount())
+					}
+					return fmt.Errorf("no valid API flows after filtering; adjust inclusion filters or capture API traffic: %w", genErr)
 				}
-				return err
+				return genErr
 			}
 			data, err := spec.MarshalAndValidate(doc, format)
 			if err != nil {
@@ -475,15 +486,17 @@ func newSpecCommand() *cobra.Command {
 			}
 			counts := countOpenAPIOperations(doc)
 			return output.WriteSpecStatus(humanOutputConfig(cmd), output.SpecStatusResult{
-				Domain:            domain,
-				Format:            format,
-				OutputPath:        outputFile,
-				SurfaceOutputPath: surfaceOutput,
-				Paths:             counts.paths,
-				Operations:        counts.operations,
-				MethodCounts:      counts.methods,
-				GraphQLOperations: counts.graphqlOps,
-				GraphQLFlows:      counts.graphqlPaths,
+				Domain:               domain,
+				Format:               format,
+				OutputPath:           outputFile,
+				SurfaceOutputPath:    surfaceOutput,
+				Paths:                counts.paths,
+				Operations:           counts.operations,
+				MethodCounts:         counts.methods,
+				GraphQLOperations:    counts.graphqlOps,
+				GraphQLFlows:         counts.graphqlPaths,
+				ExcludedCount:        coverage.ExcludedCount(),
+				ExcludedContentTypes: coverage.ExcludedContentTypes(),
 			})
 		},
 	}
