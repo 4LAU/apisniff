@@ -359,12 +359,27 @@ func isAPILike(flow model.CapturedFlow) bool {
 	if strings.Contains(path, "/api/") || strings.Contains(path, "/v1/") || strings.Contains(path, "/v2/") || strings.Contains(path, "/graphql") {
 		return true
 	}
+	if isProgrammaticFetch(flow) {
+		return true
+	}
 	switch flow.Method {
 	case "POST", "PUT", "PATCH", "DELETE":
 		return true
 	default:
 		return false
 	}
+}
+
+// isProgrammaticFetch reports whether the browser issued this request from
+// JavaScript (fetch/XHR) rather than a top-level navigation. Such a request is
+// API surface no matter what content-type it returns — a server-rendered HTML
+// fragment fetched by script is exactly as much API as a JSON endpoint. A page
+// navigation sends sec-fetch-dest=document and is excluded.
+func isProgrammaticFetch(flow model.CapturedFlow) bool {
+	if strings.EqualFold(model.GetHeader(flow.RequestHeaders, "x-requested-with"), "XMLHttpRequest") {
+		return true
+	}
+	return strings.EqualFold(model.GetHeader(flow.RequestHeaders, "sec-fetch-dest"), "empty")
 }
 
 func isAuthPath(path string) bool {

@@ -269,6 +269,51 @@ func TestLocalhostPortIsSameSite(t *testing.T) {
 	}
 }
 
+func TestHTMLFetchIsAPILikeViaSecFetchDest(t *testing.T) {
+	result, kept := Must("example.com").Classify(testFlow(func(f *model.CapturedFlow) {
+		f.Path = "/bin/rewards-catalog/list"
+		f.URL = "https://example.com/bin/rewards-catalog/list"
+		f.ResponseHeaders = map[string]string{"content-type": "text/html"}
+		f.ResponseBody = []byte("<li class=tile></li>")
+		f.RequestHeaders = map[string]string{
+			"sec-fetch-dest": "empty",
+			"sec-fetch-mode": "cors",
+		}
+	}))
+	if result.Action != "keep" || kept == nil {
+		t.Fatalf("result = %+v kept=%v", result, kept)
+	}
+	if !result.APILike {
+		t.Fatalf("APILike = false, want true for an HTML fetch")
+	}
+	if result.Category != model.BusinessAPI {
+		t.Fatalf("category = %q, want %q", result.Category, model.BusinessAPI)
+	}
+}
+
+func TestHTMLFetchIsAPILikeViaXRequestedWith(t *testing.T) {
+	if !isAPILike(testFlow(func(f *model.CapturedFlow) {
+		f.ResponseHeaders = map[string]string{"content-type": "text/html"}
+		f.Path = "/legacy/fragment"
+		f.RequestHeaders = map[string]string{"x-requested-with": "XMLHttpRequest"}
+	})) {
+		t.Fatal("isAPILike = false, want true for XHR-flagged HTML fetch")
+	}
+}
+
+func TestHTMLDocumentNavigationIsNotAPILike(t *testing.T) {
+	if isAPILike(testFlow(func(f *model.CapturedFlow) {
+		f.ResponseHeaders = map[string]string{"content-type": "text/html"}
+		f.Path = "/articles/some-page"
+		f.RequestHeaders = map[string]string{
+			"sec-fetch-dest": "document",
+			"sec-fetch-mode": "navigate",
+		}
+	})) {
+		t.Fatal("isAPILike = true, want false for a top-level document navigation")
+	}
+}
+
 func hasTag(tags []string, want string) bool {
 	for _, tag := range tags {
 		if tag == want {
