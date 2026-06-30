@@ -1,5 +1,19 @@
 # Changelog
 
+## [0.12.0] — 2026-06-29
+
+### Changed
+- The generated OpenAPI document is now written as `openapi-spec.yaml` (previously `spec.yaml`) in capture bundles and `share` output. Scripts that read the artifact by its old name must be updated.
+
+### Added
+- `spec` now documents non-JSON API endpoints (e.g. HTML responses from `fetch`/XHR) as schema-less media types instead of silently dropping them, and reports any captured endpoint left out of the spec with a per-content-type breakdown.
+
+## [0.11.0] — 2026-06-19
+
+### Added
+- `recon --bind` and `--allow-client` flags capture traffic from other devices on your network (for example a phone routed through the proxy). Binding to a non-loopback address always prints a warning, so an open proxy is never accidental.
+- Restructured README for scannability and added `probe` and `spec`/`share` demo GIFs.
+
 ## [0.10.0] — 2026-06-17
 
 ### Added
