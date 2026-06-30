@@ -464,11 +464,7 @@ func newSpecCommand() *cobra.Command {
 			if genErr != nil {
 				if errors.Is(genErr, spec.ErrNoValidAPIFlows) {
 					if coverage.ExcludedCount() > 0 {
-						msg := fmt.Sprintf("%d captured endpoint(s) were excluded; none could be documented as operations", coverage.ExcludedCount())
-						if surfaceOutput == "" {
-							msg += " — run with --surface-output to list them"
-						}
-						fmt.Fprintln(cmd.ErrOrStderr(), msg)
+						fmt.Fprintln(cmd.ErrOrStderr(), output.CoverageNotice(humanOutputConfig(cmd), coverage.ExcludedCount(), coverage.ExcludedContentTypes(), surfaceOutput, true))
 					}
 					return fmt.Errorf("no valid API flows after filtering; adjust inclusion filters or capture API traffic: %w", genErr)
 				}

@@ -131,14 +131,7 @@ func WriteSpecStatus(cfg Config, result SpecStatusResult) error {
 			result.GraphQLOperations, result.GraphQLFlows))
 	}
 	if result.ExcludedCount > 0 {
-		line := fmt.Sprintf("%s %d captured endpoint(s) not in spec", s.warnIcon(), result.ExcludedCount)
-		if breakdown := contentTypeBreakdown(result.ExcludedContentTypes); breakdown != "" {
-			line += fmt.Sprintf(" (%s)", breakdown)
-		}
-		if result.SurfaceOutputPath == "" {
-			line += " — run with --surface-output to list them"
-		}
-		lines = append(lines, "", line)
+		lines = append(lines, "", CoverageNotice(cfg, result.ExcludedCount, result.ExcludedContentTypes, result.SurfaceOutputPath, false))
 	}
 	if result.Format != "" {
 		lines = append(lines, "", s.kv("format", s.faint(result.Format)))
@@ -187,6 +180,27 @@ func defensePanelBody(result ReconResult) string {
 		lines = append(lines, fmt.Sprintf("unattributed antibot (%d flows)", result.UnattributedAntibot))
 	}
 	return strings.Join(lines, "\n")
+}
+
+// CoverageNotice renders the warning shown when captured endpoints are left out
+// of the spec. Both the success path (WriteSpecStatus) and the all-excluded
+// error path in the spec command call this, so the warn icon, content-type
+// breakdown, and --surface-output hint render identically. When allExcluded is
+// true, no operations were emitted at all, which changes only the lead phrasing.
+func CoverageNotice(cfg Config, excludedCount int, contentTypes map[string]int, surfaceOutputPath string, allExcluded bool) string {
+	s := newStyles(cfg)
+	lead := fmt.Sprintf("%d captured endpoint(s) not in spec", excludedCount)
+	if allExcluded {
+		lead = fmt.Sprintf("%d captured endpoint(s) excluded; none could be documented as operations", excludedCount)
+	}
+	line := fmt.Sprintf("%s %s", s.warnIcon(), lead)
+	if breakdown := contentTypeBreakdown(contentTypes); breakdown != "" {
+		line += fmt.Sprintf(" (%s)", breakdown)
+	}
+	if surfaceOutputPath == "" {
+		line += " — run with --surface-output to list them"
+	}
+	return line
 }
 
 // contentTypeBreakdown renders a stable "2 text/html, 1 text/csv" summary.
