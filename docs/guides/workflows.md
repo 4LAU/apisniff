@@ -12,10 +12,10 @@ apisniff probe api.example.com
 apisniff recon example.com
 
 # 3. Generate the API spec
-apisniff spec example.com -o spec.yaml
+apisniff spec example.com -o openapi-spec.yaml
 
 # 4. See what you found
-cat spec.yaml
+cat openapi-spec.yaml
 ```
 
 `recon` uses proxy mode by default (a clean Chrome routed through a local MITM proxy); read the proxy CA note in [Getting Started](getting-started.md#step-2-capture-traffic). Add `--mode cdp-launch` only if you need WebSocket-frame capture — CDP modes do not capture cookies on XHR/fetch.
@@ -110,7 +110,7 @@ apisniff probe api.example.com -H "Authorization:Bearer tok" --cookie "session=a
 ## Generate a spec
 
 ```bash
-apisniff spec example.com -o spec.yaml
+apisniff spec example.com -o openapi-spec.yaml
 ```
 
 Pass `--examples` to include redacted sample values from captured responses. Pass `--infer-security-schemes` to emit OpenAPI security schemes from observed auth patterns.

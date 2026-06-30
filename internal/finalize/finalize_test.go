@@ -23,7 +23,7 @@ func TestFinalizeWritesSpecAndCatalog(t *testing.T) {
 	if sum.OperationCount != 1 {
 		t.Fatalf("ops %d", sum.OperationCount)
 	}
-	for _, n := range []string{"spec.yaml", "graphql-operations.json"} {
+	for _, n := range []string{"openapi-spec.yaml", "graphql-operations.json"} {
 		if _, err := os.Stat(filepath.Join(dir, n)); err != nil {
 			t.Fatalf("missing %s: %v", n, err)
 		}

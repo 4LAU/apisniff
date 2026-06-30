@@ -32,7 +32,7 @@ func TestSpecAndShareEmitIdenticalSpecs(t *testing.T) {
 	if _, err := report.Share(report.ShareOptions{BundleOrDomain: bundleDir, OutputDir: shareOut}); err != nil {
 		t.Fatal(err)
 	}
-	shared, err := os.ReadFile(filepath.Join(shareOut, "spec.yaml"))
+	shared, err := os.ReadFile(filepath.Join(shareOut, "openapi-spec.yaml"))
 	if err != nil {
 		t.Fatal(err)
 	}

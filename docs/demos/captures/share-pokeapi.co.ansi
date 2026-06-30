@@ -3,7 +3,7 @@
 [38;5;37m╰──────────────────────────────────────────────────────────────────────────╯[m
 ✓ exported 4 files
 
-  spec.yaml
+  openapi-spec.yaml
   inventory.json
   report.md
   session.json

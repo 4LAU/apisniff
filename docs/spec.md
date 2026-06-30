@@ -29,7 +29,7 @@ Share output is derived and safe to review:
 
 ```text
 share/
-  spec.yaml
+  openapi-spec.yaml
   inventory.json
   report.md
   session.json

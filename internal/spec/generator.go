@@ -32,6 +32,11 @@ type Options struct {
 
 var ErrNoValidAPIFlows = errors.New("no valid API flows for spec generation")
 
+// OpenAPIFileName is the canonical filename for the generated OpenAPI document,
+// shared by every writer (capture bundles and share output) so the artifact
+// name stays consistent across paths.
+const OpenAPIFileName = "openapi-spec.yaml"
+
 type queryEvidence struct {
 	presentCount int
 	values       map[string]struct{}

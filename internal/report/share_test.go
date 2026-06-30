@@ -65,7 +65,7 @@ func TestShareWritesOnlyDerivedArtifacts(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if strings.Join(result.Files, ",") != "spec.yaml,inventory.json,report.md,session.json" {
+	if strings.Join(result.Files, ",") != "openapi-spec.yaml,inventory.json,report.md,session.json" {
 		t.Fatalf("files = %#v", result.Files)
 	}
 	if _, err := os.Stat(filepath.Join(output, "flows.jsonl")); !os.IsNotExist(err) {
@@ -145,8 +145,8 @@ func TestShareSkipsSpecWhenNoValidAPIFlows(t *testing.T) {
 	if strings.Join(result.Files, ",") != "inventory.json,report.md,session.json" {
 		t.Fatalf("files = %#v", result.Files)
 	}
-	if _, err := os.Stat(filepath.Join(output, "spec.yaml")); !os.IsNotExist(err) {
-		t.Fatalf("spec.yaml was written for a bundle with no valid API flows")
+	if _, err := os.Stat(filepath.Join(output, "openapi-spec.yaml")); !os.IsNotExist(err) {
+		t.Fatalf("openapi-spec.yaml was written for a bundle with no valid API flows")
 	}
 	for _, name := range []string{"inventory.json", "report.md", "session.json"} {
 		if _, err := os.Stat(filepath.Join(output, name)); err != nil {

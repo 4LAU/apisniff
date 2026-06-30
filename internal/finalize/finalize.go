@@ -23,7 +23,7 @@ type Summary struct {
 	PersistedHashCount int
 }
 
-// FinalizeBundle writes spec.yaml and the PRIVATE GraphQL catalog into dir using
+// FinalizeBundle writes the OpenAPI spec and the PRIVATE GraphQL catalog into dir using
 // the in-memory flows. dir MUST be a private (0o600) capture-bundle directory —
 // the catalog contains raw URLs and raw variable values (credentials/PII) and is
 // never shareable. Safe to call with no GraphQL ops (catalog is cleared).
@@ -43,7 +43,7 @@ func FinalizeBundle(dir string, flows []model.CapturedFlow, domain string) (Summ
 }
 
 // FromBundle reloads the captured flows from flowsPath and finalizes the bundle
-// (writes spec.yaml + the private GraphQL catalog into bundleDir). It is non-fatal:
+// (writes the OpenAPI spec + the private GraphQL catalog into bundleDir). It is non-fatal:
 // the capture already succeeded, so any error is logged and an empty Summary
 // returned rather than propagated. bundleDir must be a private capture-bundle dir.
 func FromBundle(bundleDir, flowsPath, domain string) Summary {
@@ -58,7 +58,7 @@ func FromBundle(bundleDir, flowsPath, domain string) Summary {
 	return sum
 }
 
-// writeSpec generates and writes spec.yaml at mode 0o600, skipping the write
+// writeSpec generates and writes the OpenAPI spec at mode 0o600, skipping the write
 // (no error) when the pipeline yields no API flows worth a spec.
 func writeSpec(dir string, pipeline spec.PipelineResult, domain string) error {
 	specDoc, err := spec.Generate(pipeline.APIFlows, domain, pipeline.Auth,
@@ -75,7 +75,7 @@ func writeSpec(dir string, pipeline spec.PipelineResult, domain string) error {
 	if err != nil {
 		return err
 	}
-	return os.WriteFile(filepath.Join(dir, "spec.yaml"), data, 0o600)
+	return os.WriteFile(filepath.Join(dir, spec.OpenAPIFileName), data, 0o600)
 }
 
 // summarize derives the Summary from a built catalog, splitting operations by

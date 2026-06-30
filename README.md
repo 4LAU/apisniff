@@ -64,7 +64,7 @@ apisniff probe example.com
 apisniff recon example.com
 
 # 3. Turn the capture into an OpenAPI spec
-apisniff spec example.com -o spec.yaml
+apisniff spec example.com -o openapi-spec.yaml
 
 # 4. Replay captured calls to detect drift
 apisniff replay example.com
@@ -133,12 +133,12 @@ A finished capture becomes an OpenAPI spec, then a safe export, in two commands:
 
 ```bash
 # Generate a client library
-openapi-generator generate -i spec.yaml -g python -o client/
+openapi-generator generate -i openapi-spec.yaml -g python -o client/
 
-# Import into Postman: File → Import → select spec.yaml
+# Import into Postman: File → Import → select openapi-spec.yaml
 
 # Feed to an LLM
-cat spec.yaml | llm "write a Python client for this API"
+cat openapi-spec.yaml | llm "write a Python client for this API"
 ```
 
 ## Documentation

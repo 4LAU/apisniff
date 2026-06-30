@@ -53,7 +53,7 @@ apisniff analyze flows.jsonl
 ## Step 3: Generate an API Spec
 
 ```bash
-apisniff spec example.com -o spec.yaml
+apisniff spec example.com -o openapi-spec.yaml
 ```
 
 The spec includes observed endpoints, normalized path parameters, inferred request/response schemas, query parameters, and observed auth signals.
@@ -72,7 +72,7 @@ Replay compares status codes, JSON shape, and response sizes. It only sends safe
 apisniff share example.com
 ```
 
-The share directory contains `spec.yaml`, `inventory.json`, `report.md`, and `session.json`. It excludes raw traffic and redacts cookie values.
+The share directory contains `openapi-spec.yaml`, `inventory.json`, `report.md`, and `session.json`. It excludes raw traffic and redacts cookie values.
 
 ## Next Steps
 

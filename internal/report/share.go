@@ -67,10 +67,10 @@ func Share(opts ShareOptions) (ShareResult, error) {
 		if err != nil {
 			return ShareResult{}, err
 		}
-		if err := os.WriteFile(filepath.Join(outputDir, "spec.yaml"), specData, 0o600); err != nil {
+		if err := os.WriteFile(filepath.Join(outputDir, spec.OpenAPIFileName), specData, 0o600); err != nil {
 			return ShareResult{}, err
 		}
-		files = append(files, "spec.yaml")
+		files = append(files, spec.OpenAPIFileName)
 	}
 
 	if err := WriteInventory(filepath.Join(outputDir, "inventory.json"), inventory); err != nil {

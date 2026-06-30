@@ -28,7 +28,7 @@ apisniff share example.com -o ./for-teammate --json
 
 | File | Contents |
 |------|----------|
-| `spec.yaml` | OpenAPI 3.0.3 generated from kept flows |
+| `openapi-spec.yaml` | OpenAPI 3.0.3 generated from kept flows |
 | `inventory.json` | Endpoint, host, category, auth, and redacted cookie summary |
 | `report.md` | Markdown summary with redacted cookie values |
 | `session.json` | Capture metadata |

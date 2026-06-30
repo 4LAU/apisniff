@@ -135,7 +135,7 @@ func WriteBundle(dir string, flows []model.CapturedFlow, session model.SessionSt
 	if err := writePrivateFile(filepath.Join(dir, "report.md"), Markdown(inventory)); err != nil {
 		return finalize.Summary{}, err
 	}
-	// Co-locate spec.yaml + the private GraphQL catalog (raw URLs/variables —
+	// Co-locate the OpenAPI spec + the private GraphQL catalog (raw URLs/variables —
 	// never shareable). dir is already a 0o600 private bundle.
 	summary, err := finalize.FinalizeBundle(dir, flows, session.Domain)
 	if err != nil {

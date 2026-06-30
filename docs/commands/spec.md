@@ -28,7 +28,7 @@ apisniff spec DOMAIN [flags]
 ```bash
 apisniff spec example.com
 apisniff spec example.com -i capture.jsonl -f json -o spec.json
-apisniff spec example.com -i traffic.har -o spec.yaml
+apisniff spec example.com -i traffic.har -o openapi-spec.yaml
 apisniff spec example.com --infer-security-schemes --examples
 ```
 

@@ -12,7 +12,7 @@ import (
 // TestShareDoesNotLeakPathIDOrVariable is the IR-1 end-to-end regression: a
 // GraphQL flow whose request PATH carries an opaque ID and whose VARIABLES carry
 // a secret must produce share output where neither value appears in ANY file,
-// while the normalized x-apisniff-graphql extension is still present in spec.yaml.
+// while the normalized x-apisniff-graphql extension is still present in the OpenAPI spec.
 func TestShareDoesNotLeakPathIDOrVariable(t *testing.T) {
 	// A realistic opaque ID (24-char hex) that the spec-path normalizer redacts
 	// to a {param}. The literal value must never survive into share output.
@@ -38,15 +38,15 @@ func TestShareDoesNotLeakPathIDOrVariable(t *testing.T) {
 		if strings.Contains(content, secret) {
 			t.Errorf("variable secret leaked into %s", name)
 		}
-		if name == "spec.yaml" {
+		if name == "openapi-spec.yaml" {
 			sawSpec = true
 			if !strings.Contains(content, "x-apisniff-graphql") {
-				t.Errorf("spec.yaml missing x-apisniff-graphql extension")
+				t.Errorf("openapi-spec.yaml missing x-apisniff-graphql extension")
 			}
 		}
 	}
 	if !sawSpec {
-		t.Fatal("Share did not produce spec.yaml; GraphQL flow was filtered out")
+		t.Fatal("Share did not produce openapi-spec.yaml; GraphQL flow was filtered out")
 	}
 }
 
