@@ -296,7 +296,7 @@ func Capture(ctx context.Context, cfg Config) (*Result, error) {
 		return nil, runErr
 	}
 	// Non-fatal: capture already succeeded. Co-locate spec + private catalog.
-	gqlSummary := finalize.FromBundle(bundle, flowsPath, stats.Domain)
+	gqlSummary := finalize.FromBundle(cfg.WarningWriter, bundle, flowsPath, stats.Domain)
 	return &Result{BundleDir: bundle, FlowsPath: flowsPath, FilteredPath: resultFilteredPath, Stats: stats, GraphQL: gqlSummary}, nil
 }
 
