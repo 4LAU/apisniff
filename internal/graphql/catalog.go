@@ -179,7 +179,8 @@ func groupHashMismatch(g *group) bool {
 }
 
 // firstPersistedHash returns the first non-empty persisted hash observed in
-// the group, or "" when no contribution carried one.
+// the group, or "" when no contribution carried one. The carried hash may be
+// a mismatched (tampered) one; HashMismatch flags that case.
 func firstPersistedHash(g *group) string {
 	for _, c := range g.members {
 		if c.op.PersistedHash != "" {
