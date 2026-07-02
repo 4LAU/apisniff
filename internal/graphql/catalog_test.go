@@ -209,6 +209,47 @@ func TestWriteCatalogColludingNamesSuffixed(t *testing.T) {
 	}
 }
 
+func TestDocumentNamesSameQueryTwoEndpointsDistinct(t *testing.T) {
+	mk := func(host, q string) model.CapturedFlow {
+		return model.CapturedFlow{Method: "POST", Host: host, Path: "/graphql", URL: "https://" + host + "/graphql",
+			RequestHeaders: map[string]string{"content-type": "application/json"},
+			RequestBody:    []byte(`{"operationName":"Dup","query":"` + q + `"}`),
+			ResponseStatus: 200, ResponseBody: []byte(`{"data":{}}`)}
+	}
+	// Identical query text on two different endpoints.
+	cat := BuildCatalog([]model.CapturedFlow{mk("a.com", "query Dup{a}"), mk("b.com", "query Dup{a}")})
+	names := documentNames(sdlOps(cat))
+	if len(names) != 2 {
+		t.Fatalf("want 2 names, got %v", names)
+	}
+	if names[0] == names[1] {
+		t.Fatalf("same query on two endpoints must yield distinct document names, got %q twice", names[0])
+	}
+	for _, n := range names {
+		if !strings.HasPrefix(n, "Dup_") {
+			t.Fatalf("colliding name must be suffixed, got %q", n)
+		}
+	}
+}
+
+func TestDocumentNamesSameEndpointDifferentQueriesDistinct(t *testing.T) {
+	mk := func(q string) model.CapturedFlow {
+		return model.CapturedFlow{Method: "POST", Host: "a.com", Path: "/graphql", URL: "https://a.com/graphql",
+			RequestHeaders: map[string]string{"content-type": "application/json"},
+			RequestBody:    []byte(`{"operationName":"Dup","query":"` + q + `"}`),
+			ResponseStatus: 200, ResponseBody: []byte(`{"data":{}}`)}
+	}
+	// Different queries sharing a name on one endpoint stay disambiguated.
+	cat := BuildCatalog([]model.CapturedFlow{mk("query Dup{a}"), mk("query Dup{b}")})
+	names := documentNames(sdlOps(cat))
+	if len(names) != 2 {
+		t.Fatalf("want 2 names, got %v", names)
+	}
+	if names[0] == names[1] {
+		t.Fatalf("different queries on one endpoint must yield distinct document names, got %q twice", names[0])
+	}
+}
+
 func TestWriteCatalogOmitsEmptyQueryDoc(t *testing.T) {
 	dir := t.TempDir()
 	// Truncated request -> canonical Query becomes empty (IR-4). The op still
