@@ -80,6 +80,52 @@ func TestBuildCatalogAPQMismatchFlags(t *testing.T) {
 	}
 }
 
+// TestBuildCatalogAPQMismatchSurvivesCaptureOrder pins that the tamper signal
+// is ORed across ALL group members: a mismatch carried by a LATER capture of
+// the same operation must still flag the aggregated op. A clean member (query
+// only) and a mismatched member (same query + wrong persisted hash) share the
+// same discriminator (sha256 of the query text), so they land in one group.
+func TestBuildCatalogAPQMismatchSurvivesCaptureOrder(t *testing.T) {
+	clean := model.CapturedFlow{Method: "POST", Host: "api.x.com", Path: "/graphql", URL: "https://api.x.com/graphql",
+		RequestHeaders: map[string]string{"content-type": "application/json"},
+		RequestBody:    []byte(`{"operationName":"Q","query":"query Q{q}"}`),
+		ResponseStatus: 200, ResponseBody: []byte(`{"data":{}}`)}
+	mismatched := model.CapturedFlow{Method: "POST", Host: "api.x.com", Path: "/graphql", URL: "https://api.x.com/graphql",
+		RequestHeaders: map[string]string{"content-type": "application/json"},
+		RequestBody:    []byte(`{"operationName":"Q","query":"query Q{q}","extensions":{"persistedQuery":{"sha256Hash":"0000notrealhash"}}}`),
+		ResponseStatus: 200, ResponseBody: []byte(`{"data":{}}`)}
+	// clean is captured FIRST (members[0]), mismatched SECOND (members[1]).
+	cat := BuildCatalog([]model.CapturedFlow{clean, mismatched})
+	if cat.OperationCount != 1 {
+		t.Fatalf("want 1 op (same group), got %d", cat.OperationCount)
+	}
+	if !cat.Operations[0].HashMismatch {
+		t.Fatalf("mismatch on a later member must still flag the aggregated op")
+	}
+}
+
+// TestBuildCatalogCarriesLaterMemberPersistedHash pins that PersistedHash is
+// carried from the first NON-EMPTY member: an earlier member with no hash must
+// not suppress a hash observed on a later member of the same group.
+func TestBuildCatalogCarriesLaterMemberPersistedHash(t *testing.T) {
+	noHash := model.CapturedFlow{Method: "POST", Host: "api.x.com", Path: "/graphql", URL: "https://api.x.com/graphql",
+		RequestHeaders: map[string]string{"content-type": "application/json"},
+		RequestBody:    []byte(`{"operationName":"Q","query":"query Q{q}"}`),
+		ResponseStatus: 200, ResponseBody: []byte(`{"data":{}}`)}
+	withHash := model.CapturedFlow{Method: "POST", Host: "api.x.com", Path: "/graphql", URL: "https://api.x.com/graphql",
+		RequestHeaders: map[string]string{"content-type": "application/json"},
+		RequestBody:    []byte(`{"operationName":"Q","query":"query Q{q}","extensions":{"persistedQuery":{"sha256Hash":"0000notrealhash"}}}`),
+		ResponseStatus: 200, ResponseBody: []byte(`{"data":{}}`)}
+	cat := BuildCatalog([]model.CapturedFlow{noHash, withHash})
+	if cat.OperationCount != 1 {
+		t.Fatalf("want 1 op (same group), got %d", cat.OperationCount)
+	}
+	op := cat.Operations[0]
+	if op.PersistedHash == nil || *op.PersistedHash != "0000notrealhash" {
+		t.Fatalf("aggregated op must carry the later member's hash, got %v", op.PersistedHash)
+	}
+}
+
 func TestBuildCatalogInvalidResponseJSONIsPartial(t *testing.T) {
 	flow := model.CapturedFlow{Method: "POST", Host: "api.x.com", Path: "/graphql", URL: "https://api.x.com/graphql",
 		RequestHeaders: map[string]string{"content-type": "application/json"},

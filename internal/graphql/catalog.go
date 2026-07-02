@@ -148,7 +148,7 @@ func aggregateGroup(g *group) CatalogOp {
 		Method:        first.Method,
 		ObservedCount: len(g.members),
 		Quality:       "complete",
-		HashMismatch:  g.members[0].hashMismatch,
+		HashMismatch:  groupHashMismatch(g),
 	}
 	out.Source = groupSource(g)
 	out.StatusCodes = collectStatuses(g)
@@ -157,8 +157,7 @@ func aggregateGroup(g *group) CatalogOp {
 	}
 	// Carry the hash for any group that has one: a persisted-hash group, or a
 	// captured-query group that also observed a hash (e.g. APQ mismatch).
-	if first.PersistedHash != "" {
-		hash := first.PersistedHash
+	if hash := firstPersistedHash(g); hash != "" {
 		out.PersistedHash = &hash
 	}
 	aggregateSchemas(&out, g)
@@ -166,6 +165,28 @@ func aggregateGroup(g *group) CatalogOp {
 		out.Quality = "partial"
 	}
 	return out
+}
+
+// groupHashMismatch reports whether ANY contribution observed an APQ hash
+// mismatch: the tamper signal must survive regardless of capture order.
+func groupHashMismatch(g *group) bool {
+	for _, c := range g.members {
+		if c.hashMismatch {
+			return true
+		}
+	}
+	return false
+}
+
+// firstPersistedHash returns the first non-empty persisted hash observed in
+// the group, or "" when no contribution carried one.
+func firstPersistedHash(g *group) string {
+	for _, c := range g.members {
+		if c.op.PersistedHash != "" {
+			return c.op.PersistedHash
+		}
+	}
+	return ""
 }
 
 // groupSource is "persisted-hash" only when every contribution is hash-only.
