@@ -525,6 +525,28 @@ func TestDeduplicateReportsMerges(t *testing.T) {
 	}
 }
 
+// Merge paths land in shareable report output, so credential query values
+// must be stripped before they are recorded.
+func TestDeduplicateMergePathsStripCredentialValues(t *testing.T) {
+	flows := []model.CapturedFlow{
+		{Method: "GET", Path: "/api/items?api_key=sk1&page=1", Timestamp: 1},
+		{Method: "GET", Path: "/api/items?api_key=sk2&page=2", Timestamp: 2},
+	}
+	_, merges := deduplicate(flows)
+	if len(merges) != 1 {
+		t.Fatalf("merges = %#v, want exactly one", merges)
+	}
+	wantPaths := []string{"/api/items?page=1", "/api/items?page=2"}
+	if !reflect.DeepEqual(merges[0].Paths, wantPaths) {
+		t.Fatalf("merge paths = %#v, want %#v", merges[0].Paths, wantPaths)
+	}
+	for _, p := range merges[0].Paths {
+		if strings.Contains(p, "sk1") || strings.Contains(p, "sk2") {
+			t.Fatalf("merge path leaks credential value: %s", p)
+		}
+	}
+}
+
 // A single route captured multiple times must NOT register as a merge: the
 // merge log exists to surface distinct paths collapsing, not repeat captures.
 func TestDeduplicateSamePathNotMerged(t *testing.T) {

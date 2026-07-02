@@ -324,7 +324,10 @@ func deduplicate(flows []model.CapturedFlow) ([]model.CapturedFlow, []DedupMerge
 		if rawPaths[key] == nil {
 			rawPaths[key] = map[string]struct{}{}
 		}
-		rawPaths[key][flow.Path] = struct{}{}
+		// Merge paths end up in shareable report output; strip credential
+		// query values before recording. Paths differing only by token value
+		// collapse to one entry, which is the collapse we want to surface.
+		rawPaths[key][auth.StripCredentialQueryParams(flow.Path)] = struct{}{}
 	}
 	out := make([]model.CapturedFlow, 0, len(seen))
 	for _, flow := range seen {
