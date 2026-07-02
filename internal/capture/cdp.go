@@ -48,9 +48,9 @@ type Config struct {
 	LaunchBrowser  bool
 	Timeout        time.Duration
 	StatusWriter   io.Writer
-	// WarningWriter receives security-critical warnings (currently the
-	// off-loopback open-proxy exposure notice). Unlike StatusWriter it is NOT
-	// silenced in --json mode, so the highest-risk bind config is never silent.
+	// WarningWriter receives warnings the user must see even without status
+	// output (open-proxy exposure notices, bundle-finalization failures).
+	// Unlike StatusWriter it is NOT silenced in --json mode.
 	WarningWriter io.Writer
 }
 

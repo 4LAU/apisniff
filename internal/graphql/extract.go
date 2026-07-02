@@ -44,8 +44,8 @@ type envelope struct {
 // declRe matches a named operation declaration: "query Foo", "mutation Bar(...)".
 var declRe = regexp.MustCompile(`(?m)\b(query|mutation|subscription)\s+([A-Za-z_]\w*)`)
 
-// ExtractGraphQLOperations returns the GraphQL operations carried by a flow, or
-// nil if the flow is not GraphQL.
+// ExtractGraphQLOperations returns the GraphQL operations carried by a flow;
+// the result is empty when the flow is not GraphQL.
 func ExtractGraphQLOperations(flow model.CapturedFlow) []Operation {
 	switch classifyTransport(flow) {
 	case "json", "json-batch":
@@ -134,7 +134,8 @@ func singleOp(e envelope, flow model.CapturedFlow, transport string) []Operation
 // Operation per GraphQL element, index-matching the response array; any
 // response shape mismatch nils all responses. Non-GraphQL elements are skipped
 // (not filtered up front, so index alignment with the response array holds).
-// An empty or undecodable array yields nil.
+// An empty or undecodable array yields nil; an array whose elements all fail
+// the envelope guard yields an empty slice.
 func extractBatch(requestBody []byte, flow model.CapturedFlow, transport string) []Operation {
 	var reqs []envelope
 	if json.Unmarshal(requestBody, &reqs) != nil || len(reqs) == 0 {

@@ -84,7 +84,7 @@ type componentCandidateKey struct {
 }
 
 func IsAPIFlow(flow model.CapturedFlow) bool {
-	if strings.Contains(flow.ContentType(), "json") {
+	if isJSONishContentType(flow.ContentType()) {
 		return true
 	}
 	reqCT := contentTypeBase(model.GetHeader(flow.RequestHeaders, "content-type"))
@@ -167,7 +167,7 @@ func aggregateOperations(flows []model.CapturedFlow, includeExamples bool) []*ob
 			continue
 		}
 		method := strings.ToLower(flow.Method)
-		if !isOpenAPIOperation(method) {
+		if !IsOpenAPIOperation(method) {
 			continue
 		}
 		path, pathParams, ok := model.NormalizeSpecPath(flow.Path)
@@ -268,7 +268,10 @@ var openAPIOperations = map[string]struct{}{
 	"trace":   {},
 }
 
-func isOpenAPIOperation(method string) bool {
+// IsOpenAPIOperation reports whether a lower-case HTTP method is one of the
+// OpenAPI path-item operations. Exported so counting code stays in sync with
+// generation instead of duplicating the method list.
+func IsOpenAPIOperation(method string) bool {
 	_, ok := openAPIOperations[method]
 	return ok
 }

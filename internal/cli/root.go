@@ -728,16 +728,16 @@ func countOpenAPIOperations(doc map[string]any) specCounts {
 		}
 		hasGraphQL := false
 		for method, rawOp := range pathItem {
-			switch strings.ToLower(method) {
-			case "get", "put", "post", "delete", "options", "head", "patch", "trace":
-				c.operations++
-				c.methods[strings.ToUpper(method)]++
-				if op, ok := rawOp.(map[string]any); ok {
-					if gql, ok := op["x-apisniff-graphql"].(map[string]any); ok {
-						if ops, ok := gql["operations"].([]any); ok {
-							c.graphqlOps += len(ops)
-							hasGraphQL = true
-						}
+			if !spec.IsOpenAPIOperation(strings.ToLower(method)) {
+				continue
+			}
+			c.operations++
+			c.methods[strings.ToUpper(method)]++
+			if op, ok := rawOp.(map[string]any); ok {
+				if gql, ok := op["x-apisniff-graphql"].(map[string]any); ok {
+					if ops, ok := gql["operations"].([]any); ok {
+						c.graphqlOps += len(ops)
+						hasGraphQL = true
 					}
 				}
 			}

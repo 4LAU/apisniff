@@ -61,8 +61,8 @@ func FromBundle(warnW io.Writer, bundleDir, flowsPath, domain string) Summary {
 	}
 	sum, err := FinalizeBundle(bundleDir, flows, domain)
 	if err != nil {
-		fmt.Fprintf(warnW, "WARNING: could not write %s / the GraphQL catalog into %s (%v).\n",
-			spec.OpenAPIFileName, bundleDir, err)
+		fmt.Fprintf(warnW, "WARNING: could not finalize %s (%v); %s and the GraphQL catalog may be missing or incomplete.\n",
+			bundleDir, err, spec.OpenAPIFileName)
 		return Summary{}
 	}
 	return sum
