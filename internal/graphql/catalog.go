@@ -444,8 +444,9 @@ func sdlOps(cat Catalog) []CatalogOp {
 
 // documentNames returns the document name for each included op, suffixing any
 // name shared by two or more ops with the first 8 chars of a hash over the
-// op's endpoint and discriminator, so the same query captured on two
-// endpoints still yields distinct document names.
+// op's full composite identity (groupKey), so any two distinct catalog ops —
+// same query on two endpoints, or GET vs POST on one endpoint — yield
+// distinct document names.
 func documentNames(ops []CatalogOp) []string {
 	counts := map[string]int{}
 	for _, op := range ops {
@@ -454,7 +455,8 @@ func documentNames(ops []CatalogOp) []string {
 	names := make([]string, len(ops))
 	for i, op := range ops {
 		if counts[op.OperationName] > 1 {
-			names[i] = op.OperationName + "_" + shortHash(sha256hex(op.Endpoint+"\x00"+opDiscriminator(op)))
+			identity := Operation{Endpoint: op.Endpoint, Method: op.Method, OperationName: op.OperationName}
+			names[i] = op.OperationName + "_" + shortHash(sha256hex(groupKey(identity, opDiscriminator(op))))
 		} else {
 			names[i] = op.OperationName
 		}
@@ -462,7 +464,7 @@ func documentNames(ops []CatalogOp) []string {
 	return names
 }
 
-// shortHash returns the first 8 characters of a discriminator hash.
+// shortHash returns the first 8 characters of a hash.
 func shortHash(h string) string {
 	if len(h) >= 8 {
 		return h[:8]

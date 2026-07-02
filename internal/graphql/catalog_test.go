@@ -250,6 +250,30 @@ func TestDocumentNamesSameEndpointDifferentQueriesDistinct(t *testing.T) {
 	}
 }
 
+func TestDocumentNamesSameEndpointGetAndPostDistinct(t *testing.T) {
+	// Same query, same name, same endpoint URL — one op via GET query-string
+	// transport, one via POST JSON. Method is part of the composite identity,
+	// so the document names must still be distinct.
+	get := model.CapturedFlow{Method: "GET", Host: "a.com",
+		Path: "/graphql?operationName=Dup&query=query%20Dup%7Ba%7D", URL: "https://a.com/graphql",
+		ResponseStatus: 200, ResponseBody: []byte(`{"data":{}}`)}
+	post := model.CapturedFlow{Method: "POST", Host: "a.com", Path: "/graphql", URL: "https://a.com/graphql",
+		RequestHeaders: map[string]string{"content-type": "application/json"},
+		RequestBody:    []byte(`{"operationName":"Dup","query":"query Dup{a}"}`),
+		ResponseStatus: 200, ResponseBody: []byte(`{"data":{}}`)}
+	cat := BuildCatalog([]model.CapturedFlow{get, post})
+	if cat.OperationCount != 2 {
+		t.Fatalf("precondition: GET and POST must be distinct catalog ops, got %d", cat.OperationCount)
+	}
+	names := documentNames(sdlOps(cat))
+	if len(names) != 2 {
+		t.Fatalf("want 2 names, got %v", names)
+	}
+	if names[0] == names[1] {
+		t.Fatalf("GET and POST ops on one endpoint must yield distinct document names, got %q twice", names[0])
+	}
+}
+
 func TestWriteCatalogOmitsEmptyQueryDoc(t *testing.T) {
 	dir := t.TempDir()
 	// Truncated request -> canonical Query becomes empty (IR-4). The op still
