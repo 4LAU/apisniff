@@ -80,6 +80,52 @@ func TestBuildCatalogAPQMismatchFlags(t *testing.T) {
 	}
 }
 
+// TestBuildCatalogAPQMismatchSurvivesCaptureOrder pins that the tamper signal
+// is ORed across ALL group members: a mismatch carried by a LATER capture of
+// the same operation must still flag the aggregated op. A clean member (query
+// only) and a mismatched member (same query + wrong persisted hash) share the
+// same discriminator (sha256 of the query text), so they land in one group.
+func TestBuildCatalogAPQMismatchSurvivesCaptureOrder(t *testing.T) {
+	clean := model.CapturedFlow{Method: "POST", Host: "api.x.com", Path: "/graphql", URL: "https://api.x.com/graphql",
+		RequestHeaders: map[string]string{"content-type": "application/json"},
+		RequestBody:    []byte(`{"operationName":"Q","query":"query Q{q}"}`),
+		ResponseStatus: 200, ResponseBody: []byte(`{"data":{}}`)}
+	mismatched := model.CapturedFlow{Method: "POST", Host: "api.x.com", Path: "/graphql", URL: "https://api.x.com/graphql",
+		RequestHeaders: map[string]string{"content-type": "application/json"},
+		RequestBody:    []byte(`{"operationName":"Q","query":"query Q{q}","extensions":{"persistedQuery":{"sha256Hash":"0000notrealhash"}}}`),
+		ResponseStatus: 200, ResponseBody: []byte(`{"data":{}}`)}
+	// clean is captured FIRST (members[0]), mismatched SECOND (members[1]).
+	cat := BuildCatalog([]model.CapturedFlow{clean, mismatched})
+	if cat.OperationCount != 1 {
+		t.Fatalf("want 1 op (same group), got %d", cat.OperationCount)
+	}
+	if !cat.Operations[0].HashMismatch {
+		t.Fatalf("mismatch on a later member must still flag the aggregated op")
+	}
+}
+
+// TestBuildCatalogCarriesLaterMemberPersistedHash pins that PersistedHash is
+// carried from the first NON-EMPTY member: an earlier member with no hash must
+// not suppress a hash observed on a later member of the same group.
+func TestBuildCatalogCarriesLaterMemberPersistedHash(t *testing.T) {
+	noHash := model.CapturedFlow{Method: "POST", Host: "api.x.com", Path: "/graphql", URL: "https://api.x.com/graphql",
+		RequestHeaders: map[string]string{"content-type": "application/json"},
+		RequestBody:    []byte(`{"operationName":"Q","query":"query Q{q}"}`),
+		ResponseStatus: 200, ResponseBody: []byte(`{"data":{}}`)}
+	withHash := model.CapturedFlow{Method: "POST", Host: "api.x.com", Path: "/graphql", URL: "https://api.x.com/graphql",
+		RequestHeaders: map[string]string{"content-type": "application/json"},
+		RequestBody:    []byte(`{"operationName":"Q","query":"query Q{q}","extensions":{"persistedQuery":{"sha256Hash":"0000notrealhash"}}}`),
+		ResponseStatus: 200, ResponseBody: []byte(`{"data":{}}`)}
+	cat := BuildCatalog([]model.CapturedFlow{noHash, withHash})
+	if cat.OperationCount != 1 {
+		t.Fatalf("want 1 op (same group), got %d", cat.OperationCount)
+	}
+	op := cat.Operations[0]
+	if op.PersistedHash == nil || *op.PersistedHash != "0000notrealhash" {
+		t.Fatalf("aggregated op must carry the later member's hash, got %v", op.PersistedHash)
+	}
+}
+
 func TestBuildCatalogInvalidResponseJSONIsPartial(t *testing.T) {
 	flow := model.CapturedFlow{Method: "POST", Host: "api.x.com", Path: "/graphql", URL: "https://api.x.com/graphql",
 		RequestHeaders: map[string]string{"content-type": "application/json"},
@@ -160,6 +206,71 @@ func TestWriteCatalogColludingNamesSuffixed(t *testing.T) {
 	data, _ := os.ReadFile(filepath.Join(dir, "operations.graphql"))
 	if !strings.Contains(string(data), "Dup_") {
 		t.Fatalf("colliding names must be suffixed in the .graphql file:\n%s", data)
+	}
+}
+
+func TestDocumentNamesSameQueryTwoEndpointsDistinct(t *testing.T) {
+	mk := func(host, q string) model.CapturedFlow {
+		return model.CapturedFlow{Method: "POST", Host: host, Path: "/graphql", URL: "https://" + host + "/graphql",
+			RequestHeaders: map[string]string{"content-type": "application/json"},
+			RequestBody:    []byte(`{"operationName":"Dup","query":"` + q + `"}`),
+			ResponseStatus: 200, ResponseBody: []byte(`{"data":{}}`)}
+	}
+	// Identical query text on two different endpoints.
+	cat := BuildCatalog([]model.CapturedFlow{mk("a.com", "query Dup{a}"), mk("b.com", "query Dup{a}")})
+	names := documentNames(sdlOps(cat))
+	if len(names) != 2 {
+		t.Fatalf("want 2 names, got %v", names)
+	}
+	if names[0] == names[1] {
+		t.Fatalf("same query on two endpoints must yield distinct document names, got %q twice", names[0])
+	}
+	for _, n := range names {
+		if !strings.HasPrefix(n, "Dup_") {
+			t.Fatalf("colliding name must be suffixed, got %q", n)
+		}
+	}
+}
+
+func TestDocumentNamesSameEndpointDifferentQueriesDistinct(t *testing.T) {
+	mk := func(q string) model.CapturedFlow {
+		return model.CapturedFlow{Method: "POST", Host: "a.com", Path: "/graphql", URL: "https://a.com/graphql",
+			RequestHeaders: map[string]string{"content-type": "application/json"},
+			RequestBody:    []byte(`{"operationName":"Dup","query":"` + q + `"}`),
+			ResponseStatus: 200, ResponseBody: []byte(`{"data":{}}`)}
+	}
+	// Different queries sharing a name on one endpoint stay disambiguated.
+	cat := BuildCatalog([]model.CapturedFlow{mk("query Dup{a}"), mk("query Dup{b}")})
+	names := documentNames(sdlOps(cat))
+	if len(names) != 2 {
+		t.Fatalf("want 2 names, got %v", names)
+	}
+	if names[0] == names[1] {
+		t.Fatalf("different queries on one endpoint must yield distinct document names, got %q twice", names[0])
+	}
+}
+
+func TestDocumentNamesSameEndpointGetAndPostDistinct(t *testing.T) {
+	// Same query, same name, same endpoint URL — one op via GET query-string
+	// transport, one via POST JSON. Method is part of the composite identity,
+	// so the document names must still be distinct.
+	get := model.CapturedFlow{Method: "GET", Host: "a.com",
+		Path: "/graphql?operationName=Dup&query=query%20Dup%7Ba%7D", URL: "https://a.com/graphql",
+		ResponseStatus: 200, ResponseBody: []byte(`{"data":{}}`)}
+	post := model.CapturedFlow{Method: "POST", Host: "a.com", Path: "/graphql", URL: "https://a.com/graphql",
+		RequestHeaders: map[string]string{"content-type": "application/json"},
+		RequestBody:    []byte(`{"operationName":"Dup","query":"query Dup{a}"}`),
+		ResponseStatus: 200, ResponseBody: []byte(`{"data":{}}`)}
+	cat := BuildCatalog([]model.CapturedFlow{get, post})
+	if cat.OperationCount != 2 {
+		t.Fatalf("precondition: GET and POST must be distinct catalog ops, got %d", cat.OperationCount)
+	}
+	names := documentNames(sdlOps(cat))
+	if len(names) != 2 {
+		t.Fatalf("want 2 names, got %v", names)
+	}
+	if names[0] == names[1] {
+		t.Fatalf("GET and POST ops on one endpoint must yield distinct document names, got %q twice", names[0])
 	}
 }
 

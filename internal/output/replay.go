@@ -43,9 +43,7 @@ func WriteReplay(cfg Config, summary replay.Summary) error {
 	lines = append(lines, replayMergeSection(s, summary.Merges)...)
 
 	lines = append(lines, "", s.header("Summary"))
-	for _, line := range replaySummaryLines(s, summary, []string{"match", "drift", "auth_expired", "blocked", "error"}) {
-		lines = append(lines, line)
-	}
+	lines = append(lines, replaySummaryLines(s, summary, []string{"match", "drift", "auth_expired", "blocked", "error"})...)
 	return s.writeLines(lines...)
 }
 

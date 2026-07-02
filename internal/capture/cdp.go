@@ -48,9 +48,9 @@ type Config struct {
 	LaunchBrowser  bool
 	Timeout        time.Duration
 	StatusWriter   io.Writer
-	// WarningWriter receives security-critical warnings (currently the
-	// off-loopback open-proxy exposure notice). Unlike StatusWriter it is NOT
-	// silenced in --json mode, so the highest-risk bind config is never silent.
+	// WarningWriter receives warnings the user must see even without status
+	// output (open-proxy exposure notices, bundle-finalization failures).
+	// Unlike StatusWriter it is NOT silenced in --json mode.
 	WarningWriter io.Writer
 }
 
@@ -296,7 +296,7 @@ func Capture(ctx context.Context, cfg Config) (*Result, error) {
 		return nil, runErr
 	}
 	// Non-fatal: capture already succeeded. Co-locate spec + private catalog.
-	gqlSummary := finalize.FromBundle(bundle, flowsPath, stats.Domain)
+	gqlSummary := finalize.FromBundle(cfg.WarningWriter, bundle, flowsPath, stats.Domain)
 	return &Result{BundleDir: bundle, FlowsPath: flowsPath, FilteredPath: resultFilteredPath, Stats: stats, GraphQL: gqlSummary}, nil
 }
 

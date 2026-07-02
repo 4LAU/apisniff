@@ -55,7 +55,7 @@ func BuildCoverage(apiFlows []model.CapturedFlow, doc map[string]any) CoverageRe
 	for _, f := range apiFlows {
 		method := strings.ToLower(f.Method)
 		normPath, _, ok := model.NormalizeSpecPath(f.Path)
-		if ok && isOpenAPIOperation(method) {
+		if ok && IsOpenAPIOperation(method) {
 			if _, in := emitted[normPath+"\x00"+method]; in {
 				report.Represented++
 				continue
@@ -101,7 +101,7 @@ func emittedOperations(doc map[string]any) map[string]struct{} {
 		}
 		for method := range item {
 			lower := strings.ToLower(method)
-			if isOpenAPIOperation(lower) {
+			if IsOpenAPIOperation(lower) {
 				out[path+"\x00"+lower] = struct{}{}
 			}
 		}
@@ -117,7 +117,7 @@ func exclusionReason(f model.CapturedFlow) string {
 	if f.ResponseStatus < 100 || f.ResponseStatus > 599 {
 		return fmt.Sprintf("response status %d is outside 100-599; not a documentable operation", f.ResponseStatus)
 	}
-	if !isOpenAPIOperation(strings.ToLower(f.Method)) {
+	if !IsOpenAPIOperation(strings.ToLower(f.Method)) {
 		return "method " + f.Method + " is not an OpenAPI operation"
 	}
 	if _, _, ok := model.NormalizeSpecPath(f.Path); !ok {

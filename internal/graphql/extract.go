@@ -7,6 +7,7 @@
 package graphql
 
 import (
+	"bytes"
 	"encoding/json"
 	"mime"
 	"mime/multipart"
@@ -43,8 +44,8 @@ type envelope struct {
 // declRe matches a named operation declaration: "query Foo", "mutation Bar(...)".
 var declRe = regexp.MustCompile(`(?m)\b(query|mutation|subscription)\s+([A-Za-z_]\w*)`)
 
-// ExtractGraphQLOperations returns the GraphQL operations carried by a flow, or
-// nil if the flow is not GraphQL.
+// ExtractGraphQLOperations returns the GraphQL operations carried by a flow;
+// the result is empty when the flow is not GraphQL.
 func ExtractGraphQLOperations(flow model.CapturedFlow) []Operation {
 	switch classifyTransport(flow) {
 	case "json", "json-batch":
@@ -130,8 +131,11 @@ func singleOp(e envelope, flow model.CapturedFlow, transport string) []Operation
 }
 
 // extractBatch decodes a request batch array (from requestBody) into one
-// Operation per element, index-matching the response array; any response shape
-// mismatch nils all responses. An empty or undecodable array yields nil.
+// Operation per GraphQL element, index-matching the response array; any
+// response shape mismatch nils all responses. Non-GraphQL elements are skipped
+// (not filtered up front, so index alignment with the response array holds).
+// An empty or undecodable array yields nil; an array whose elements all fail
+// the envelope guard yields an empty slice.
 func extractBatch(requestBody []byte, flow model.CapturedFlow, transport string) []Operation {
 	var reqs []envelope
 	if json.Unmarshal(requestBody, &reqs) != nil || len(reqs) == 0 {
@@ -140,6 +144,9 @@ func extractBatch(requestBody []byte, flow model.CapturedFlow, transport string)
 	responses := batchResponses(flow.ResponseBody, len(reqs))
 	ops := make([]Operation, 0, len(reqs))
 	for i, e := range reqs {
+		if !isGraphQLEnvelope(e) {
+			continue
+		}
 		op := operationFromEnvelope(e, flow, transport)
 		if responses != nil {
 			op.ResponseBody = jsonOrNil(responses[i])
@@ -201,7 +208,7 @@ func multipartOperations(flow model.CapturedFlow) []byte {
 	if boundary == "" {
 		return nil
 	}
-	reader := multipart.NewReader(strings.NewReader(string(flow.RequestBody)), boundary)
+	reader := multipart.NewReader(bytes.NewReader(flow.RequestBody), boundary)
 	form, err := reader.ReadForm(1 << 20)
 	if err != nil {
 		return nil

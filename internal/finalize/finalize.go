@@ -5,6 +5,8 @@ package finalize
 
 import (
 	"errors"
+	"fmt"
+	"io"
 	"os"
 	"path/filepath"
 
@@ -44,15 +46,23 @@ func FinalizeBundle(dir string, flows []model.CapturedFlow, domain string) (Summ
 
 // FromBundle reloads the captured flows from flowsPath and finalizes the bundle
 // (writes the OpenAPI spec + the private GraphQL catalog into bundleDir). It is non-fatal:
-// the capture already succeeded, so any error is logged and an empty Summary
-// returned rather than propagated. bundleDir must be a private capture-bundle dir.
-func FromBundle(bundleDir, flowsPath, domain string) Summary {
+// the capture already succeeded, so any error is written to warnW (nil discards)
+// and an empty Summary returned rather than propagated. bundleDir must be a
+// private capture-bundle dir.
+func FromBundle(warnW io.Writer, bundleDir, flowsPath, domain string) Summary {
+	if warnW == nil {
+		warnW = io.Discard
+	}
 	flows, err := adapter.LoadJSONL(flowsPath)
 	if err != nil {
+		fmt.Fprintf(warnW, "WARNING: could not reload captured flows from %s (%v); %s and the GraphQL catalog were not written.\n",
+			flowsPath, err, spec.OpenAPIFileName)
 		return Summary{}
 	}
 	sum, err := FinalizeBundle(bundleDir, flows, domain)
 	if err != nil {
+		fmt.Fprintf(warnW, "WARNING: could not finalize %s (%v); %s and the GraphQL catalog may be missing or incomplete.\n",
+			bundleDir, err, spec.OpenAPIFileName)
 		return Summary{}
 	}
 	return sum

@@ -93,6 +93,26 @@ func TestExtractBatchIndexMatched(t *testing.T) {
 	}
 }
 
+func TestExtractBatchSkipsNonGraphQLElements(t *testing.T) {
+	flow := model.CapturedFlow{
+		Method: "POST", Host: "api.example.com", Path: "/graphql",
+		RequestHeaders: map[string]string{"content-type": "application/json"},
+		RequestBody:    []byte(`[{"name":"L","email":"l@example.com"},{"operationName":"B","query":"query B{b}"}]`),
+		ResponseStatus: 200,
+		ResponseBody:   []byte(`[{"id":1},{"data":{"b":2}}]`),
+	}
+	ops := ExtractGraphQLOperations(flow)
+	if len(ops) != 1 {
+		t.Fatalf("want 1 op (non-GraphQL element skipped), got %d", len(ops))
+	}
+	if ops[0].OperationName != "B" {
+		t.Fatalf("name %q", ops[0].OperationName)
+	}
+	if string(ops[0].ResponseBody) != `{"data":{"b":2}}` {
+		t.Fatalf("index-match wrong: %s", ops[0].ResponseBody)
+	}
+}
+
 func TestExtractBatchResponseMismatchNilsResponses(t *testing.T) {
 	flow := model.CapturedFlow{
 		Method: "POST", Host: "api.example.com", Path: "/graphql",
@@ -196,6 +216,40 @@ func TestExtractMultipartBatch(t *testing.T) {
 	}
 	if ops[0].Transport != "multipart" || ops[1].Transport != "multipart" {
 		t.Fatalf("transport %q/%q", ops[0].Transport, ops[1].Transport)
+	}
+}
+
+func TestExtractMultipartBatchSkipsNonGraphQLElements(t *testing.T) {
+	body, ct := buildMultipart(t, `[{"foo":1},{"operationName":"B","query":"mutation B{b}"}]`)
+	flow := model.CapturedFlow{
+		Method: "POST", Host: "api.example.com", Path: "/graphql",
+		RequestHeaders: map[string]string{"content-type": ct},
+		RequestBody:    body,
+		ResponseStatus: 200,
+		ResponseBody:   []byte(`[{"errors":[]},{"data":{"b":2}}]`),
+	}
+	ops := ExtractGraphQLOperations(flow)
+	if len(ops) != 1 {
+		t.Fatalf("want 1 op (non-GraphQL element skipped), got %d", len(ops))
+	}
+	if ops[0].OperationName != "B" || ops[0].Transport != "multipart" {
+		t.Fatalf("name/transport: %q/%q", ops[0].OperationName, ops[0].Transport)
+	}
+	if string(ops[0].ResponseBody) != `{"data":{"b":2}}` {
+		t.Fatalf("index-match wrong: %s", ops[0].ResponseBody)
+	}
+}
+
+func TestExtractMultipartBatchAllNonGraphQL(t *testing.T) {
+	body, ct := buildMultipart(t, `[{"foo":1},{"bar":2}]`)
+	flow := model.CapturedFlow{
+		Method: "POST", Host: "api.example.com", Path: "/graphql",
+		RequestHeaders: map[string]string{"content-type": ct},
+		RequestBody:    body,
+		ResponseStatus: 200, ResponseBody: []byte(`[{},{}]`),
+	}
+	if ops := ExtractGraphQLOperations(flow); len(ops) != 0 {
+		t.Fatalf("all-non-GraphQL batch must yield no ops, got %d", len(ops))
 	}
 }
 

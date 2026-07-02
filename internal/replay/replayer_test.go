@@ -245,6 +245,47 @@ func TestReplayOneStripsQueryCredentialsBeforeNetwork(t *testing.T) {
 	}
 }
 
+// Replay reports are meant to be shareable: captured credential query params
+// must never reach Result.URL / Result.Path, while benign params survive.
+func TestReplayResultStripsCredentialQueryParams(t *testing.T) {
+	path := "/v1/items?access_token=tok1&page=2&api_key=sk1&client_secret=cs1&X-Amz-Signature=sig1&q=ok"
+	flow := replayFlow("GET", "https://api.example.com"+path, path, http.StatusOK, []byte(`{"ok":true}`))
+
+	result := replayResult(flow, http.StatusOK, []byte(`{"ok":true}`), time.Millisecond, nil)
+	for _, secret := range []string{"tok1", "sk1", "cs1", "sig1"} {
+		if strings.Contains(result.URL, secret) {
+			t.Errorf("result URL leaks %q: %s", secret, result.URL)
+		}
+		if strings.Contains(result.Path, secret) {
+			t.Errorf("result path leaks %q: %s", secret, result.Path)
+		}
+	}
+	if result.Path != "/v1/items?page=2&q=ok" {
+		t.Fatalf("non-credential params mangled in path: %s", result.Path)
+	}
+	if result.URL != "https://api.example.com/v1/items?page=2&q=ok" {
+		t.Fatalf("non-credential params mangled in URL: %s", result.URL)
+	}
+}
+
+// Dry-run endpoint listings never need query strings, so they are dropped
+// entirely — credentials included.
+func TestRunDryRunEndpointsOmitQueryStrings(t *testing.T) {
+	dir := t.TempDir()
+	flowsPath := filepath.Join(dir, "flows.jsonl")
+	writeFlows(t, flowsPath, []model.CapturedFlow{
+		replayFlow("GET", "https://example.com/api/items?api_key=sk1&access_token=tok1", "/api/items?api_key=sk1&access_token=tok1", 200, []byte(`{"ok":true}`)),
+	})
+
+	summary, err := Run(context.Background(), Options{BundleOrDomain: flowsPath, DryRun: true})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(summary.Endpoints) != 1 || summary.Endpoints[0] != "GET /api/items" {
+		t.Fatalf("endpoints = %#v, want [GET /api/items]", summary.Endpoints)
+	}
+}
+
 func TestRunAppliesGlobFilterBeforeReplay(t *testing.T) {
 	var users atomic.Int32
 	var posts atomic.Int32
@@ -401,6 +442,30 @@ func TestReplayOneTimeoutReturnsErrorCategory(t *testing.T) {
 	}
 }
 
+// Under --forward-auth the request URL keeps its credential params; when the
+// transport fails, the *url.Error embeds that full URL. Result.Error must be
+// sanitized before it lands in shareable output.
+func TestReplayOneTransportErrorOmitsCredentialValues(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {}))
+	client := server.Client()
+	server.Close() // every request now fails with connection refused
+
+	flow := serverFlow(server.URL, "GET", "/api/data?api_key=sk1&q=ok", http.StatusOK, nil, []byte(`{"ok":true}`), nil)
+	result := ReplayOne(context.Background(), client, flow, Options{ForwardAuth: true}, nil)
+	if result.Category != "error" || result.Error == "" {
+		t.Fatalf("result = %#v, want transport error", result)
+	}
+	if !strings.Contains(result.Error, "/api/data") {
+		t.Fatalf("error lost the endpoint: %q", result.Error)
+	}
+	if strings.Contains(result.Error, "sk1") {
+		t.Fatalf("error leaks credential value: %q", result.Error)
+	}
+	if !strings.Contains(result.Error, "q=ok") {
+		t.Fatalf("error lost non-credential param: %q", result.Error)
+	}
+}
+
 func TestGoldenDryRunFixture(t *testing.T) {
 	path := filepath.Join("..", "..", "testdata", "golden", "phase5", "replay", "flows.jsonl")
 	expectedPath := filepath.Join("..", "..", "testdata", "golden", "phase5", "replay", "expected-dry-run.json")
@@ -481,6 +546,133 @@ func TestDeduplicateReportsMerges(t *testing.T) {
 	}
 	if m.Method != "GET" || !reflect.DeepEqual(m.Paths, wantPaths) {
 		t.Fatalf("merge = %#v, want GET with the two collapsed cc_ paths %#v", m, wantPaths)
+	}
+}
+
+// Merge paths land in shareable report output, so credential query values
+// must be stripped before they are recorded.
+func TestDeduplicateMergePathsStripCredentialValues(t *testing.T) {
+	flows := []model.CapturedFlow{
+		{Method: "GET", Path: "/api/items?api_key=sk1&page=1", Timestamp: 1},
+		{Method: "GET", Path: "/api/items?api_key=sk2&page=2", Timestamp: 2},
+	}
+	_, merges := deduplicate(flows)
+	if len(merges) != 1 {
+		t.Fatalf("merges = %#v, want exactly one", merges)
+	}
+	wantPaths := []string{"/api/items?page=1", "/api/items?page=2"}
+	if !reflect.DeepEqual(merges[0].Paths, wantPaths) {
+		t.Fatalf("merge paths = %#v, want %#v", merges[0].Paths, wantPaths)
+	}
+	for _, p := range merges[0].Paths {
+		if strings.Contains(p, "sk1") || strings.Contains(p, "sk2") {
+			t.Fatalf("merge path leaks credential value: %s", p)
+		}
+	}
+}
+
+// Two flows differing only by credential value strip to one identical path.
+// The merge must still be reported — the collapse is never silent — with the
+// single stripped path and no credential values.
+func TestDeduplicateTokenOnlyCollapseStillReported(t *testing.T) {
+	flows := []model.CapturedFlow{
+		{Method: "GET", Path: "/api/items?access_token=tok1", Timestamp: 1},
+		{Method: "GET", Path: "/api/items?access_token=tok2", Timestamp: 2},
+	}
+	deduped, merges := deduplicate(flows)
+	if len(deduped) != 1 {
+		t.Fatalf("deduped = %d, want 1", len(deduped))
+	}
+	if len(merges) != 1 {
+		t.Fatalf("merges = %#v, want exactly one", merges)
+	}
+	if !reflect.DeepEqual(merges[0].Paths, []string{"/api/items"}) {
+		t.Fatalf("merge paths = %#v, want the single stripped path", merges[0].Paths)
+	}
+	for _, p := range merges[0].Paths {
+		if strings.Contains(p, "tok1") || strings.Contains(p, "tok2") {
+			t.Fatalf("merge path leaks credential value: %s", p)
+		}
+	}
+}
+
+// Output stripping must fail closed: when a captured URL is unparseable, the
+// whole query is dropped instead of echoed raw.
+func TestStripForOutputDropsQueryWhenUnparseable(t *testing.T) {
+	got := stripForOutput("/api/it\x00ems?api_key=sk1&q=ok")
+	if got != "/api/it\x00ems" {
+		t.Fatalf("stripForOutput = %q, want query dropped entirely", got)
+	}
+	if strings.Contains(got, "sk1") || strings.Contains(got, "?") {
+		t.Fatalf("unparseable URL leaked its query: %q", got)
+	}
+}
+
+// Output stripping must scrub userinfo (user:pass@) too — it is a captured
+// credential and must never reach shareable output.
+func TestStripForOutputRemovesUserinfo(t *testing.T) {
+	got := stripForOutput("https://user:s3cret@api.example.com/v1/items?page=2")
+	for _, secret := range []string{"s3cret", "user:", "@api.example.com"} {
+		if strings.Contains(got, secret) {
+			t.Fatalf("stripForOutput leaked userinfo %q: %q", secret, got)
+		}
+	}
+	if got != "https://api.example.com/v1/items?page=2" {
+		t.Fatalf("stripForOutput = %q, want host/path and benign query preserved", got)
+	}
+}
+
+// OAuth implicit-flow tokens live in the fragment (#access_token=...); output
+// stripping must drop a credential-bearing fragment while preserving a benign
+// one.
+func TestStripForOutputRemovesCredentialFragment(t *testing.T) {
+	got := stripForOutput("https://app.example.com/cb#access_token=LEAKTOKEN&expires=3600")
+	for _, secret := range []string{"LEAKTOKEN", "access_token"} {
+		if strings.Contains(got, secret) {
+			t.Fatalf("stripForOutput leaked fragment %q: %q", secret, got)
+		}
+	}
+
+	benign := stripForOutput("https://app.example.com/docs#section-2")
+	if benign != "https://app.example.com/docs#section-2" {
+		t.Fatalf("stripForOutput dropped a benign fragment: %q", benign)
+	}
+}
+
+// A regression guard: credential query params are still stripped while benign
+// params survive.
+func TestStripForOutputStillStripsQuery(t *testing.T) {
+	got := stripForOutput("https://api.example.com/v1/items?api_key=LEAK&page=2")
+	if strings.Contains(got, "LEAK") {
+		t.Fatalf("stripForOutput leaked query credential: %q", got)
+	}
+	if got != "https://api.example.com/v1/items?page=2" {
+		t.Fatalf("stripForOutput = %q, want benign param preserved", got)
+	}
+}
+
+// All three credential classes scrubbed in a single URL.
+func TestStripForOutputRemovesUserinfoQueryAndFragment(t *testing.T) {
+	got := stripForOutput("https://user:s3cret@api.example.com/v1/items?api_key=LEAK&page=2#access_token=LEAKTOKEN&expires=3600")
+	for _, secret := range []string{"s3cret", "user:", "LEAK", "LEAKTOKEN", "access_token", "api_key"} {
+		if strings.Contains(got, secret) {
+			t.Fatalf("stripForOutput leaked %q: %q", secret, got)
+		}
+	}
+	if got != "https://api.example.com/v1/items?page=2" {
+		t.Fatalf("stripForOutput = %q, want only host/path and benign query", got)
+	}
+}
+
+// Fail-closed cut must land at the FIRST of "?" or "#" so a fragment token in
+// a malformed URL is dropped too.
+func TestStripForOutputFailClosedDropsFragment(t *testing.T) {
+	got := stripForOutput("/api/it\x00ems#access_token=LEAKTOKEN&expires=3600")
+	if got != "/api/it\x00ems" {
+		t.Fatalf("stripForOutput = %q, want fragment dropped entirely", got)
+	}
+	if strings.Contains(got, "LEAKTOKEN") || strings.Contains(got, "#") {
+		t.Fatalf("unparseable URL leaked its fragment: %q", got)
 	}
 }
 

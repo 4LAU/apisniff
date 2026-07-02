@@ -148,7 +148,7 @@ func aggregateGroup(g *group) CatalogOp {
 		Method:        first.Method,
 		ObservedCount: len(g.members),
 		Quality:       "complete",
-		HashMismatch:  g.members[0].hashMismatch,
+		HashMismatch:  groupHashMismatch(g),
 	}
 	out.Source = groupSource(g)
 	out.StatusCodes = collectStatuses(g)
@@ -157,8 +157,7 @@ func aggregateGroup(g *group) CatalogOp {
 	}
 	// Carry the hash for any group that has one: a persisted-hash group, or a
 	// captured-query group that also observed a hash (e.g. APQ mismatch).
-	if first.PersistedHash != "" {
-		hash := first.PersistedHash
+	if hash := firstPersistedHash(g); hash != "" {
 		out.PersistedHash = &hash
 	}
 	aggregateSchemas(&out, g)
@@ -166,6 +165,29 @@ func aggregateGroup(g *group) CatalogOp {
 		out.Quality = "partial"
 	}
 	return out
+}
+
+// groupHashMismatch reports whether ANY contribution observed an APQ hash
+// mismatch: the tamper signal must survive regardless of capture order.
+func groupHashMismatch(g *group) bool {
+	for _, c := range g.members {
+		if c.hashMismatch {
+			return true
+		}
+	}
+	return false
+}
+
+// firstPersistedHash returns the first non-empty persisted hash observed in
+// the group, or "" when no contribution carried one. The carried hash may be
+// a mismatched (tampered) one; HashMismatch flags that case.
+func firstPersistedHash(g *group) string {
+	for _, c := range g.members {
+		if c.op.PersistedHash != "" {
+			return c.op.PersistedHash
+		}
+	}
+	return ""
 }
 
 // groupSource is "persisted-hash" only when every contribution is hash-only.
@@ -422,7 +444,10 @@ func sdlOps(cat Catalog) []CatalogOp {
 }
 
 // documentNames returns the document name for each included op, suffixing any
-// name shared by two or more ops with the first 8 chars of its discriminator.
+// name shared by two or more ops with the first 8 chars of a hash over the
+// op's full composite identity (groupKey), so any two distinct catalog ops —
+// same query on two endpoints, or GET vs POST on one endpoint — yield
+// distinct document names.
 func documentNames(ops []CatalogOp) []string {
 	counts := map[string]int{}
 	for _, op := range ops {
@@ -431,7 +456,8 @@ func documentNames(ops []CatalogOp) []string {
 	names := make([]string, len(ops))
 	for i, op := range ops {
 		if counts[op.OperationName] > 1 {
-			names[i] = op.OperationName + "_" + shortHash(opDiscriminator(op))
+			identity := Operation{Endpoint: op.Endpoint, Method: op.Method, OperationName: op.OperationName}
+			names[i] = op.OperationName + "_" + shortHash(sha256hex(groupKey(identity, opDiscriminator(op))))
 		} else {
 			names[i] = op.OperationName
 		}
@@ -439,7 +465,7 @@ func documentNames(ops []CatalogOp) []string {
 	return names
 }
 
-// shortHash returns the first 8 characters of a discriminator hash.
+// shortHash returns the first 8 characters of a hash.
 func shortHash(h string) string {
 	if len(h) >= 8 {
 		return h[:8]

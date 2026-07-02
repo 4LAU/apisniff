@@ -2,6 +2,8 @@ module github.com/4LAU/apisniff
 
 go 1.26
 
+toolchain go1.26.4
+
 require (
 	charm.land/lipgloss/v2 v2.0.3
 	github.com/charmbracelet/colorprofile v0.4.3

@@ -426,7 +426,7 @@ func CaptureProxy(ctx context.Context, cfg Config) (*Result, error) {
 		return nil, err
 	}
 	// Non-fatal: capture already succeeded. Co-locate spec + private catalog.
-	gqlSummary := finalize.FromBundle(bundle, flowsPath, statsCopy.Domain)
+	gqlSummary := finalize.FromBundle(cfg.WarningWriter, bundle, flowsPath, statsCopy.Domain)
 	return &Result{BundleDir: bundle, FlowsPath: flowsPath, FilteredPath: resultFilteredPath, CAPath: caPath, SPKIHash: spkiHash, Stats: statsCopy, GraphQL: gqlSummary}, nil
 }
 

@@ -3,6 +3,7 @@ package replay
 import (
 	"bytes"
 	"context"
+	"errors"
 	"fmt"
 	"io"
 	"net"
@@ -84,7 +85,10 @@ func Run(ctx context.Context, opts Options) (Summary, error) {
 	if opts.DryRun {
 		endpoints := make([]string, 0, len(filtered))
 		for _, flow := range filtered {
-			endpoints = append(endpoints, strings.ToUpper(flow.Method)+" "+flow.Path)
+			// Query strings can carry credentials; the endpoint list never
+			// needs them, so drop the whole query.
+			path, _, _ := strings.Cut(flow.Path, "?")
+			endpoints = append(endpoints, strings.ToUpper(flow.Method)+" "+path)
 		}
 		sort.Strings(endpoints)
 		return Summary{
@@ -207,9 +211,11 @@ func replayResult(flow model.CapturedFlow, status int, body []byte, elapsed time
 	bodyMatch, diff := CompareShape(flow.ResponseBody, body)
 	category, statusMatch := AssignCategory(flow.ResponseStatus, status, hadCredentials(flow), bodyMatch, len(flow.ResponseBody), len(body), err)
 	result := Result{
-		Method:         flow.Method,
-		Path:           flow.Path,
-		URL:            flow.URL,
+		Method: flow.Method,
+		// Reports are meant to be shareable: never echo the captured
+		// credential query params (?api_key=, ?access_token=) back out.
+		Path:           stripForOutput(flow.Path),
+		URL:            stripForOutput(flow.URL),
 		OriginalStatus: flow.ResponseStatus,
 		ReplayedStatus: status,
 		ElapsedMS:      float64(elapsed.Microseconds()) / 1000,
@@ -221,9 +227,73 @@ func replayResult(flow model.CapturedFlow, status int, body []byte, elapsed time
 		SizeReplayed:   len(body),
 	}
 	if err != nil {
-		result.Error = err.Error()
+		result.Error = sanitizeErrorString(err)
 	}
 	return result
+}
+
+// sanitizeErrorString strips credential query values from a replay error
+// before it lands in shareable output: a *url.Error embeds the full request
+// URL, which under --forward-auth still carries credential params.
+func sanitizeErrorString(err error) string {
+	var urlErr *url.Error
+	if errors.As(err, &urlErr) {
+		clean := *urlErr
+		clean.URL = stripForOutput(urlErr.URL)
+		return clean.Error()
+	}
+	return err.Error()
+}
+
+// stripForOutput removes captured credentials from every credential-bearing
+// component of a URL before it lands in shareable output: userinfo
+// (user:pass@), credential fragments (#access_token=... from OAuth implicit
+// flow), and credential query params (?api_key=...). Request-building strips
+// only the query (see buildRequest); output must scrub all three so the
+// report never echoes a captured secret.
+//
+// Unlike request-building — where an unparseable URL passes through so the
+// request construction surfaces the error — output must fail closed: if the
+// URL cannot be parsed, drop everything from the first "?" or "#" rather than
+// echoing it raw.
+func stripForOutput(rawURL string) string {
+	parsed, err := url.Parse(rawURL)
+	if err != nil {
+		if i := strings.IndexAny(rawURL, "?#"); i >= 0 {
+			return rawURL[:i]
+		}
+		return rawURL
+	}
+	// Userinfo (user:pass@) is a credential; never echo it.
+	parsed.User = nil
+	// A fragment holds OAuth implicit-flow tokens (#access_token=...). If it
+	// parses as key=value pairs and any key is a credential, drop the whole
+	// fragment.
+	if fragmentHasCredential(parsed.Fragment) {
+		parsed.Fragment = ""
+		parsed.RawFragment = ""
+	}
+	// Reuse the auth policy for query stripping so the two never diverge.
+	return auth.StripCredentialQueryParams(parsed.String())
+}
+
+// fragmentHasCredential reports whether a URL fragment, read as
+// k=v(&k=v)* pairs, contains any key the forwarding policy treats as a
+// credential.
+func fragmentHasCredential(fragment string) bool {
+	if fragment == "" {
+		return false
+	}
+	for _, pair := range strings.Split(fragment, "&") {
+		name, _, _ := strings.Cut(pair, "=")
+		if decoded, err := url.QueryUnescape(name); err == nil {
+			name = decoded
+		}
+		if auth.IsCredentialQueryParam(name) {
+			return true
+		}
+	}
+	return false
 }
 
 func FilterFlows(flows []model.CapturedFlow, includeUnsafe bool) ([]model.CapturedFlow, []model.CapturedFlow) {
@@ -337,8 +407,16 @@ func deduplicate(flows []model.CapturedFlow) ([]model.CapturedFlow, []DedupMerge
 		if len(paths) < 2 {
 			continue
 		}
-		ps := make([]string, 0, len(paths))
+		// Merge paths land in shareable report output; strip credential
+		// query values before emitting. Distinct raw paths may collapse to a
+		// single stripped entry (e.g. two token values) — the merge is still
+		// reported so the collapse is never silent.
+		stripped := map[string]struct{}{}
 		for p := range paths {
+			stripped[stripForOutput(p)] = struct{}{}
+		}
+		ps := make([]string, 0, len(stripped))
+		for p := range stripped {
 			ps = append(ps, p)
 		}
 		sort.Strings(ps)

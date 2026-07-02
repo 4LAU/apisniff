@@ -554,10 +554,11 @@ func parseHeaders(values []string) (map[string]string, error) {
 func normalizeTarget(raw string) (domain string, launchURL string) {
 	if strings.HasPrefix(raw, "http://") || strings.HasPrefix(raw, "https://") {
 		trimmed := strings.TrimPrefix(strings.TrimPrefix(raw, "https://"), "http://")
-		domain = strings.Split(trimmed, "/")[0]
+		domain = strings.Split(strings.Split(strings.Split(trimmed, "#")[0], "?")[0], "/")[0]
 		return domain, raw
 	}
-	return raw, "https://" + raw
+	domain = strings.Split(strings.Split(strings.Split(raw, "#")[0], "?")[0], "/")[0]
+	return domain, "https://" + raw
 }
 
 func summarizeEndpoints(flows []model.CapturedFlow, limit int) []output.EndpointSummary {
@@ -727,16 +728,16 @@ func countOpenAPIOperations(doc map[string]any) specCounts {
 		}
 		hasGraphQL := false
 		for method, rawOp := range pathItem {
-			switch strings.ToLower(method) {
-			case "get", "put", "post", "delete", "options", "head", "patch", "trace":
-				c.operations++
-				c.methods[strings.ToUpper(method)]++
-				if op, ok := rawOp.(map[string]any); ok {
-					if gql, ok := op["x-apisniff-graphql"].(map[string]any); ok {
-						if ops, ok := gql["operations"].([]any); ok {
-							c.graphqlOps += len(ops)
-							hasGraphQL = true
-						}
+			if !spec.IsOpenAPIOperation(strings.ToLower(method)) {
+				continue
+			}
+			c.operations++
+			c.methods[strings.ToUpper(method)]++
+			if op, ok := rawOp.(map[string]any); ok {
+				if gql, ok := op["x-apisniff-graphql"].(map[string]any); ok {
+					if ops, ok := gql["operations"].([]any); ok {
+						c.graphqlOps += len(ops)
+						hasGraphQL = true
 					}
 				}
 			}
