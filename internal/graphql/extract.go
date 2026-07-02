@@ -131,8 +131,10 @@ func singleOp(e envelope, flow model.CapturedFlow, transport string) []Operation
 }
 
 // extractBatch decodes a request batch array (from requestBody) into one
-// Operation per element, index-matching the response array; any response shape
-// mismatch nils all responses. An empty or undecodable array yields nil.
+// Operation per GraphQL element, index-matching the response array; any
+// response shape mismatch nils all responses. Non-GraphQL elements are skipped
+// (not filtered up front, so index alignment with the response array holds).
+// An empty or undecodable array yields nil.
 func extractBatch(requestBody []byte, flow model.CapturedFlow, transport string) []Operation {
 	var reqs []envelope
 	if json.Unmarshal(requestBody, &reqs) != nil || len(reqs) == 0 {
@@ -141,6 +143,9 @@ func extractBatch(requestBody []byte, flow model.CapturedFlow, transport string)
 	responses := batchResponses(flow.ResponseBody, len(reqs))
 	ops := make([]Operation, 0, len(reqs))
 	for i, e := range reqs {
+		if !isGraphQLEnvelope(e) {
+			continue
+		}
 		op := operationFromEnvelope(e, flow, transport)
 		if responses != nil {
 			op.ResponseBody = jsonOrNil(responses[i])
