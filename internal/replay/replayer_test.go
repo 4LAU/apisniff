@@ -547,6 +547,43 @@ func TestDeduplicateMergePathsStripCredentialValues(t *testing.T) {
 	}
 }
 
+// Two flows differing only by credential value strip to one identical path.
+// The merge must still be reported — the collapse is never silent — with the
+// single stripped path and no credential values.
+func TestDeduplicateTokenOnlyCollapseStillReported(t *testing.T) {
+	flows := []model.CapturedFlow{
+		{Method: "GET", Path: "/api/items?access_token=tok1", Timestamp: 1},
+		{Method: "GET", Path: "/api/items?access_token=tok2", Timestamp: 2},
+	}
+	deduped, merges := deduplicate(flows)
+	if len(deduped) != 1 {
+		t.Fatalf("deduped = %d, want 1", len(deduped))
+	}
+	if len(merges) != 1 {
+		t.Fatalf("merges = %#v, want exactly one", merges)
+	}
+	if !reflect.DeepEqual(merges[0].Paths, []string{"/api/items"}) {
+		t.Fatalf("merge paths = %#v, want the single stripped path", merges[0].Paths)
+	}
+	for _, p := range merges[0].Paths {
+		if strings.Contains(p, "tok1") || strings.Contains(p, "tok2") {
+			t.Fatalf("merge path leaks credential value: %s", p)
+		}
+	}
+}
+
+// Output stripping must fail closed: when a captured URL is unparseable, the
+// whole query is dropped instead of echoed raw.
+func TestStripForOutputDropsQueryWhenUnparseable(t *testing.T) {
+	got := stripForOutput("/api/it\x00ems?api_key=sk1&q=ok")
+	if got != "/api/it\x00ems" {
+		t.Fatalf("stripForOutput = %q, want query dropped entirely", got)
+	}
+	if strings.Contains(got, "sk1") || strings.Contains(got, "?") {
+		t.Fatalf("unparseable URL leaked its query: %q", got)
+	}
+}
+
 // A single route captured multiple times must NOT register as a merge: the
 // merge log exists to surface distinct paths collapsing, not repeat captures.
 func TestDeduplicateSamePathNotMerged(t *testing.T) {

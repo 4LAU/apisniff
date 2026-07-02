@@ -213,8 +213,8 @@ func replayResult(flow model.CapturedFlow, status int, body []byte, elapsed time
 		Method: flow.Method,
 		// Reports are meant to be shareable: never echo the captured
 		// credential query params (?api_key=, ?access_token=) back out.
-		Path:           auth.StripCredentialQueryParams(flow.Path),
-		URL:            auth.StripCredentialQueryParams(flow.URL),
+		Path:           stripForOutput(flow.Path),
+		URL:            stripForOutput(flow.URL),
 		OriginalStatus: flow.ResponseStatus,
 		ReplayedStatus: status,
 		ElapsedMS:      float64(elapsed.Microseconds()) / 1000,
@@ -229,6 +229,18 @@ func replayResult(flow model.CapturedFlow, status int, body []byte, elapsed time
 		result.Error = err.Error()
 	}
 	return result
+}
+
+// stripForOutput removes credential query params for shareable output.
+// Unlike request-building — where an unparseable URL passes through so the
+// request construction surfaces the error — output must fail closed: if the
+// URL cannot be parsed, drop the entire query rather than echoing it raw.
+func stripForOutput(rawURL string) string {
+	if _, err := url.Parse(rawURL); err != nil {
+		base, _, _ := strings.Cut(rawURL, "?")
+		return base
+	}
+	return auth.StripCredentialQueryParams(rawURL)
 }
 
 func FilterFlows(flows []model.CapturedFlow, includeUnsafe bool) ([]model.CapturedFlow, []model.CapturedFlow) {
@@ -324,10 +336,7 @@ func deduplicate(flows []model.CapturedFlow) ([]model.CapturedFlow, []DedupMerge
 		if rawPaths[key] == nil {
 			rawPaths[key] = map[string]struct{}{}
 		}
-		// Merge paths end up in shareable report output; strip credential
-		// query values before recording. Paths differing only by token value
-		// collapse to one entry, which is the collapse we want to surface.
-		rawPaths[key][auth.StripCredentialQueryParams(flow.Path)] = struct{}{}
+		rawPaths[key][flow.Path] = struct{}{}
 	}
 	out := make([]model.CapturedFlow, 0, len(seen))
 	for _, flow := range seen {
@@ -345,8 +354,16 @@ func deduplicate(flows []model.CapturedFlow) ([]model.CapturedFlow, []DedupMerge
 		if len(paths) < 2 {
 			continue
 		}
-		ps := make([]string, 0, len(paths))
+		// Merge paths land in shareable report output; strip credential
+		// query values before emitting. Distinct raw paths may collapse to a
+		// single stripped entry (e.g. two token values) — the merge is still
+		// reported so the collapse is never silent.
+		stripped := map[string]struct{}{}
 		for p := range paths {
+			stripped[stripForOutput(p)] = struct{}{}
+		}
+		ps := make([]string, 0, len(stripped))
+		for p := range stripped {
 			ps = append(ps, p)
 		}
 		sort.Strings(ps)
