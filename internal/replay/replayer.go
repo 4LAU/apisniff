@@ -169,9 +169,11 @@ func buildRequest(ctx context.Context, flow model.CapturedFlow, headers map[stri
 	}
 	targetURL := flow.URL
 	if !forwardAuth {
-		// Credentials live in query strings too (?api_key=, ?access_token=),
-		// not just headers.
-		targetURL = auth.StripCredentialQueryParams(targetURL)
+		// Credentials in the URL come in two forms: query strings
+		// (?api_key=, ?access_token=) and Basic-auth userinfo
+		// (user:pass@host, which net/http would resend as an
+		// Authorization header). Strip both.
+		targetURL = auth.StripURLCredentials(targetURL)
 	}
 	req, err := http.NewRequestWithContext(ctx, flow.Method, targetURL, body)
 	if err != nil {

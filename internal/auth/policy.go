@@ -55,3 +55,19 @@ func StripCredentialQueryParams(rawURL string) string {
 	parsed.RawQuery = strings.Join(kept, "&")
 	return parsed.String()
 }
+
+// StripURLCredentials removes both credential query parameters (see
+// StripCredentialQueryParams) and Basic-auth userinfo (user:pass@host) from
+// rawURL. The replay request path uses this when --forward-auth is off:
+// without clearing userinfo, net/http resends captured credentials as an
+// Authorization: Basic header, defeating the flag. Unparseable URLs are
+// returned unchanged — the caller's request construction will surface the
+// error.
+func StripURLCredentials(rawURL string) string {
+	parsed, err := url.Parse(rawURL)
+	if err != nil {
+		return rawURL
+	}
+	parsed.User = nil
+	return StripCredentialQueryParams(parsed.String())
+}

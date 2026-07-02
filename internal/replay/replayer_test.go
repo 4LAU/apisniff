@@ -116,6 +116,24 @@ func TestBuildRequestForwardAuthKeepsCapturedAuthHeaders(t *testing.T) {
 	}
 }
 
+// A captured URL can embed Basic-auth userinfo (user:pass@host). With
+// --forward-auth off, net/http would otherwise resend it as an Authorization
+// header, so buildRequest must strip it from the request URL.
+func TestBuildRequestStripsUserinfoByDefault(t *testing.T) {
+	flow := replayFlow("GET", "https://user:pass@api.example.com/v1/users", "/v1/users", 200, nil)
+	flow.Host = "api.example.com"
+	req, err := buildRequest(context.Background(), flow, nil, nil, false)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if req.URL.User != nil {
+		t.Fatalf("userinfo forwarded on request URL: %q", req.URL.User)
+	}
+	if user, _, ok := req.BasicAuth(); ok {
+		t.Fatalf("Basic auth resent from captured userinfo: user=%q", user)
+	}
+}
+
 func TestRunDryRunSummarizesSafeAndUnsafe(t *testing.T) {
 	dir := t.TempDir()
 	flowsPath := filepath.Join(dir, "flows.jsonl")

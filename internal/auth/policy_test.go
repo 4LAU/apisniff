@@ -32,3 +32,21 @@ func TestStripCredentialQueryParamsPreservesRestOfURL(t *testing.T) {
 		t.Fatalf("query-less URL changed: %q", got)
 	}
 }
+
+func TestStripURLCredentialsRemovesUserinfoAndQuery(t *testing.T) {
+	cases := []struct {
+		name string
+		in   string
+		want string
+	}{
+		{"userinfo only", "https://user:pass@api.example.com/v1/items", "https://api.example.com/v1/items"},
+		{"userinfo and credential query", "https://user:pass@api.example.com/v1/items?api_key=sk&page=2", "https://api.example.com/v1/items?page=2"},
+		{"no credentials unchanged", "https://api.example.com/v1/items?page=2", "https://api.example.com/v1/items?page=2"},
+		{"username only", "https://user@api.example.com/v1/items", "https://api.example.com/v1/items"},
+	}
+	for _, c := range cases {
+		if got := StripURLCredentials(c.in); got != c.want {
+			t.Errorf("%s: StripURLCredentials(%q) = %q, want %q", c.name, c.in, got, c.want)
+		}
+	}
+}
