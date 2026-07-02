@@ -846,6 +846,26 @@ func readFlowLines(t *testing.T, path string) []map[string]any {
 	return flows
 }
 
+func TestNormalizeTarget(t *testing.T) {
+	cases := []struct {
+		raw       string
+		domain    string
+		launchURL string
+	}{
+		{"example.com", "example.com", "https://example.com"},
+		{"example.com/api", "example.com", "https://example.com/api"},
+		{"example.com/api?x=1", "example.com", "https://example.com/api?x=1"},
+		{"https://example.com/api", "example.com", "https://example.com/api"},
+		{"https://example.com?x=1", "example.com", "https://example.com?x=1"},
+	}
+	for _, tc := range cases {
+		domain, launchURL := normalizeTarget(tc.raw)
+		if domain != tc.domain || launchURL != tc.launchURL {
+			t.Errorf("normalizeTarget(%q) = (%q, %q), want (%q, %q)", tc.raw, domain, launchURL, tc.domain, tc.launchURL)
+		}
+	}
+}
+
 func readJSONFile[T any](t *testing.T, path string) T {
 	t.Helper()
 	data, err := os.ReadFile(path)
