@@ -3,6 +3,7 @@ package replay
 import (
 	"bytes"
 	"context"
+	"errors"
 	"fmt"
 	"io"
 	"net"
@@ -226,9 +227,22 @@ func replayResult(flow model.CapturedFlow, status int, body []byte, elapsed time
 		SizeReplayed:   len(body),
 	}
 	if err != nil {
-		result.Error = err.Error()
+		result.Error = sanitizeErrorString(err)
 	}
 	return result
+}
+
+// sanitizeErrorString strips credential query values from a replay error
+// before it lands in shareable output: a *url.Error embeds the full request
+// URL, which under --forward-auth still carries credential params.
+func sanitizeErrorString(err error) string {
+	var urlErr *url.Error
+	if errors.As(err, &urlErr) {
+		clean := *urlErr
+		clean.URL = stripForOutput(urlErr.URL)
+		return clean.Error()
+	}
+	return err.Error()
 }
 
 // stripForOutput removes credential query params for shareable output.

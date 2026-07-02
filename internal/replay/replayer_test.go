@@ -442,6 +442,30 @@ func TestReplayOneTimeoutReturnsErrorCategory(t *testing.T) {
 	}
 }
 
+// Under --forward-auth the request URL keeps its credential params; when the
+// transport fails, the *url.Error embeds that full URL. Result.Error must be
+// sanitized before it lands in shareable output.
+func TestReplayOneTransportErrorOmitsCredentialValues(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {}))
+	client := server.Client()
+	server.Close() // every request now fails with connection refused
+
+	flow := serverFlow(server.URL, "GET", "/api/data?api_key=sk1&q=ok", http.StatusOK, nil, []byte(`{"ok":true}`), nil)
+	result := ReplayOne(context.Background(), client, flow, Options{ForwardAuth: true}, nil)
+	if result.Category != "error" || result.Error == "" {
+		t.Fatalf("result = %#v, want transport error", result)
+	}
+	if !strings.Contains(result.Error, "/api/data") {
+		t.Fatalf("error lost the endpoint: %q", result.Error)
+	}
+	if strings.Contains(result.Error, "sk1") {
+		t.Fatalf("error leaks credential value: %q", result.Error)
+	}
+	if !strings.Contains(result.Error, "q=ok") {
+		t.Fatalf("error lost non-credential param: %q", result.Error)
+	}
+}
+
 func TestGoldenDryRunFixture(t *testing.T) {
 	path := filepath.Join("..", "..", "testdata", "golden", "phase5", "replay", "flows.jsonl")
 	expectedPath := filepath.Join("..", "..", "testdata", "golden", "phase5", "replay", "expected-dry-run.json")
