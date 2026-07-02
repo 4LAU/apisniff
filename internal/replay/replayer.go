@@ -245,16 +245,55 @@ func sanitizeErrorString(err error) string {
 	return err.Error()
 }
 
-// stripForOutput removes credential query params for shareable output.
+// stripForOutput removes captured credentials from every credential-bearing
+// component of a URL before it lands in shareable output: userinfo
+// (user:pass@), credential fragments (#access_token=... from OAuth implicit
+// flow), and credential query params (?api_key=...). Request-building strips
+// only the query (see buildRequest); output must scrub all three so the
+// report never echoes a captured secret.
+//
 // Unlike request-building — where an unparseable URL passes through so the
 // request construction surfaces the error — output must fail closed: if the
-// URL cannot be parsed, drop the entire query rather than echoing it raw.
+// URL cannot be parsed, drop everything from the first "?" or "#" rather than
+// echoing it raw.
 func stripForOutput(rawURL string) string {
-	if _, err := url.Parse(rawURL); err != nil {
-		base, _, _ := strings.Cut(rawURL, "?")
-		return base
+	parsed, err := url.Parse(rawURL)
+	if err != nil {
+		if i := strings.IndexAny(rawURL, "?#"); i >= 0 {
+			return rawURL[:i]
+		}
+		return rawURL
 	}
-	return auth.StripCredentialQueryParams(rawURL)
+	// Userinfo (user:pass@) is a credential; never echo it.
+	parsed.User = nil
+	// A fragment holds OAuth implicit-flow tokens (#access_token=...). If it
+	// parses as key=value pairs and any key is a credential, drop the whole
+	// fragment.
+	if fragmentHasCredential(parsed.Fragment) {
+		parsed.Fragment = ""
+		parsed.RawFragment = ""
+	}
+	// Reuse the auth policy for query stripping so the two never diverge.
+	return auth.StripCredentialQueryParams(parsed.String())
+}
+
+// fragmentHasCredential reports whether a URL fragment, read as
+// k=v(&k=v)* pairs, contains any key the forwarding policy treats as a
+// credential.
+func fragmentHasCredential(fragment string) bool {
+	if fragment == "" {
+		return false
+	}
+	for _, pair := range strings.Split(fragment, "&") {
+		name, _, _ := strings.Cut(pair, "=")
+		if decoded, err := url.QueryUnescape(name); err == nil {
+			name = decoded
+		}
+		if auth.IsCredentialQueryParam(name) {
+			return true
+		}
+	}
+	return false
 }
 
 func FilterFlows(flows []model.CapturedFlow, includeUnsafe bool) ([]model.CapturedFlow, []model.CapturedFlow) {

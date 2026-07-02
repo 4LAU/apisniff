@@ -608,6 +608,74 @@ func TestStripForOutputDropsQueryWhenUnparseable(t *testing.T) {
 	}
 }
 
+// Output stripping must scrub userinfo (user:pass@) too — it is a captured
+// credential and must never reach shareable output.
+func TestStripForOutputRemovesUserinfo(t *testing.T) {
+	got := stripForOutput("https://user:s3cret@api.example.com/v1/items?page=2")
+	for _, secret := range []string{"s3cret", "user:", "@api.example.com"} {
+		if strings.Contains(got, secret) {
+			t.Fatalf("stripForOutput leaked userinfo %q: %q", secret, got)
+		}
+	}
+	if got != "https://api.example.com/v1/items?page=2" {
+		t.Fatalf("stripForOutput = %q, want host/path and benign query preserved", got)
+	}
+}
+
+// OAuth implicit-flow tokens live in the fragment (#access_token=...); output
+// stripping must drop a credential-bearing fragment while preserving a benign
+// one.
+func TestStripForOutputRemovesCredentialFragment(t *testing.T) {
+	got := stripForOutput("https://app.example.com/cb#access_token=LEAKTOKEN&expires=3600")
+	for _, secret := range []string{"LEAKTOKEN", "access_token"} {
+		if strings.Contains(got, secret) {
+			t.Fatalf("stripForOutput leaked fragment %q: %q", secret, got)
+		}
+	}
+
+	benign := stripForOutput("https://app.example.com/docs#section-2")
+	if benign != "https://app.example.com/docs#section-2" {
+		t.Fatalf("stripForOutput dropped a benign fragment: %q", benign)
+	}
+}
+
+// A regression guard: credential query params are still stripped while benign
+// params survive.
+func TestStripForOutputStillStripsQuery(t *testing.T) {
+	got := stripForOutput("https://api.example.com/v1/items?api_key=LEAK&page=2")
+	if strings.Contains(got, "LEAK") {
+		t.Fatalf("stripForOutput leaked query credential: %q", got)
+	}
+	if got != "https://api.example.com/v1/items?page=2" {
+		t.Fatalf("stripForOutput = %q, want benign param preserved", got)
+	}
+}
+
+// All three credential classes scrubbed in a single URL.
+func TestStripForOutputRemovesUserinfoQueryAndFragment(t *testing.T) {
+	got := stripForOutput("https://user:s3cret@api.example.com/v1/items?api_key=LEAK&page=2#access_token=LEAKTOKEN&expires=3600")
+	for _, secret := range []string{"s3cret", "user:", "LEAK", "LEAKTOKEN", "access_token", "api_key"} {
+		if strings.Contains(got, secret) {
+			t.Fatalf("stripForOutput leaked %q: %q", secret, got)
+		}
+	}
+	if got != "https://api.example.com/v1/items?page=2" {
+		t.Fatalf("stripForOutput = %q, want only host/path and benign query", got)
+	}
+}
+
+// Fail-closed cut must land at the FIRST of "?" or "#" so a fragment token in
+// a malformed URL is dropped too.
+func TestStripForOutputFailClosedDropsFragment(t *testing.T) {
+	got := stripForOutput("/api/it\x00ems#access_token=LEAKTOKEN&expires=3600")
+	if got != "/api/it\x00ems" {
+		t.Fatalf("stripForOutput = %q, want fragment dropped entirely", got)
+	}
+	if strings.Contains(got, "LEAKTOKEN") || strings.Contains(got, "#") {
+		t.Fatalf("unparseable URL leaked its fragment: %q", got)
+	}
+}
+
 // A single route captured multiple times must NOT register as a merge: the
 // merge log exists to surface distinct paths collapsing, not repeat captures.
 func TestDeduplicateSamePathNotMerged(t *testing.T) {
