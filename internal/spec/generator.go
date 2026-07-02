@@ -1,6 +1,7 @@
 package spec
 
 import (
+	"cmp"
 	"crypto/sha1"
 	"encoding/json"
 	"errors"
@@ -8,6 +9,7 @@ import (
 	"net/http"
 	"net/url"
 	"regexp"
+	"slices"
 	"sort"
 	"strconv"
 	"strings"
@@ -318,7 +320,7 @@ func recordResponseSchema(op *observedOperation, flow model.CapturedFlow, includ
 	if ct == "" {
 		ct = "application/json"
 	}
-	key := responseSchemaKey{status: intString(flow.ResponseStatus), contentType: ct}
+	key := responseSchemaKey{status: strconv.Itoa(flow.ResponseStatus), contentType: ct}
 	if !isJSONishContentType(ct) {
 		// Non-JSON payloads (HTML, XML, CSV, plain text, …) can't be
 		// schematized, but the endpoint is real. Record the media type with a
@@ -405,7 +407,7 @@ func buildRequestBody(op *observedOperation) map[string]any {
 func buildResponses(op *observedOperation) map[string]any {
 	statuses := map[string]struct{}{}
 	for _, flow := range op.flows {
-		statuses[intString(flow.ResponseStatus)] = struct{}{}
+		statuses[strconv.Itoa(flow.ResponseStatus)] = struct{}{}
 	}
 	statusKeys := make([]string, 0, len(statuses))
 	for status := range statuses {
@@ -483,7 +485,7 @@ func graphqlRequestBody() map[string]any {
 func graphqlResponses(op *observedOperation) map[string]any {
 	responses := map[string]any{}
 	for _, flow := range op.flows {
-		status := intString(flow.ResponseStatus)
+		status := strconv.Itoa(flow.ResponseStatus)
 		if status == "200" {
 			continue
 		}
@@ -628,10 +630,10 @@ func buildOperationMetadata(op *observedOperation, operationID string) map[strin
 		"tags":        []any{operationTag(op.path)},
 		"x-apisniff-observed": map[string]any{
 			"flow_count":    len(op.flows),
-			"hosts":         sortedStringSet(hosts),
-			"methods":       sortedStringSet(methods),
-			"status_codes":  sortedIntSet(statusCodes),
-			"content_types": sortedStringSet(contentTypes),
+			"hosts":         sortedSet(hosts),
+			"methods":       sortedSet(methods),
+			"status_codes":  sortedSet(statusCodes),
+			"content_types": sortedSet(contentTypes),
 		},
 	}
 }
@@ -780,25 +782,12 @@ func isJSONishContentType(contentType string) bool {
 	return strings.Contains(contentType, "json")
 }
 
-func sortedStringSet(values map[string]struct{}) []any {
-	keys := make([]string, 0, len(values))
+func sortedSet[T cmp.Ordered](values map[T]struct{}) []any {
+	keys := make([]T, 0, len(values))
 	for key := range values {
 		keys = append(keys, key)
 	}
-	sort.Strings(keys)
-	out := make([]any, 0, len(keys))
-	for _, key := range keys {
-		out = append(out, key)
-	}
-	return out
-}
-
-func sortedIntSet(values map[int]struct{}) []any {
-	keys := make([]int, 0, len(values))
-	for key := range values {
-		keys = append(keys, key)
-	}
-	sort.Ints(keys)
+	slices.Sort(keys)
 	out := make([]any, 0, len(keys))
 	for _, key := range keys {
 		out = append(out, key)
@@ -988,6 +977,3 @@ func contentTypeBase(value string) string {
 	return strings.TrimSpace(strings.ToLower(strings.SplitN(value, ";", 2)[0]))
 }
 
-func intString(value int) string {
-	return strconv.Itoa(value)
-}

@@ -7,6 +7,7 @@
 package graphql
 
 import (
+	"bytes"
 	"encoding/json"
 	"mime"
 	"mime/multipart"
@@ -201,7 +202,7 @@ func multipartOperations(flow model.CapturedFlow) []byte {
 	if boundary == "" {
 		return nil
 	}
-	reader := multipart.NewReader(strings.NewReader(string(flow.RequestBody)), boundary)
+	reader := multipart.NewReader(bytes.NewReader(flow.RequestBody), boundary)
 	form, err := reader.ReadForm(1 << 20)
 	if err != nil {
 		return nil
