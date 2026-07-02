@@ -554,10 +554,10 @@ func parseHeaders(values []string) (map[string]string, error) {
 func normalizeTarget(raw string) (domain string, launchURL string) {
 	if strings.HasPrefix(raw, "http://") || strings.HasPrefix(raw, "https://") {
 		trimmed := strings.TrimPrefix(strings.TrimPrefix(raw, "https://"), "http://")
-		domain = strings.Split(strings.Split(trimmed, "?")[0], "/")[0]
+		domain = strings.Split(strings.Split(strings.Split(trimmed, "#")[0], "?")[0], "/")[0]
 		return domain, raw
 	}
-	domain = strings.Split(strings.Split(raw, "?")[0], "/")[0]
+	domain = strings.Split(strings.Split(strings.Split(raw, "#")[0], "?")[0], "/")[0]
 	return domain, "https://" + raw
 }
 

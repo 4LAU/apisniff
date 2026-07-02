@@ -857,6 +857,8 @@ func TestNormalizeTarget(t *testing.T) {
 		{"example.com/api?x=1", "example.com", "https://example.com/api?x=1"},
 		{"https://example.com/api", "example.com", "https://example.com/api"},
 		{"https://example.com?x=1", "example.com", "https://example.com?x=1"},
+		{"https://example.com#pricing", "example.com", "https://example.com#pricing"},
+		{"example.com:8443/api", "example.com:8443", "https://example.com:8443/api"},
 	}
 	for _, tc := range cases {
 		domain, launchURL := normalizeTarget(tc.raw)
