@@ -84,7 +84,10 @@ func Run(ctx context.Context, opts Options) (Summary, error) {
 	if opts.DryRun {
 		endpoints := make([]string, 0, len(filtered))
 		for _, flow := range filtered {
-			endpoints = append(endpoints, strings.ToUpper(flow.Method)+" "+flow.Path)
+			// Query strings can carry credentials; the endpoint list never
+			// needs them, so drop the whole query.
+			path, _, _ := strings.Cut(flow.Path, "?")
+			endpoints = append(endpoints, strings.ToUpper(flow.Method)+" "+path)
 		}
 		sort.Strings(endpoints)
 		return Summary{
@@ -207,9 +210,11 @@ func replayResult(flow model.CapturedFlow, status int, body []byte, elapsed time
 	bodyMatch, diff := CompareShape(flow.ResponseBody, body)
 	category, statusMatch := AssignCategory(flow.ResponseStatus, status, hadCredentials(flow), bodyMatch, len(flow.ResponseBody), len(body), err)
 	result := Result{
-		Method:         flow.Method,
-		Path:           flow.Path,
-		URL:            flow.URL,
+		Method: flow.Method,
+		// Reports are meant to be shareable: never echo the captured
+		// credential query params (?api_key=, ?access_token=) back out.
+		Path:           auth.StripCredentialQueryParams(flow.Path),
+		URL:            auth.StripCredentialQueryParams(flow.URL),
 		OriginalStatus: flow.ResponseStatus,
 		ReplayedStatus: status,
 		ElapsedMS:      float64(elapsed.Microseconds()) / 1000,

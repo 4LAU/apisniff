@@ -245,6 +245,47 @@ func TestReplayOneStripsQueryCredentialsBeforeNetwork(t *testing.T) {
 	}
 }
 
+// Replay reports are meant to be shareable: captured credential query params
+// must never reach Result.URL / Result.Path, while benign params survive.
+func TestReplayResultStripsCredentialQueryParams(t *testing.T) {
+	path := "/v1/items?access_token=tok1&page=2&api_key=sk1&client_secret=cs1&X-Amz-Signature=sig1&q=ok"
+	flow := replayFlow("GET", "https://api.example.com"+path, path, http.StatusOK, []byte(`{"ok":true}`))
+
+	result := replayResult(flow, http.StatusOK, []byte(`{"ok":true}`), time.Millisecond, nil)
+	for _, secret := range []string{"tok1", "sk1", "cs1", "sig1"} {
+		if strings.Contains(result.URL, secret) {
+			t.Errorf("result URL leaks %q: %s", secret, result.URL)
+		}
+		if strings.Contains(result.Path, secret) {
+			t.Errorf("result path leaks %q: %s", secret, result.Path)
+		}
+	}
+	if result.Path != "/v1/items?page=2&q=ok" {
+		t.Fatalf("non-credential params mangled in path: %s", result.Path)
+	}
+	if result.URL != "https://api.example.com/v1/items?page=2&q=ok" {
+		t.Fatalf("non-credential params mangled in URL: %s", result.URL)
+	}
+}
+
+// Dry-run endpoint listings never need query strings, so they are dropped
+// entirely — credentials included.
+func TestRunDryRunEndpointsOmitQueryStrings(t *testing.T) {
+	dir := t.TempDir()
+	flowsPath := filepath.Join(dir, "flows.jsonl")
+	writeFlows(t, flowsPath, []model.CapturedFlow{
+		replayFlow("GET", "https://example.com/api/items?api_key=sk1&access_token=tok1", "/api/items?api_key=sk1&access_token=tok1", 200, []byte(`{"ok":true}`)),
+	})
+
+	summary, err := Run(context.Background(), Options{BundleOrDomain: flowsPath, DryRun: true})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(summary.Endpoints) != 1 || summary.Endpoints[0] != "GET /api/items" {
+		t.Fatalf("endpoints = %#v, want [GET /api/items]", summary.Endpoints)
+	}
+}
+
 func TestRunAppliesGlobFilterBeforeReplay(t *testing.T) {
 	var users atomic.Int32
 	var posts atomic.Int32
