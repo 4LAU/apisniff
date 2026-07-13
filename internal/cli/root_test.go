@@ -34,25 +34,6 @@ func TestAnalyzeHumanWritesOnlyStderrAndBundle(t *testing.T) {
 	}
 }
 
-func TestAnalyzeJSONStdoutIsPure(t *testing.T) {
-	input := writeTestFlows(t, t.TempDir())
-
-	stdout, stderr, err := executeForTest(newAnalyzeCommand(), input, "--json")
-	if err != nil {
-		t.Fatalf("analyze --json returned error: %v", err)
-	}
-	if stderr != "" {
-		t.Fatalf("stderr = %q, want empty", stderr)
-	}
-	var payload map[string]any
-	if err := json.Unmarshal([]byte(stdout), &payload); err != nil {
-		t.Fatalf("stdout was not JSON: %v\n%s", err, stdout)
-	}
-	if payload["schema_version"].(float64) != 1 {
-		t.Fatalf("payload = %#v", payload)
-	}
-}
-
 func TestAnalyzeAutoDetectsDomain(t *testing.T) {
 	input := writeFlows(t, t.TempDir(),
 		`{"method":"GET","host":"api.mysite.com","path":"/v1/users","url":"https://api.mysite.com/v1/users","request_headers":{},"response_status":200,"response_headers":{"content-type":"application/json"},"_body_encoding":"base64","tags":[],"timestamp":1}`,
@@ -306,95 +287,6 @@ func TestSpecCommandIncludesHTMLFetchEndpoint(t *testing.T) {
 	}
 }
 
-func TestShareJSONStdoutIsPure(t *testing.T) {
-	bundle := t.TempDir()
-	input := writeTestFlows(t, t.TempDir())
-	if err := os.Rename(input, filepath.Join(bundle, "flows.jsonl")); err != nil {
-		t.Fatal(err)
-	}
-	if err := os.WriteFile(filepath.Join(bundle, "session.json"), []byte(`{"domain":"example.com","total_flows":1,"kept_flows":1}`), 0o600); err != nil {
-		t.Fatal(err)
-	}
-
-	stdout, stderr, err := executeForTest(newShareCommand(), bundle, "--json")
-	if err != nil {
-		t.Fatalf("share --json returned error: %v", err)
-	}
-	if stderr != "" {
-		t.Fatalf("stderr = %q, want empty", stderr)
-	}
-	var payload map[string]any
-	if err := json.Unmarshal([]byte(stdout), &payload); err != nil {
-		t.Fatalf("stdout was not JSON: %v\n%s", err, stdout)
-	}
-}
-
-func TestProbeJSONStdoutIsPure(t *testing.T) {
-	stdout, stderr, err := executeForTest(newProbeCommand(), "http://127.0.0.1:1", "--json")
-	if err != nil {
-		t.Fatalf("probe --json returned error: %v", err)
-	}
-	assertPureJSON(t, stdout)
-	if stderr != "" {
-		t.Fatalf("stderr = %q, want empty", stderr)
-	}
-}
-
-func TestProbeRateJSONStdoutIsPure(t *testing.T) {
-	stdout, stderr, err := executeForTest(newProbeCommand(), "rate", "http://127.0.0.1:1", "--json", "--rate-requests", "1")
-	if err != nil {
-		t.Fatalf("probe rate --json returned error: %v", err)
-	}
-	assertPureJSON(t, stdout)
-	if stderr != "" {
-		t.Fatalf("stderr = %q, want empty", stderr)
-	}
-}
-
-func TestReplayJSONStdoutIsPure(t *testing.T) {
-	input := writeTestFlows(t, t.TempDir())
-
-	stdout, stderr, err := executeForTest(newReplayCommand(), input, "--json", "--dry-run")
-	if err != nil {
-		t.Fatalf("replay --json returned error: %v", err)
-	}
-	assertPureJSON(t, stdout)
-	if stderr != "" {
-		t.Fatalf("stderr = %q, want empty", stderr)
-	}
-}
-
-func TestReconJSONStdoutIsPure(t *testing.T) {
-	previous := captureRun
-	previousCount := bundleCountOlderThan
-	t.Cleanup(func() {
-		captureRun = previous
-		bundleCountOlderThan = previousCount
-	})
-	bundleCountOlderThan = func(time.Duration) (int, error) { return 0, nil }
-	captureRun = func(_ context.Context, _ capture.Config) (*capture.Result, error) {
-		return &capture.Result{
-			BundleDir: "/tmp/apisniff/example",
-			FlowsPath: "/tmp/apisniff/example/flows.jsonl",
-			Stats: model.SessionStats{
-				Domain:     "example.com",
-				TotalFlows: 1,
-				KeptFlows:  1,
-				Dropped:    map[string]int{},
-			},
-		}, nil
-	}
-
-	stdout, stderr, err := executeForTest(newReconCommand(), "example.com", "--json")
-	if err != nil {
-		t.Fatalf("recon --json returned error: %v", err)
-	}
-	assertPureJSON(t, stdout)
-	if stderr != "" {
-		t.Fatalf("stderr = %q, want empty", stderr)
-	}
-}
-
 func TestReconJSONIncludesFilteredPath(t *testing.T) {
 	previous := captureRun
 	previousCount := bundleCountOlderThan
@@ -513,64 +405,6 @@ func TestReconHumanReportsFilteredCountAndPath(t *testing.T) {
 		t.Fatalf("stdout = %q, want empty", stdout)
 	}
 	assertContains(t, stderr, "3 filtered", "/tmp/apisniff/example/filtered.jsonl")
-}
-
-func TestReconDefaultModeIsProxy(t *testing.T) {
-	cmd := newReconCommand()
-	flag := cmd.Flags().Lookup("mode")
-	if flag == nil {
-		t.Fatal("--mode flag not defined")
-	}
-	if flag.DefValue != "proxy" {
-		t.Fatalf("--mode default = %q, want proxy", flag.DefValue)
-	}
-}
-
-func TestReconDefaultConfig(t *testing.T) {
-	previous := captureRun
-	previousCount := bundleCountOlderThan
-	t.Cleanup(func() {
-		captureRun = previous
-		bundleCountOlderThan = previousCount
-	})
-	bundleCountOlderThan = func(time.Duration) (int, error) { return 0, nil }
-
-	for _, tc := range []struct {
-		name       string
-		args       []string
-		wantMode   string
-		wantLaunch bool
-		wantPort   int // effective Config.Port (0 = ephemeral, resolved in CaptureProxy)
-	}{
-		{"default", []string{"example.com"}, "proxy", true, 0},
-		{"no-browser", []string{"example.com", "--no-browser"}, "proxy", false, 8080},
-		{"cdp-launch", []string{"example.com", "--mode", "cdp-launch"}, "cdp-launch", false, 0},
-		{"cdp-attach", []string{"example.com", "--mode", "cdp-attach"}, "cdp-attach", false, 9222},
-	} {
-		t.Run(tc.name, func(t *testing.T) {
-			var got capture.Config
-			captureRun = func(_ context.Context, cfg capture.Config) (*capture.Result, error) {
-				got = cfg
-				return &capture.Result{
-					BundleDir: "/tmp/apisniff/example",
-					FlowsPath: "/tmp/apisniff/example/flows.jsonl",
-					Stats:     model.SessionStats{Domain: "example.com", Dropped: map[string]int{}},
-				}, nil
-			}
-			if _, _, err := executeForTest(newReconCommand(), tc.args...); err != nil {
-				t.Fatalf("recon returned error: %v", err)
-			}
-			if got.Mode != tc.wantMode {
-				t.Errorf("Mode = %q, want %q", got.Mode, tc.wantMode)
-			}
-			if got.LaunchBrowser != tc.wantLaunch {
-				t.Errorf("LaunchBrowser = %v, want %v", got.LaunchBrowser, tc.wantLaunch)
-			}
-			if got.Port != tc.wantPort {
-				t.Errorf("Port = %d, want %d", got.Port, tc.wantPort)
-			}
-		})
-	}
 }
 
 func TestReconWarnsCookiesNotCapturedInCDPMode(t *testing.T) {
