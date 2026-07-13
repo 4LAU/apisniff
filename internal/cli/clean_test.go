@@ -10,6 +10,24 @@ import (
 	"github.com/4LAU/apisniff/internal/bundle"
 )
 
+func restoreBundleStubs(t *testing.T) {
+	t.Helper()
+	previousList := bundleList
+	previousDir := bundleDir
+	previousLoadJSONL := loadJSONL
+	previousDelete := bundleDelete
+	previousCountOlderThan := bundleCountOlderThan
+	previousNow := nowUTC
+	t.Cleanup(func() {
+		bundleList = previousList
+		bundleDir = previousDir
+		loadJSONL = previousLoadJSONL
+		bundleDelete = previousDelete
+		bundleCountOlderThan = previousCountOlderThan
+		nowUTC = previousNow
+	})
+}
+
 func TestCleanDryRunDoesNotDelete(t *testing.T) {
 	restoreBundleStubs(t)
 	bundleList = func() ([]bundle.Bundle, error) {
