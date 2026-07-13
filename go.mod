@@ -2,7 +2,7 @@ module github.com/4LAU/apisniff
 
 go 1.26
 
-toolchain go1.26.4
+toolchain go1.26.5
 
 require (
 	charm.land/lipgloss/v2 v2.0.3
