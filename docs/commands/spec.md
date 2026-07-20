@@ -13,7 +13,8 @@ apisniff spec BUNDLE|DOMAIN [flags]
 | Flag | Default | Description |
 |------|---------|-------------|
 | `--input`, `-i` | latest bundle | Input file: JSONL, HAR, or Burp XML |
-| `--format`, `-f` | `yaml` | Output format: `yaml` or `json` |
+| `--format`, `-f` | `yaml` | Output format: `yaml` or `json`. Anything else is treated as `yaml`, silently |
+| `--json` | `false` | Shorthand for `--format json`. Cannot be combined with `--format` |
 | `--output`, `-o` | stdout | Output file path |
 | `--surface-output` | | Write the surface inventory (every candidate flow, plus the coverage report) as JSON to this path |
 | `--include-third-party` | `false` | Also include flows classified `third_party_api` |

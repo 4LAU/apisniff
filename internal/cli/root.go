@@ -405,12 +405,19 @@ func newSpecCommand() *cobra.Command {
 		includeHost       []string
 		inferSchemes      bool
 		includeExamples   bool
+		jsonFormat        bool
 	)
 	cmd := &cobra.Command{
 		Use:   "spec BUNDLE|DOMAIN",
 		Short: "Generate OpenAPI from captured traffic",
 		Args:  cobra.ExactArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
+			// The root help tells LLMs to pass --json everywhere; spec is the
+			// one command whose output format lives on --format, so accept
+			// --json as a shorthand rather than making the tip a lie.
+			if jsonFormat {
+				format = "json"
+			}
 			ref := args[0]
 			domain := ""
 			path := inputFile
@@ -499,6 +506,8 @@ func newSpecCommand() *cobra.Command {
 	}
 	cmd.Flags().StringVarP(&inputFile, "input", "i", "", "input file")
 	cmd.Flags().StringVarP(&format, "format", "f", "yaml", "output format: yaml or json")
+	cmd.Flags().BoolVar(&jsonFormat, "json", false, "shorthand for --format json")
+	cmd.MarkFlagsMutuallyExclusive("format", "json")
 	cmd.Flags().StringVarP(&outputFile, "output", "o", "", "output file path")
 	cmd.Flags().StringVar(&surfaceOutput, "surface-output", "", "surface output path")
 	cmd.Flags().BoolVar(&includeThirdParty, "include-third-party", false, "include third-party flows")
