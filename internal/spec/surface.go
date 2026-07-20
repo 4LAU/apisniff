@@ -79,7 +79,14 @@ func ApplyInclusionFilters(flows []model.CapturedFlow, domain string, opts Inclu
 		}
 		if matchesInclusion(item.flow, item.result, normalized) {
 			out = append(out, withSpecIncludedTag(withCategoryTag(item.flow, item.result.Category)))
+			continue
 		}
+		// Unmatched drops still pass through untagged, exactly as they do
+		// without inclusion options, so FilterAPIFlows judges them on
+		// IsAPIFlow alone. Without this an --include-* flag would remove
+		// api-like drops that the default spec contains: inclusion must only
+		// ever widen the result.
+		out = append(out, item.flow)
 	}
 	return out, inventory, nil
 }
