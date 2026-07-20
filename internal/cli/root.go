@@ -101,6 +101,14 @@ func newProbeCommand() *cobra.Command {
 			if err != nil {
 				return err
 			}
+			// Reject unknown profiles up front so probe fails cleanly like
+			// replay, instead of degrading into per-variant errors (or, in
+			// rate mode, ignoring the flag) while still exiting 0.
+			switch strings.ToLower(impersonate) {
+			case "chrome", "firefox":
+			default:
+				return fmt.Errorf("unsupported impersonate profile %q (want chrome or firefox)", impersonate)
+			}
 			probeOptions := probe.Options{
 				Proxy:       proxyURL,
 				Headers:     parsedHeaders,
@@ -710,10 +718,19 @@ func isPrefilteredBundleInput(path string) bool {
 	if filepath.Base(path) != "flows.jsonl" {
 		return false
 	}
-	if _, err := os.Stat(filepath.Join(filepath.Dir(path), "session.json")); err == nil {
-		return true
+	dir := filepath.Dir(path)
+	if _, err := os.Stat(filepath.Join(dir, "session.json")); err != nil {
+		return false
 	}
-	return false
+	// Only recon bundles carry filtered.jsonl (the excluded traffic). An
+	// `analyze --output-dir` bundle has session.json + an unfiltered flows.jsonl
+	// but no filtered.jsonl, so inclusion filters DO apply there — don't warn
+	// that they have no effect. When filtered.jsonl is absent nothing was
+	// excluded, so the warning would be false either way.
+	if _, err := os.Stat(filepath.Join(dir, "filtered.jsonl")); err != nil {
+		return false
+	}
+	return true
 }
 
 type specCounts struct {

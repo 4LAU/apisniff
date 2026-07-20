@@ -18,8 +18,9 @@ import (
 )
 
 const (
-	chromeUA = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/148.0.0.0 Safari/537.36"
-	botUA    = "apisniff-go/0.1"
+	chromeUA  = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/148.0.0.0 Safari/537.36"
+	firefoxUA = "Mozilla/5.0 (Windows NT 10.0; Win64; x64; rv:134.0) Gecko/20100101 Firefox/134.0"
+	botUA     = "apisniff-go/0.1"
 )
 
 type Options struct {
@@ -37,12 +38,19 @@ func Run(ctx context.Context, target string, opts Options) (*model.ProbeAssessme
 	}
 	target = normalizeTargetURL(target)
 
+	// The impersonated probe must send a User-Agent matching its TLS profile.
+	// A Firefox fingerprint paired with a Chrome UA is an incoherent client
+	// signature that fingerprint-consistency defenses flag, skewing the verdict.
+	impersonatedUA := chromeUA
+	if strings.EqualFold(opts.Impersonate, "firefox") {
+		impersonatedUA = firefoxUA
+	}
 	variants := []struct {
 		name string
 		fn   func(context.Context, string, Options) model.ProbeResult
 	}{
 		{"naked", rawProbe(botUA)},
-		{"impersonated", surfProbe(chromeUA)},
+		{"impersonated", surfProbe(impersonatedUA)},
 		{"tls_only", surfProbe(botUA)},
 	}
 
@@ -111,14 +119,18 @@ func rawProbe(userAgent string) func(context.Context, string, Options) model.Pro
 
 func surfProbe(userAgent string) func(context.Context, string, Options) model.ProbeResult {
 	return func(ctx context.Context, target string, opts Options) model.ProbeResult {
-		builder := surf.NewClient().
-			Builder()
+		builder := surf.NewClient().Builder().Timeout(opts.Timeout)
 		if opts.Proxy != "" {
 			builder = builder.Proxy(g.String(opts.Proxy))
 		}
+		// surf defaults to InsecureSkipVerify=true; honor --insecure exactly as
+		// replay's newHTTPClient does instead of always skipping verification.
+		if !opts.Insecure {
+			builder = builder.SecureTLS()
+		}
 		// Same profiles and same rejection of unknown values as replay's
 		// newHTTPClient, so --impersonate means one thing across commands.
-		impersonate := builder.Timeout(opts.Timeout).Impersonate()
+		impersonate := builder.Impersonate()
 		switch strings.ToLower(opts.Impersonate) {
 		case "chrome", "":
 			builder = impersonate.Chrome()
