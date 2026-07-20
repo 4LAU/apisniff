@@ -18,7 +18,7 @@ apisniff probe rate URL [flags]
 | `--header`, `-H` | | Extra header as `key:value` |
 | `--cookie` | | Cookie header value |
 | `--insecure` | `false` | Skip TLS verification |
-| `--impersonate` | `chrome` | TLS profile |
+| `--impersonate` | `chrome` | TLS profile for the impersonated probe: `chrome` or `firefox`. Any other value is rejected |
 
 ## Examples
 

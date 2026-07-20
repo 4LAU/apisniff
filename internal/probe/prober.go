@@ -116,12 +116,18 @@ func surfProbe(userAgent string) func(context.Context, string, Options) model.Pr
 		if opts.Proxy != "" {
 			builder = builder.Proxy(g.String(opts.Proxy))
 		}
-		client, err := builder.
-			Impersonate().
-			Chrome().
-			Timeout(opts.Timeout).
-			Build().
-			Result()
+		// Same profiles and same rejection of unknown values as replay's
+		// newHTTPClient, so --impersonate means one thing across commands.
+		impersonate := builder.Timeout(opts.Timeout).Impersonate()
+		switch strings.ToLower(opts.Impersonate) {
+		case "chrome", "":
+			builder = impersonate.Chrome()
+		case "firefox":
+			builder = impersonate.Firefox()
+		default:
+			return model.ProbeResult{Error: fmt.Sprintf("unsupported impersonate profile %q", opts.Impersonate)}
+		}
+		client, err := builder.Build().Result()
 		if err != nil {
 			return model.ProbeResult{Error: fmt.Sprintf("surf client build failed: %v", err)}
 		}
