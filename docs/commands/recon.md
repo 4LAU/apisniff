@@ -20,7 +20,7 @@ apisniff recon DOMAIN [flags]
 | `--no-browser` | `false` | In `proxy` mode, start only the proxy and skip launching Chrome |
 | `--bind` | `127.0.0.1` | Address the `proxy` listens on. Use `0.0.0.0` (all interfaces) or a LAN IP to let other devices connect. Proxy mode only; IPv6 bind addresses are not supported. |
 | `--allow-client` | | Source-IP allowlist, repeatable. Only meaningful with a non-loopback `--bind`: when set, only the listed IPs (plus the local machine) may connect, and the locally launched Chrome is never blocked. Omit it and the proxy is open to anyone on the network (apisniff prints a prominent warning). |
-| `--proxy` | | Reserved for future upstream proxy chaining |
+| `--proxy` | | Not implemented. Passing it fails with `--proxy as an upstream proxy is not implemented; use --mode proxy to run the apisniff MITM proxy` |
 
 ## Examples
 

@@ -135,6 +135,17 @@ openapi-generator generate -i openapi-spec.yaml -g python -o client/
 cat openapi-spec.yaml | llm "write a Python client for this API"
 ```
 
+## Use it from an AI agent
+
+apisniff ships an agent skill that teaches Claude Code, Cursor, and Codex the
+command surface and the flag contracts that `--help` leaves out.
+
+```bash
+npx skills add 4LAU/apisniff --skill apisniff
+```
+
+Source: [`skills/apisniff/SKILL.md`](skills/apisniff/SKILL.md).
+
 ## Documentation
 
 - [Getting started](docs/guides/getting-started.md) — install to API map in 5 minutes

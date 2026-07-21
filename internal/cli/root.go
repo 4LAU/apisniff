@@ -101,6 +101,14 @@ func newProbeCommand() *cobra.Command {
 			if err != nil {
 				return err
 			}
+			// Reject unknown profiles up front so probe fails cleanly like
+			// replay, instead of degrading into per-variant errors (or, in
+			// rate mode, ignoring the flag) while still exiting 0.
+			switch strings.ToLower(impersonate) {
+			case "chrome", "firefox":
+			default:
+				return fmt.Errorf("unsupported impersonate profile %q (want chrome or firefox)", impersonate)
+			}
 			probeOptions := probe.Options{
 				Proxy:       proxyURL,
 				Headers:     parsedHeaders,
@@ -405,12 +413,19 @@ func newSpecCommand() *cobra.Command {
 		includeHost       []string
 		inferSchemes      bool
 		includeExamples   bool
+		jsonFormat        bool
 	)
 	cmd := &cobra.Command{
 		Use:   "spec BUNDLE|DOMAIN",
 		Short: "Generate OpenAPI from captured traffic",
 		Args:  cobra.ExactArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
+			// The root help tells LLMs to pass --json everywhere; spec is the
+			// one command whose output format lives on --format, so accept
+			// --json as a shorthand rather than making the tip a lie.
+			if jsonFormat {
+				format = "json"
+			}
 			ref := args[0]
 			domain := ""
 			path := inputFile
@@ -499,6 +514,8 @@ func newSpecCommand() *cobra.Command {
 	}
 	cmd.Flags().StringVarP(&inputFile, "input", "i", "", "input file")
 	cmd.Flags().StringVarP(&format, "format", "f", "yaml", "output format: yaml or json")
+	cmd.Flags().BoolVar(&jsonFormat, "json", false, "shorthand for --format json")
+	cmd.MarkFlagsMutuallyExclusive("format", "json")
 	cmd.Flags().StringVarP(&outputFile, "output", "o", "", "output file path")
 	cmd.Flags().StringVar(&surfaceOutput, "surface-output", "", "surface output path")
 	cmd.Flags().BoolVar(&includeThirdParty, "include-third-party", false, "include third-party flows")
@@ -701,10 +718,19 @@ func isPrefilteredBundleInput(path string) bool {
 	if filepath.Base(path) != "flows.jsonl" {
 		return false
 	}
-	if _, err := os.Stat(filepath.Join(filepath.Dir(path), "session.json")); err == nil {
-		return true
+	dir := filepath.Dir(path)
+	if _, err := os.Stat(filepath.Join(dir, "session.json")); err != nil {
+		return false
 	}
-	return false
+	// Only recon bundles carry filtered.jsonl (the excluded traffic). An
+	// `analyze --output-dir` bundle has session.json + an unfiltered flows.jsonl
+	// but no filtered.jsonl, so inclusion filters DO apply there — don't warn
+	// that they have no effect. When filtered.jsonl is absent nothing was
+	// excluded, so the warning would be false either way.
+	if _, err := os.Stat(filepath.Join(dir, "filtered.jsonl")); err != nil {
+		return false
+	}
+	return true
 }
 
 type specCounts struct {
