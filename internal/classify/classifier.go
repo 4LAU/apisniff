@@ -30,6 +30,7 @@ type indicators struct {
 
 type Classifier struct {
 	mu                 sync.Mutex
+	targetHost         string
 	targetRD           string
 	relatedDomains     map[string]struct{}
 	allowlistDomains   []string
@@ -50,6 +51,7 @@ func New(targetDomain string) (*Classifier, error) {
 		return nil, err
 	}
 	return &Classifier{
+		targetHost:         normalizeHost(targetDomain),
 		targetRD:           ExtractRegisteredDomain(targetDomain),
 		relatedDomains:     map[string]struct{}{},
 		allowlistDomains:   ind.AllowlistDomains,
@@ -97,7 +99,7 @@ func (c *Classifier) Classify(flow model.CapturedFlow) (model.ClassifyResult, *m
 		tags = append(tags, "allowlisted")
 	}
 
-	if !allowlisted && matchesDomainList(host, c.noiseDomains) {
+	if !allowlisted && normalizeHost(host) != c.targetHost && matchesDomainList(host, c.noiseDomains) {
 		return model.ClassifyResult{Action: "drop", Category: model.Telemetry, Reason: "noise_domain", HostRole: "third_party", Signals: []string{"noise_domain"}}, nil
 	}
 
@@ -283,7 +285,7 @@ func (c *Classifier) surfaceCategory(flow model.CapturedFlow, hostRole string, t
 }
 
 func ExtractRegisteredDomain(hostname string) string {
-	h := strings.ToLower(strings.TrimSuffix(stripPort(hostname), "."))
+	h := normalizeHost(hostname)
 	if h == "" {
 		return h
 	}
@@ -295,6 +297,10 @@ func ExtractRegisteredDomain(hostname string) string {
 		return etld1
 	}
 	return h
+}
+
+func normalizeHost(host string) string {
+	return strings.ToLower(strings.TrimSuffix(stripPort(host), "."))
 }
 
 func stripPort(host string) string {
