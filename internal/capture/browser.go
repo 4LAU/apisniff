@@ -52,14 +52,29 @@ func NewBrowserContext(ctx context.Context, mode string, port int, userDataDir s
 			chromedp.NoFirstRun,
 			chromedp.NoDefaultBrowserCheck,
 			chromedp.Flag("disable-background-networking", true),
+			chromedp.Flag("enable-features", "NetworkService,NetworkServiceInProcess"),
+			chromedp.Flag("disable-background-timer-throttling", true),
+			chromedp.Flag("disable-backgrounding-occluded-windows", true),
+			chromedp.Flag("disable-breakpad", true),
 			chromedp.Flag("disable-client-side-phishing-detection", true),
 			chromedp.Flag("disable-component-update", true),
+			chromedp.Flag("disable-default-apps", true),
+			chromedp.Flag("disable-dev-shm-usage", true),
 			chromedp.Flag("disable-domain-reliability", true),
+			chromedp.Flag("disable-extensions", true),
+			chromedp.Flag("disable-features", cdpDisabledFeatures()),
+			chromedp.Flag("disable-hang-monitor", true),
+			chromedp.Flag("disable-ipc-flooding-protection", true),
+			chromedp.Flag("disable-popup-blocking", true),
+			chromedp.Flag("disable-prompt-on-repost", true),
+			chromedp.Flag("disable-renderer-backgrounding", true),
 			chromedp.Flag("disable-sync", true),
+			chromedp.Flag("force-color-profile", "srgb"),
+			chromedp.Flag("metrics-recording-only", true),
+			chromedp.Flag("safebrowsing-disable-auto-update", true),
+			chromedp.Flag("password-store", "basic"),
 			chromedp.Flag("reduce-accept-language-http", true),
-		}
-		if disableMacAppCodeSignClone() {
-			opts = append(opts, chromedp.Flag("disable-features", "MacAppCodeSignClone"))
+			chromedp.Flag("use-mock-keychain", true),
 		}
 		if runtime.GOOS == "linux" {
 			opts = append(opts, chromedp.Flag("no-sandbox", true))
@@ -77,6 +92,14 @@ func NewBrowserContext(ctx context.Context, mode string, port int, userDataDir s
 	default:
 		return nil, nil, fmt.Errorf("unsupported recon mode %q", mode)
 	}
+}
+
+func cdpDisabledFeatures() string {
+	features := []string{"site-per-process", "Translate", "BlinkGenPropertyTrees"}
+	if disableMacAppCodeSignClone() {
+		features = append(features, "MacAppCodeSignClone")
+	}
+	return strings.Join(features, ",")
 }
 
 // LaunchCleanBrowser starts a real Chrome routed through the given proxy and

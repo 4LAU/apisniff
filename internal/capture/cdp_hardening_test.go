@@ -59,6 +59,7 @@ func TestCDPCapturesLargeJSONResponseBody(t *testing.T) {
 		UserDataDir: chromeTempDir(t),
 		Headless:    true,
 		Timeout:     30 * time.Second,
+		doneTitle:   "done",
 	})
 	if err != nil {
 		t.Fatal(err)
@@ -118,6 +119,7 @@ func TestCDPCapturesWebSocketFrames(t *testing.T) {
 		UserDataDir: chromeTempDir(t),
 		Headless:    true,
 		Timeout:     30 * time.Second,
+		doneTitle:   "ws-done",
 	})
 	if err != nil {
 		t.Fatal(err)

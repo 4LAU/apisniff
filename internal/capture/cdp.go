@@ -52,6 +52,10 @@ type Config struct {
 	// output (open-proxy exposure notices, bundle-finalization failures).
 	// Unlike StatusWriter it is NOT silenced in --json mode.
 	WarningWriter io.Writer
+
+	// doneTitle is a package-private test/scripting hook for headless captures
+	// that should end once page JavaScript signals completion.
+	doneTitle string
 }
 
 type Result struct {
@@ -188,7 +192,21 @@ func Capture(ctx context.Context, cfg Config) (*Result, error) {
 			<-browserCtx.Done()
 			signalClose()
 		}()
-		if cfg.Mode == "cdp-launch" {
+		if cfg.doneTitle != "" {
+			go func() {
+				quotedTitle, _ := json.Marshal(cfg.doneTitle)
+				var matched bool
+				err := chromedp.Run(browserCtx, chromedp.Poll(
+					"document.title === "+string(quotedTitle),
+					&matched,
+					chromedp.WithPollingInterval(100*time.Millisecond),
+					chromedp.WithPollingTimeout(cfg.Timeout),
+				))
+				if err == nil && matched {
+					signalClose()
+				}
+			}()
+		} else if cfg.Mode == "cdp-launch" {
 			go func() {
 				c := chromedp.FromContext(browserCtx)
 				if c == nil || c.Browser == nil {
@@ -238,11 +256,11 @@ func Capture(ctx context.Context, cfg Config) (*Result, error) {
 		case <-runCtx.Done():
 		}
 	}
+	rec.bodyWG.Wait()
 	cancelBrowser()
 	if status != nil {
 		status.stop()
 	}
-	rec.bodyWG.Wait()
 	filtered := newLazyFilteredWriter(bundle)
 	defer filtered.Close()
 	snapshot := rec.snapshotFlows()
