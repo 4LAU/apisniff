@@ -256,11 +256,12 @@ func Capture(ctx context.Context, cfg Config) (*Result, error) {
 		case <-runCtx.Done():
 		}
 	}
-	rec.bodyWG.Wait()
+	rec.waitForBodies(5 * time.Second)
 	cancelBrowser()
 	if status != nil {
 		status.stop()
 	}
+	rec.bodyWG.Wait()
 	filtered := newLazyFilteredWriter(bundle)
 	defer filtered.Close()
 	snapshot := rec.snapshotFlows()
@@ -316,6 +317,24 @@ func Capture(ctx context.Context, cfg Config) (*Result, error) {
 	// Non-fatal: capture already succeeded. Co-locate spec + private catalog.
 	gqlSummary := finalize.FromBundle(cfg.WarningWriter, bundle, flowsPath, stats.Domain)
 	return &Result{BundleDir: bundle, FlowsPath: flowsPath, FilteredPath: resultFilteredPath, Stats: stats, GraphQL: gqlSummary}, nil
+}
+
+func (r *recorder) waitForBodies(timeout time.Duration) bool {
+	if timeout <= 0 {
+		r.bodyWG.Wait()
+		return true
+	}
+	done := make(chan struct{})
+	go func() {
+		defer close(done)
+		r.bodyWG.Wait()
+	}()
+	select {
+	case <-done:
+		return true
+	case <-time.After(timeout):
+		return false
+	}
 }
 
 func (r *recorder) listen(ctx context.Context) func(any) {
