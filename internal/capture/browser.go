@@ -61,6 +61,9 @@ func NewBrowserContext(ctx context.Context, mode string, port int, userDataDir s
 		if disableMacAppCodeSignClone() {
 			opts = append(opts, chromedp.Flag("disable-features", "MacAppCodeSignClone"))
 		}
+		if runtime.GOOS == "linux" {
+			opts = append(opts, chromedp.Flag("no-sandbox", true))
+		}
 		opts = append(opts, extraOpts...)
 		allocCtx, allocCancel := chromedp.NewExecAllocator(ctx, opts...)
 		browserCtx, browserCancel := chromedp.NewContext(allocCtx, silentLog)
