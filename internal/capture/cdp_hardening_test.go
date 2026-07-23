@@ -31,6 +31,7 @@ func chromeTempDir(t *testing.T) string {
 
 func TestCDPCapturesLargeJSONResponseBody(t *testing.T) {
 	skipUnlessChrome(t)
+	skipIfChromeLaunchBlocked(t)
 	setTestHome(t, chromeTempDir(t))
 	largePayload := strings.Repeat("a", 2*1024*1024)
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -82,6 +83,7 @@ func TestCDPCapturesLargeJSONResponseBody(t *testing.T) {
 
 func TestCDPCapturesWebSocketFrames(t *testing.T) {
 	skipUnlessChrome(t)
+	skipIfChromeLaunchBlocked(t)
 	setTestHome(t, chromeTempDir(t))
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		switch r.URL.Path {
@@ -186,6 +188,13 @@ func skipUnlessChrome(t *testing.T) {
 	}
 	if _, err := exec.LookPath(path); err != nil {
 		t.Skipf("Chrome not found: %v", err)
+	}
+}
+
+func skipIfChromeLaunchBlocked(t *testing.T) {
+	t.Helper()
+	if err := checkChromeLaunchSafety(); err != nil {
+		t.Skip(err)
 	}
 }
 

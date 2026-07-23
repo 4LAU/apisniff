@@ -18,10 +18,16 @@ jobs:
         with:
           go-version: '1.26.5'
       - name: Vet
+        if: matrix.os == 'ubuntu-24.04'
         run: go vet ./...
       - name: Test (race)
+        if: matrix.os == 'ubuntu-24.04'
         timeout-minutes: 20
         run: go test -race ./... -v -count=1
+      - name: Test macOS capture
+        if: matrix.os == 'macos-latest'
+        timeout-minutes: 10
+        run: go test ./internal/capture -v -count=1
       - name: Build
         run: go build ./cmd/apisniff
 
