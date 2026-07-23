@@ -23,6 +23,12 @@ Requires Python 3.12+.
 uv run python scripts/generate_command_docs.py
 ```
 
+## macOS Chrome launches
+
+apisniff adds `--disable-features=MacAppCodeSignClone` to Chrome processes it starts on macOS. This avoids Chrome's temporary code-signing clone path, which can leave large `code_sign_clone.*` directories behind when Chrome/ChromeDriver exits poorly.
+
+Chrome launches are also blocked when disk is low or too many leftover clones already exist under `/private/var/folders`. Clean those up before running browser capture again. If you intentionally want to bypass the guard, set `APISNIFF_ALLOW_CHROME_CLONE_RISK=1` for that command.
+
 ## Documentation
 
 User-facing docs should be direct and specific. apisniff captures real traffic, so docs must call out privacy, authorization, and credential-handling behavior wherever it matters.

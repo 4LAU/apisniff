@@ -99,6 +99,7 @@ type ProbeAssessment struct {
 type GraphQLResult struct {
 	Endpoints     []string `json:"endpoints"`
 	Introspection bool     `json:"introspection"`
+	Error         string   `json:"error,omitempty"`
 }
 
 type VendorMatch struct {

@@ -52,6 +52,9 @@ func CaptureProxy(ctx context.Context, cfg Config) (*Result, error) {
 		if _, ok := ChromeAvailable(); !ok {
 			return nil, fmt.Errorf("Chrome not found; install Chrome or Chromium, or rerun with --no-browser")
 		}
+		if err := checkChromeLaunchSafety(); err != nil {
+			return nil, err
+		}
 	}
 	// Bind/allowlist validation is authoritative here (the CLI can be bypassed):
 	// reject IPv6 binds and an allowlist paired with a loopback bind before any
@@ -129,10 +132,16 @@ func CaptureProxy(ctx context.Context, cfg Config) (*Result, error) {
 	}
 	defenses := map[string]model.VendorMatch{}
 	var unattributedAntibot int
+	upstreamClient, closeUpstream, err := newUpstreamTransport(upstreamTransportOptions{Timeout: cfg.Timeout})
+	if err != nil {
+		return nil, err
+	}
+	defer closeUpstream()
+	upstreamRoundTripper := proxyRoundTripper{transport: upstreamClient.Transport}
 	proxy := goproxy.NewProxyHttpServer()
 	proxy.Verbose = false
 	proxy.Logger = log.New(io.Discard, "", 0)
-	proxy.AllowHTTP2 = true
+	proxy.AllowHTTP2 = false
 	proxy.CertStore = &certCache{}
 	proxy.Tr = &http.Transport{
 		ForceAttemptHTTP2: true,
@@ -172,11 +181,13 @@ func CaptureProxy(ctx context.Context, cfg Config) (*Result, error) {
 
 	proxy.OnRequest().HandleConnect(goproxy.AlwaysMitm)
 	proxy.OnRequest().DoFunc(func(req *http.Request, pctx *goproxy.ProxyCtx) (*http.Request, *http.Response) {
+		pctx.RoundTripper = upstreamRoundTripper
 		flow, err := flowFromProxyRequest(req)
 		if err != nil {
 			pctx.UserData = err
 			return req, nil
 		}
+		normalizeUpstreamAuthority(req)
 		state := &proxyRequestState{flow: flow}
 		if req.Body != nil && req.Body != http.NoBody {
 			// Record the request body as the transport streams it upstream —
@@ -834,6 +845,32 @@ func flowProto(req *http.Request) string {
 		return ""
 	}
 	return req.Proto
+}
+
+func normalizeUpstreamAuthority(req *http.Request) {
+	if req == nil || req.URL == nil {
+		return
+	}
+	host := stripDefaultPort(req.URL.Scheme, req.URL.Host)
+	if host == req.URL.Host {
+		return
+	}
+	oldHost := req.URL.Host
+	req.URL.Host = host
+	if req.Host == "" || req.Host == oldHost {
+		req.Host = host
+	}
+}
+
+func stripDefaultPort(scheme, host string) string {
+	name, port, err := net.SplitHostPort(host)
+	if err != nil {
+		return host
+	}
+	if (scheme == "https" && port == "443") || (scheme == "http" && port == "80") {
+		return name
+	}
+	return host
 }
 
 func headersToMap(headers http.Header) map[string]string {

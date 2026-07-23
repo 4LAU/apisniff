@@ -8,7 +8,6 @@ import (
 	"net/url"
 	"sort"
 	"strings"
-	"sync"
 	"time"
 
 	"github.com/4LAU/apisniff/internal/model"
@@ -36,6 +35,12 @@ func Run(ctx context.Context, target string, opts Options) (*model.ProbeAssessme
 	if opts.Timeout == 0 {
 		opts.Timeout = 10 * time.Second
 	}
+	probeCtx := ctx
+	cancel := func() {}
+	if deadline, ok := ctx.Deadline(); !ok || time.Until(deadline) > opts.Timeout {
+		probeCtx, cancel = context.WithTimeout(ctx, opts.Timeout)
+	}
+	defer cancel()
 	target = normalizeTargetURL(target)
 
 	// The impersonated probe must send a User-Agent matching its TLS profile.
@@ -55,17 +60,64 @@ func Run(ctx context.Context, target string, opts Options) (*model.ProbeAssessme
 	}
 
 	results := make([]model.ProbeResult, len(variants))
-	var wg sync.WaitGroup
+	variantNames := make([]string, len(variants))
+	resultCh := make(chan struct {
+		index  int
+		result model.ProbeResult
+	}, len(variants))
+	startedAt := make([]time.Time, len(variants))
+	completed := make([]bool, len(variants))
 	for i, variant := range variants {
-		wg.Add(1)
+		variantNames[i] = variant.name
+		startedAt[i] = time.Now()
 		go func(i int, variantName string, fn func(context.Context, string, Options) model.ProbeResult) {
-			defer wg.Done()
-			result := fn(ctx, target, opts)
+			result := fn(probeCtx, target, opts)
 			result.Variant = variantName
-			results[i] = result
+			resultCh <- struct {
+				index  int
+				result model.ProbeResult
+			}{index: i, result: result}
 		}(i, variant.name, variant.fn)
 	}
-	wg.Wait()
+	received := 0
+	collect := func(result struct {
+		index  int
+		result model.ProbeResult
+	}) {
+		if completed[result.index] {
+			return
+		}
+		results[result.index] = result.result
+		completed[result.index] = true
+		received++
+	}
+collecting:
+	for received < len(variants) {
+		select {
+		case result := <-resultCh:
+			collect(result)
+		case <-probeCtx.Done():
+		drain:
+			for {
+				select {
+				case result := <-resultCh:
+					collect(result)
+				default:
+					break drain
+				}
+			}
+			for i := range variants {
+				if !completed[i] {
+					results[i] = model.ProbeResult{
+						Variant: variantNames[i],
+						Latency: time.Since(startedAt[i]),
+						Error:   probeCtx.Err().Error(),
+					}
+				}
+			}
+			break collecting
+		}
+	}
 
 	detector, err := vendor.NewDetector()
 	if err != nil {
@@ -88,7 +140,7 @@ func Run(ctx context.Context, target string, opts Options) (*model.ProbeAssessme
 		return vendors[i].Vendor < vendors[j].Vendor
 	})
 
-	graphql := DetectGraphQL(ctx, target, opts)
+	graphql := DetectGraphQL(probeCtx, target, opts)
 	verdict, recommendation := Classify(results, vendors)
 	return &model.ProbeAssessment{
 		URL:            target,

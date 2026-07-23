@@ -28,6 +28,9 @@ func NewBrowserContext(ctx context.Context, mode string, port int, userDataDir s
 			allocCancel()
 		}, nil
 	case "cdp-launch", "":
+		if err := checkChromeLaunchSafety(); err != nil {
+			return nil, nil, err
+		}
 		tempProfile := false
 		if userDataDir == "" {
 			dir, err := os.MkdirTemp("", "apisniff-chrome-*")
@@ -41,14 +44,23 @@ func NewBrowserContext(ctx context.Context, mode string, port int, userDataDir s
 				return nil, nil, err
 			}
 		}
-		opts := append(chromedp.DefaultExecAllocatorOptions[:],
+		opts := []chromedp.ExecAllocatorOption{
 			chromedp.ExecPath(FindChrome()),
 			chromedp.Flag("headless", headless),
 			chromedp.Flag("remote-debugging-port", fmt.Sprintf("%d", port)),
 			chromedp.UserDataDir(userDataDir),
 			chromedp.NoFirstRun,
 			chromedp.NoDefaultBrowserCheck,
-		)
+			chromedp.Flag("disable-background-networking", true),
+			chromedp.Flag("disable-client-side-phishing-detection", true),
+			chromedp.Flag("disable-component-update", true),
+			chromedp.Flag("disable-domain-reliability", true),
+			chromedp.Flag("disable-sync", true),
+			chromedp.Flag("reduce-accept-language-http", true),
+		}
+		if disableMacAppCodeSignClone() {
+			opts = append(opts, chromedp.Flag("disable-features", "MacAppCodeSignClone"))
+		}
 		opts = append(opts, extraOpts...)
 		allocCtx, allocCancel := chromedp.NewExecAllocator(ctx, opts...)
 		browserCtx, browserCancel := chromedp.NewContext(allocCtx, silentLog)
@@ -74,6 +86,9 @@ func LaunchCleanBrowser(ctx context.Context, proxyAddr, spkiHash, profileDir, st
 	chromePath, ok := ChromeAvailable()
 	if !ok {
 		return nil, fmt.Errorf("Chrome not found; install Chrome or Chromium, or rerun with --no-browser")
+	}
+	if err := checkChromeLaunchSafety(); err != nil {
+		return nil, err
 	}
 	if err := os.MkdirAll(profileDir, 0o700); err != nil {
 		return nil, err
@@ -108,6 +123,11 @@ func cleanBrowserArgs(proxyAddr, spkiHash, profileDir, startURL string, headless
 		"--disable-sync",
 		"--disable-domain-reliability",
 		"--disable-client-side-phishing-detection",
+		"--disable-http2",
+		"--reduce-accept-language-http",
+	}
+	if disableMacAppCodeSignClone() {
+		args = append(args, "--disable-features=MacAppCodeSignClone")
 	}
 	if spkiHash != "" {
 		args = append(args, "--ignore-certificate-errors-spki-list="+spkiHash)
@@ -175,6 +195,9 @@ func rendererCount(pid int) int {
 }
 
 func FindChrome() string {
+	if path := os.Getenv("APISNIFF_CHROME_PATH"); path != "" {
+		return path
+	}
 	candidates := []string{}
 	switch runtime.GOOS {
 	case "darwin":

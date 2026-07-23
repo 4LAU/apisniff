@@ -108,6 +108,35 @@ func TestCaptureProxyCapturesHTTPFlow(t *testing.T) {
 	}
 }
 
+func TestNormalizeUpstreamAuthorityStripsDefaultPorts(t *testing.T) {
+	req, err := http.NewRequest(http.MethodPost, "https://www.example.com:443/dapi/fe/gql", strings.NewReader("{}"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	req.Host = "www.example.com:443"
+	normalizeUpstreamAuthority(req)
+
+	if req.URL.Host != "www.example.com" {
+		t.Fatalf("URL.Host = %q, want default port stripped", req.URL.Host)
+	}
+	if req.Host != "www.example.com" {
+		t.Fatalf("Host = %q, want default port stripped", req.Host)
+	}
+}
+
+func TestNormalizeUpstreamAuthorityPreservesNonDefaultPorts(t *testing.T) {
+	req, err := http.NewRequest(http.MethodGet, "https://api.example.com:8443/v1", nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	req.Host = "api.example.com:8443"
+	normalizeUpstreamAuthority(req)
+
+	if req.URL.Host != "api.example.com:8443" || req.Host != "api.example.com:8443" {
+		t.Fatalf("authority changed to URL=%q Host=%q", req.URL.Host, req.Host)
+	}
+}
+
 func TestCaptureProxyCapturesHTTPSMITMFlow(t *testing.T) {
 	setTestHome(t, t.TempDir())
 	caPath, _, err := EnsureProxyCA(nil)
@@ -191,10 +220,23 @@ func TestCaptureProxyUsesHTTP2UpstreamWhenAvailable(t *testing.T) {
 		t.Fatal("failed to load proxy CA")
 	}
 
-	protoCh := make(chan string, 1)
+	type upstreamSeen struct {
+		proto     string
+		userAgent string
+		secCHUA   string
+		cookie    string
+		custom    string
+	}
+	seenCh := make(chan upstreamSeen, 1)
 	backend := httptest.NewUnstartedServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		select {
-		case protoCh <- r.Proto:
+		case seenCh <- upstreamSeen{
+			proto:     r.Proto,
+			userAgent: r.Header.Get("user-agent"),
+			secCHUA:   r.Header.Get("sec-ch-ua"),
+			cookie:    r.Header.Get("cookie"),
+			custom:    r.Header.Get("x-browser-owned"),
+		}:
 		default:
 		}
 		w.Header().Set("content-type", "application/json")
@@ -229,7 +271,15 @@ func TestCaptureProxyUsesHTTP2UpstreamWhenAvailable(t *testing.T) {
 		Proxy:             http.ProxyURL(proxyURL),
 		TLSClientConfig:   &tls.Config{RootCAs: roots}, //nolint:gosec
 	}}
-	resp, err := client.Get(backend.URL + "/api/h2")
+	req, err := http.NewRequest(http.MethodGet, backend.URL+"/api/h2", nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	req.Header.Set("user-agent", "Mozilla/5.0 Chrome/150.0.0.0 Safari/537.36")
+	req.Header.Set("sec-ch-ua", `"Chromium";v="150"`)
+	req.Header.Set("cookie", "session=browser")
+	req.Header.Set("x-browser-owned", "preserved")
+	resp, err := client.Do(req)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -245,9 +295,21 @@ func TestCaptureProxyUsesHTTP2UpstreamWhenAvailable(t *testing.T) {
 		t.Fatal("timed out waiting for proxy capture")
 	}
 	select {
-	case proto := <-protoCh:
-		if proto != "HTTP/2.0" {
-			t.Fatalf("upstream proto = %s, want HTTP/2.0", proto)
+	case seen := <-seenCh:
+		if seen.proto != "HTTP/2.0" {
+			t.Fatalf("upstream proto = %s, want HTTP/2.0", seen.proto)
+		}
+		if !strings.Contains(seen.userAgent, "Chrome/150.0.0.0") {
+			t.Fatalf("upstream user-agent = %q, want browser Chrome identity", seen.userAgent)
+		}
+		if !strings.Contains(seen.secCHUA, `"Chromium";v="150"`) {
+			t.Fatalf("upstream sec-ch-ua = %q, want browser Chrome identity", seen.secCHUA)
+		}
+		if seen.cookie != "session=browser" {
+			t.Fatalf("upstream cookie = %q, want browser cookie", seen.cookie)
+		}
+		if seen.custom != "preserved" {
+			t.Fatalf("upstream custom header = %q, want preserved", seen.custom)
 		}
 	default:
 		t.Fatal("backend did not receive proxied request")
